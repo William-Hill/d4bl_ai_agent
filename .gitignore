@@ -1,3 +1,6 @@
 venv/
 .env
 __pycache__
+reports/
+archived_reports/
+archived_search_results/
