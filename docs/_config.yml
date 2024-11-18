@@ -13,8 +13,8 @@ nav:
   - title: Home
     url: /d4bl-research-tool/
   - title: Installation
-    url: /d4bl-research-tool/installation
+    url: /d4bl-research-tool/installation.html
   - title: Architecture
-    url: /d4bl-research-tool/architecture
+    url: /d4bl-research-tool/architecture.html
   - title: API Reference
-    url: /d4bl-research-tool/api-reference
+    url: /d4bl-research-tool/api-reference.html
