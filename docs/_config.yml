@@ -6,14 +6,15 @@ title: D4BL Research Tool
 description: AI-powered research and analysis tool for Data for Black Lives
 show_downloads: true
 google_analytics:
+baseurl: "/d4bl-research-tool"
 
 # Navigation
 nav:
   - title: Home
-    url: /
+    url: /d4bl-research-tool/
   - title: Installation
-    url: /installation
+    url: /d4bl-research-tool/installation
   - title: Architecture
-    url: /architecture
+    url: /d4bl-research-tool/architecture
   - title: API Reference
-    url: /api-reference 
+    url: /d4bl-research-tool/api-reference
