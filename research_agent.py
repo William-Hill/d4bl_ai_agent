@@ -38,7 +38,9 @@ def save_results(query: str, results: str) -> str:
 class ResearchAgent:
     def __init__(self):
         self.firecrawl_tool = FirecrawlSearchTool(
-            api_key=os.getenv("FIRECRAWL_API_KEY")
+            api_key=os.getenv("FIRECRAWL_API_KEY"),
+            max_pages=3,  # Limit to 3 pages
+            max_results=5  # Limit to 5 results per page
         )
         
     def create_agent(self) -> Agent:
@@ -54,22 +56,32 @@ class ResearchAgent:
             allow_delegation=False
         )
     
-    def research(self, query: str) -> dict:
+    def research(self, query: str, max_content_length: int = 2000) -> dict:
         """
         Perform research on a given query and save results
         
         Args:
             query (str): The research query to investigate
+            max_content_length (int): Maximum length of content to return per result
             
         Returns:
             dict: Research results and metadata
         """
+        print(f"\nResearching: {query}")
+        print(f"Max content length: {max_content_length} characters")
+        
         # Execute the search
         results = self.firecrawl_tool.run(query=query)
+        
+        # Truncate results if they're too long
+        if isinstance(results, str) and len(results) > max_content_length:
+            print(f"Truncating results from {len(results)} to {max_content_length} characters")
+            results = results[:max_content_length] + "..."
         
         # Save results to file
         filename = save_results(query, results)
         
+        print(f"Research completed. Results length: {len(results) if isinstance(results, str) else 'N/A'}")
         return {
             "query": query,
             "results": results,

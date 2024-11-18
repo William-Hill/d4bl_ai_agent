@@ -28,20 +28,17 @@ class WriterAgent:
     ) -> Dict:
         """Write a summary of the research and analysis results"""
         print("\nStarting summary generation...")
-        print(f"Research results keys: {list(research_results.keys())}")
         
         try:
-            # Extract relevant information
+            # Extract only the essential information
             query = research_results.get('query', 'No query provided')
-            research = research_results.get('research', {}).get('results', 'No research results available')
-            analysis = research_results.get('analysis', {})
+            analysis = research_results.get('analysis', {}).get('analysis', {})
             
             print(f"Query: {query}")
-            print(f"Research: {research}")
             print(f"Analysis keys: {list(analysis.keys())}")
             
             # Get the task object for writing
-            task = self._get_writing_prompt(format_type, query, research, analysis)
+            task = self._get_writing_prompt(format_type, query, analysis)
             
             # Execute the task
             summary = self.agent.execute_task(task)
@@ -74,31 +71,30 @@ class WriterAgent:
                 "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S")
             }
     
-    def _get_writing_prompt(self, format_type: str, query: str, research: str, analysis: Dict) -> Task:
+    def _get_writing_prompt(self, format_type: str, query: str, analysis: Dict) -> Task:
         """Generate appropriate writing prompt based on format type"""
         # Extract key points safely with error handling
         try:
-            key_points = analysis.get('analysis', {}).get('key_points', [])
-            main_themes = analysis.get('analysis', {}).get('main_themes', [])
-            recommendations = analysis.get('analysis', {}).get('recommendations', [])
+            key_points = analysis.get('key_points', [])
+            main_themes = analysis.get('main_themes', [])
+            recommendations = analysis.get('recommendations', [])
+            data_quality = analysis.get('data_quality', {})
         except AttributeError:
-            # If analysis is not in expected format, use empty lists
             key_points = []
             main_themes = []
             recommendations = []
+            data_quality = {}
 
         # Create and return a Task object
         return Task(
             description=f"""
-            Write a {format_type} summary of the following research on: {query}
+            Write a {format_type} summary addressing this research question: {query}
 
-            Research Findings:
-            {research}
-
-            Analysis:
+            Analysis Results:
             Key Points: {json.dumps(key_points, indent=2)}
             Main Themes: {json.dumps(main_themes, indent=2)}
             Recommendations: {json.dumps(recommendations, indent=2)}
+            Data Quality Metrics: {json.dumps(data_quality, indent=2)}
 
             Guidelines:
             {self._get_format_guidelines(format_type)}
@@ -106,9 +102,9 @@ class WriterAgent:
             Additional Requirements:
             - Use clear, engaging language
             - Maintain academic rigor and accuracy
-            - Include specific examples and data points
             - Address implications for data justice and racial equity
             - Conclude with actionable insights
+            - Focus on synthesizing the key points and themes
             """,
             expected_output=f"""A {format_type} summary following the specified format guidelines:
                 - Brief: 250-500 words

@@ -12,7 +12,7 @@ class WebScraper:
         # self.crawler = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))
         self.crawler = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))
         
-    def search_and_scrape(self, prompt: str, max_pages: int = 5) -> List[Dict]:
+    def search_and_scrape(self, prompt: str, max_pages: int = 3) -> List[Dict]:
         """
         Search and scrape web content based on user prompt
         
@@ -26,9 +26,10 @@ class WebScraper:
         # Configure crawler settings
         self.crawler.configure(
             max_pages=max_pages,
-            follow_links=True,
+            follow_links=False,
             respect_robots=True,
-            delay=1.0  # 1 second delay between requests
+            delay=1.0,
+            max_content_length=2000
         )
         
         # Start the crawl based on prompt

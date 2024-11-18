@@ -4,9 +4,10 @@ from typing import Dict, Any
 import json
 from datetime import datetime
 import traceback
-from config import LLM_LLAMA70B, LLM_OLLAMA3_2
+from config import LLM_LLAMA70B, LLM_OLLAMA3_2, LLM_OLLAMA3_1
 import asyncio
 from concurrent.futures import TimeoutError
+import time
 
 class DataAnalystAgent:
     def __init__(self):
@@ -30,7 +31,9 @@ class DataAnalystAgent:
                 and extracting meaningful insights.""",
                 llm=LLM_OLLAMA3_2,
                 verbose=True,
-                allow_delegation=False
+                allow_delegation=False,
+                max_retries=3,
+                request_timeout=120  # 2 minutes timeout
             )
             print("Agent created successfully")
             return agent
@@ -104,26 +107,30 @@ class DataAnalystAgent:
     
     def _execute_task_with_timeout(self, task: Task, task_name: str) -> Any:
         """Execute a task with timeout and detailed logging"""
-        print(f"\n{'='*50}")
-        print(f"Starting {task_name}")
-        print(f"{'='*50}")
+        print(f"\nStarting {task_name}")
         
-        try:
-            # Set timeout for task execution
-            result = self.agent.execute_task(task)
-            print(f"\nTask Result for {task_name}:")
-            print(f"{'='*30}")
-            print(result)
-            print(f"{'='*30}")
-            return result
-            
-        except TimeoutError:
-            print(f"\nTimeout executing {task_name} after {self.timeout} seconds")
-            raise
-        except Exception as e:
-            print(f"\nError executing {task_name}: {str(e)}")
-            traceback.print_exc()
-            raise
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Add delay between retries
+                if attempt > 0:
+                    time.sleep(5)  # Wait 5 seconds between retries
+                    print(f"Retry attempt {attempt + 1} for {task_name}")
+                
+                # Execute task with timeout
+                result = self.agent.execute_task(task)
+                print(f"Task {task_name} completed successfully")
+                return result
+                
+            except Exception as e:
+                print(f"Error in attempt {attempt + 1} for {task_name}: {str(e)}")
+                if attempt == max_retries - 1:  # Last attempt
+                    print(f"Failed to execute {task_name} after {max_retries} attempts")
+                    raise
+                
+                # Try restarting the agent before next attempt
+                print("Recreating agent for next attempt...")
+                self.agent = self.create_agent()
     
     def _extract_key_points(self, text: str) -> list:
         """Extract main points from the research text"""
