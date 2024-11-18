@@ -300,3 +300,110 @@ To contribute to this tool:
 ## License
 
 This tool is provided under the MIT License. See LICENSE file for details.
+
+## Future Work
+
+### Planned Improvements
+
+#### 1. Frontend Interface
+- Develop a web-based UI using React/Next.js
+- Add interactive research topic exploration
+- Implement real-time progress tracking
+- Visualize analysis results and data relationships
+- Create a dashboard for managing multiple research projects
+
+#### 2. Additional AI Agents
+- **Editor Agent**: Review and refine written summaries
+- **Fact Checker Agent**: Verify claims and cross-reference sources
+- **Citation Agent**: Ensure proper academic citations
+- **Bias Detection Agent**: Identify and flag potential biases in research
+- **Data Visualization Agent**: Create charts and graphs from findings
+
+#### 3. Enhanced LLM Integration
+- Fine-tune LLMs specifically for D4BL research topics
+- Create a specialized D4BL knowledge base
+- Implement domain-specific prompts and templates
+- Develop evaluation metrics for data justice analysis
+
+#### 4. Retrieval Augmented Generation (RAG)
+- Build a D4BL-specific vector database
+- Integrate academic papers and research
+- Include community testimonies and case studies
+- Implement semantic search capabilities
+- Add real-time fact verification
+
+#### 5. Deployment and Scaling
+- Containerize application using Docker
+- Set up CI/CD pipeline
+- Deploy to cloud platforms (AWS/GCP/Azure)
+- Implement load balancing for multiple users
+- Add monitoring and logging systems
+
+#### 6. Data Management
+- Create structured database for research results
+- Implement version control for reports
+- Add collaborative research capabilities
+- Enable project sharing and commenting
+- Build export functionality for various formats
+
+#### 7. Research Enhancement
+- Add support for multiple research methodologies
+- Implement comparative analysis features
+- Enable longitudinal study tracking
+- Add geographic data analysis
+- Include demographic data integration
+
+#### 8. Community Features
+- Add user authentication and profiles
+- Enable research sharing within communities
+- Create discussion forums for findings
+- Implement peer review system
+- Add collaborative editing features
+
+#### 9. API Development
+- Create RESTful API for external integration
+- Enable programmatic access to research tools
+- Add webhook support for automation
+- Implement rate limiting and usage tracking
+- Create SDK for developers
+
+#### 10. Documentation and Training
+- Create comprehensive API documentation
+- Develop user guides and tutorials
+- Add interactive examples
+- Create training materials for new users
+- Build contribution guidelines
+
+### Contributing to Future Development
+
+We welcome contributions in the following areas:
+
+1. **Code Contributions**
+   - Bug fixes
+   - Feature implementations
+   - Performance improvements
+   - Test coverage
+
+2. **Documentation**
+   - Technical documentation
+   - User guides
+   - Use case examples
+   - Installation guides
+
+3. **Research**
+   - D4BL methodology development
+   - LLM prompt engineering
+   - Data justice frameworks
+   - Evaluation metrics
+
+4. **Testing**
+   - Unit tests
+   - Integration tests
+   - User acceptance testing
+   - Performance testing
+
+To contribute:
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request with detailed description
+4. Follow the contribution guidelines
