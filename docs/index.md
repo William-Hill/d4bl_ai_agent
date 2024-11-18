@@ -1,6 +1,7 @@
 ---
 layout: default
 title: Home
+permalink: /
 ---
 
 # D4BL Research and Analysis Tool
@@ -27,6 +28,6 @@ python d4bl.py "your research question"
 
 ## Navigation
 
-- [Installation Guide]({{ site.baseurl }}/installation.html) - Setup and configuration
-- [Architecture Overview]({{ site.baseurl }}/architecture.html) - System design and components
-- [API Reference]({{ site.baseurl }}/api-reference.html) - API documentation
+- [Installation Guide]({{ site.baseurl }}/installation) - Setup and configuration
+- [Architecture Overview]({{ site.baseurl }}/architecture) - System design and components
+- [API Reference]({{ site.baseurl }}/api-reference) - API documentation
