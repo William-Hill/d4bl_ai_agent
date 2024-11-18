@@ -27,7 +27,8 @@ class WriterAgent:
         format_type: Literal['brief', 'detailed', 'comprehensive'] = 'detailed'
     ) -> Dict:
         """Write a summary of the research and analysis results"""
-        print("\nStarting summary generation...")
+        print(f"\n{'='*30} Starting summary generation {'='*30}")
+        # print("\nStarting summary generation...")
         
         try:
             # Extract only the essential information

@@ -192,6 +192,7 @@ def main():
     parser.add_argument(
         'query',
         type=str,
+        nargs='?',  # Make query optional
         help='Research query or topic to investigate'
     )
     parser.add_argument(
@@ -210,7 +211,7 @@ def main():
     
     args = parser.parse_args()
     
-    # Example D4BL research topics if none provided
+    # Example D4BL research topics
     example_topics = [
         "How does algorithmic bias affect criminal justice outcomes for Black communities?",
         "What are the impacts of data-driven policing on Black neighborhoods?",
@@ -218,23 +219,65 @@ def main():
         "What role does big data play in perpetuating housing discrimination?"
     ]
     
-    analyzer = D4BLResearchAnalyzer()
-    
-    if args.query.lower() == "examples":
+    # If no query provided, prompt user
+    if not args.query:
         print("\nExample Research Topics:")
-        for topic in example_topics:
-            print(f"- {topic}")
-        return
+        for i, topic in enumerate(example_topics, 1):
+            print(f"{i}. {topic}")
+        print("\n0. Enter custom query")
+        
+        while True:
+            try:
+                choice = input("\nSelect a topic number (0-4): ")
+                if choice == '0':
+                    args.query = input("\nEnter your research query: ")
+                    break
+                elif choice.isdigit() and 1 <= int(choice) <= len(example_topics):
+                    args.query = example_topics[int(choice) - 1]
+                    break
+                else:
+                    print("Invalid choice. Please select a number between 0 and 4.")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
     
-    # Conduct research and analysis
+    # If no summary type provided, prompt user
+    if not args.summary:
+        print("\nSummary Types:")
+        print("1. Brief (250-500 words)")
+        print("2. Detailed (1000-1500 words)")
+        print("3. Comprehensive (2000-3000 words)")
+        print("4. No summary")
+        
+        while True:
+            try:
+                choice = input("\nSelect summary type (1-4): ")
+                if choice == '4':
+                    args.summary = None
+                    break
+                elif choice.isdigit() and 1 <= int(choice) <= 3:
+                    summary_types = ['brief', 'detailed', 'comprehensive']
+                    args.summary = summary_types[int(choice) - 1]
+                    break
+                else:
+                    print("Invalid choice. Please select a number between 1 and 4.")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+    
+    print(f"\n{'='*80}")
+    print(f"Starting research on: {args.query}")
+    if args.summary:
+        print(f"Summary type: {args.summary}")
+    print(f"{'='*80}\n")
+    
+    analyzer = D4BLResearchAnalyzer()
     results = analyzer.analyze_topic(args.query, args.summary)
     
     # Print results based on output format
-    # if args.output == 'full':
-    #     print("\n=== Full Results ===")
-    #     print(json.dumps(results, indent=2, ensure_ascii=False))
-    # else:
-    #     print_results(results)
+    if args.output == 'full':
+        print("\n=== Full Results ===")
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+    else:
+        print_results(results)
 
 if __name__ == "__main__":
     main() 
