@@ -16,6 +16,96 @@ pip install -r requirements.txt
 FIRECRAWL_API_KEY=<your_firecrawl_api_key>
 ```
 
+## LLM Configuration
+
+This tool uses a combination of locally hosted LLMs (via Ollama) and cloud-based LLMs (via Groq) for different tasks.
+
+### Ollama Setup
+
+1. Install Ollama from [ollama.ai](https://ollama.ai)
+
+2. Pull the required models:
+```bash
+ollama pull llama3.1
+ollama pull llama3.2
+```
+
+3. Start the Ollama service:
+```bash
+ollama serve
+```
+
+The service will run on `http://localhost:11434` by default.
+
+### Groq Setup
+
+1. Sign up for a Groq account at [groq.com](https://groq.com)
+
+2. Get your API key from the Groq dashboard
+
+3. Add your Groq API key to the `.env` file:
+```bash
+GROQ_API_KEY=<your_groq_api_key>
+```
+
+### Available Models
+
+The tool uses different models for different tasks:
+
+#### Groq Models
+- **Llama 3 70B**: High-performance model for complex tasks
+- **Llama 3 8B**: Efficient model for general tasks
+- **Gemma 2 9B**: Google's model for focused analysis
+- **Mixtral 8x7B**: Mixture of experts model for diverse tasks
+
+#### Ollama Models
+- **Llama 3.1**: Local model for research analysis
+- **Llama 3.2**: Local model for writing tasks
+
+### Model Configuration
+
+Models can be configured in `config.py`. Default settings:
+```python
+# Groq Models
+LLM_LLAMA70B = ChatGroq(model_name="llama3-70b-8192")
+LLM_LLAMA8B = ChatGroq(model_name="llama3-8b-8192")
+LLM_GEMMA2 = ChatGroq(model_name="gemma2-9b-it")
+LLM_MIXTRAL = ChatGroq(model_name="mixtral-8x7b-32768")
+
+# Ollama Models
+LLM_OLLAMA3_1 = ChatOllama(
+    model='llama3.1',
+    timeout=120.0,
+    temperature=0.5,
+    streaming=True,
+    base_url="http://localhost:11434",
+    retry_on_failure=True,
+    num_retries=3
+)
+```
+
+### Troubleshooting LLMs
+
+If you encounter LLM-related issues:
+
+1. **Ollama Issues**
+   - Ensure Ollama is running (`ollama serve`)
+   - Check model availability (`ollama list`)
+   - Verify port 11434 is available
+   - Monitor system resources
+
+2. **Groq Issues**
+   - Verify API key in `.env`
+   - Check Groq service status
+   - Monitor API usage limits
+   - Ensure internet connectivity
+
+3. **General LLM Issues**
+   - Check model loading errors
+   - Monitor memory usage
+   - Verify input lengths
+   - Check for timeout settings
+
 ## Usage
 
 ### Basic Command
