@@ -362,10 +362,58 @@ This tool is provided under the MIT License. See LICENSE file for details.
 
 #### 9. API Development
 - Create RESTful API for external integration
+  - `/research` endpoint for initiating research
+  - `/analysis` endpoint for analyzing existing research
+  - `/summary` endpoint for generating summaries
+  - `/status` endpoint for checking job progress
 - Enable programmatic access to research tools
+  - Python SDK for easy integration
+  - API client libraries for multiple languages
+  - Swagger/OpenAPI documentation
 - Add webhook support for automation
+  - Notification system for completed research
+  - Integration with external workflows
+  - Event-driven architecture
 - Implement rate limiting and usage tracking
+  - User-based quotas
+  - Usage analytics
+  - Cost tracking for LLM usage
 - Create SDK for developers
+  - Easy-to-use client libraries
+  - Code examples and tutorials
+  - Integration templates
+
+Example API Usage:
+```python
+from d4bl_client import D4BLClient
+
+client = D4BLClient(api_key="your_api_key")
+
+# Start research
+research_job = client.research.create(
+    query="How does algorithmic bias affect criminal justice?",
+    summary_type="detailed"
+)
+
+# Check status
+status = client.research.get_status(research_job.id)
+
+# Get results
+if status.is_complete:
+    results = client.research.get_results(research_job.id)
+    summary = results.summary
+    analysis = results.analysis
+```
+
+Planned API Endpoints:
+```
+POST /api/v1/research
+GET  /api/v1/research/{job_id}
+GET  /api/v1/research/{job_id}/status
+POST /api/v1/analysis
+POST /api/v1/summary
+GET  /api/v1/jobs/{job_id}/results
+```
 
 #### 10. Documentation and Training
 - Create comprehensive API documentation
