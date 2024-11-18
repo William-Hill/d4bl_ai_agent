@@ -4,3 +4,6 @@ __pycache__
 reports/
 archived_reports/
 archived_search_results/
+error_logs/
+research_analysis/
+search_results/
