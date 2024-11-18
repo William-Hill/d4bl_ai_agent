@@ -1,0 +1,19 @@
+@import "{{ site.theme }}";
+
+.page-header {
+  padding: 2rem;
+  
+  nav {
+    margin-top: 1rem;
+    
+    .btn {
+      margin: 0 0.5rem;
+    }
+  }
+}
+
+.main-content {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem;
+} 
