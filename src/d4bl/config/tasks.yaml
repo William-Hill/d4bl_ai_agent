@@ -1,0 +1,54 @@
+research_task:
+  description: >
+    Conduct thorough research on the following query: {query}
+    Use web search tools to find relevant information from multiple sources.
+    Focus on finding information related to data justice, racial equity, and social impact.
+    Make sure you find any interesting and relevant information given
+    the current year is {current_year}.
+  expected_output: >
+    A comprehensive research report with findings from multiple sources.
+    Include key information, sources, and relevant details about {query}.
+  agent: researcher
+
+analysis_task:
+  description: >
+    Analyze the research results provided from the research_task.
+    Extract key points, identify main themes, assess data quality (completeness, relevance, reliability),
+    and generate actionable recommendations.
+    Focus on implications for data justice and racial equity.
+  expected_output: >
+    A structured analysis containing:
+    - Key points (3-5 main findings)
+    - Main themes (2-3 overarching themes)
+    - Data quality assessment (completeness, relevance, reliability scores)
+    - Recommendations (actionable steps)
+  agent: data_analyst
+  context:
+    - research_task
+
+writing_task:
+  description: >
+    Write a {summary_format} summary based on the research and analysis results.
+    Use the research findings from research_task and the analysis from analysis_task.
+    
+    Format requirements based on {summary_format}:
+    - If brief: 250-500 words, focus on key findings and main implications, include 3-4 main points
+    - If detailed: 1000-1500 words, provide thorough analysis with methodology overview, use subheadings
+    - If comprehensive: 2000-3000 words, in-depth analysis with extensive context, include executive summary
+    
+    Guidelines:
+    - Use clear, engaging language
+    - Maintain academic rigor and accuracy
+    - Address implications for data justice and racial equity
+    - Conclude with actionable insights
+    - Focus on synthesizing the key points and themes from the analysis
+    - Create an annotated bibliography from the research sources
+  expected_output: >
+    A {summary_format} summary following the specified format guidelines.
+    The summary should be well-structured, engaging, and address the research query: {query}.
+    Include an annotated bibliography section at the end.
+  agent: writer
+  context:
+    - research_task
+    - analysis_task
+
