@@ -4,17 +4,175 @@ This tool combines web research, data analysis, and writing capabilities to inve
 
 ## Setup
 
-1. Install the required dependencies: 
+### Prerequisites
+
+**Python Version Requirements**
+
+This project requires `Python >=3.10 and <3.14`. Check your version:
 
 ```bash
+python3 --version
+```
+
+**Installing a Compatible Python Version**
+
+We recommend using `pyenv` for clean Python version management. This project includes a `.python-version` file that automatically sets the correct Python version.
+
+**Recommended: Using pyenv (macOS/Linux)**
+
+1. **Install pyenv:**
+   ```bash
+   # macOS
+   brew install pyenv
+   
+   # Linux (Ubuntu/Debian)
+   curl https://pyenv.run | bash
+   ```
+
+2. **Add pyenv to your shell:**
+   ```bash
+   # Add to ~/.zshrc (or ~/.bashrc on Linux)
+   echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.zshrc
+   echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.zshrc
+   echo 'eval "$(pyenv init -)"' >> ~/.zshrc
+   
+   # Reload your shell
+   source ~/.zshrc
+   ```
+
+3. **Install Python 3.13.9:**
+   ```bash
+   pyenv install 3.13.9
+   ```
+
+4. **Set the local version for this project:**
+   ```bash
+   cd /path/to/d4bl_ai_agent
+   pyenv local 3.13.9
+   ```
+
+   This creates a `.python-version` file that pyenv will automatically use when you're in this directory.
+
+5. **Verify:**
+   ```bash
+   python --version  # Should show Python 3.13.9
+   ```
+
+**Alternative: Direct Installation (macOS)**
+
+If you prefer not to use pyenv:
+
+```bash
+# Install Python 3.13 via Homebrew
+brew install python@3.13
+
+# Verify installation
+python3.13 --version
+```
+
+**Alternative: Direct Installation (Linux)**
+
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3.13 python3.13-venv python3.13-pip
+```
+
+**Alternative: Direct Installation (Windows)**
+
+Download Python 3.13 from [python.org/downloads](https://python.org/downloads) or use the Microsoft Store.
+
+### Installation
+
+CrewAI now uses `uv` as its dependency management tool. Follow these steps to set up the project:
+
+#### Step 1: Install uv (if not already installed)
+
+**On macOS/Linux:**
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+If your system doesn't have `curl`, you can use `wget`:
+
+```bash
+wget -qO- https://astral.sh/uv/install.sh | sh
+```
+
+**On Windows:**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+If you encounter a `PATH` warning, run:
+
+```bash
+uv tool update-shell
+```
+
+For more information, refer to [UV's installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+#### Step 2: Install Project Dependencies
+
+**If using pyenv (recommended):**
+
+The project's `.python-version` file ensures you're using the correct Python version. Simply:
+
+```bash
+# Make sure pyenv is initialized in your shell
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+
+# Verify you're using Python 3.13.9
+python --version
+
+# Install dependencies with uv
+uv pip install -r requirements.txt
+
+# Or with pip
 pip install -r requirements.txt
 ```
 
-2. Create a `.env` file with your Firecrawl API key:
+**If not using pyenv:**
+
+Install the required dependencies using `uv`:
+
+```bash
+# Specify Python 3.13 explicitly
+uv pip install -r requirements.txt --python python3.13
+
+# Or if your default python3 is compatible (3.10-3.13)
+uv pip install -r requirements.txt
+```
+
+Alternatively, if you prefer using traditional `pip` with a virtual environment:
+
+```bash
+# Create a virtual environment with Python 3.13
+python3.13 -m venv venv
+source venv/bin/activate  # On macOS/Linux
+# or
+venv\Scripts\activate  # On Windows
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+**Note:** CrewAI 0.175.0+ requires `openai >= 1.13.3`. Ensure your environment satisfies this constraint.
+
+#### Step 3: Configure Environment Variables
+
+Create a `.env` file with your API keys:
 
 ```bash
 FIRECRAWL_API_KEY=<your_firecrawl_api_key>
+GROQ_API_KEY=<your_groq_api_key>
 ```
+
+See the [LLM Configuration](#llm-configuration) section below for more details on setting up Groq.
 
 ## LLM Configuration
 
@@ -282,13 +440,84 @@ The tool provides:
 
 ## Troubleshooting
 
-If you encounter issues:
+### Python Version Issues
+
+**Error: "Python version not supported" or "requires Python >=3.10 and <3.14"**
+
+If you have Python 3.14 or higher installed, you need to use a compatible version.
+
+**Recommended Solution: Use pyenv**
+
+1. **Install pyenv** (if not already installed):
+   ```bash
+   # macOS
+   brew install pyenv
+   
+   # Linux
+   curl https://pyenv.run | bash
+   ```
+
+2. **Set up pyenv in your shell** (add to ~/.zshrc or ~/.bashrc):
+   ```bash
+   export PYENV_ROOT="$HOME/.pyenv"
+   command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+   eval "$(pyenv init -)"
+   ```
+
+3. **Install and set Python 3.13.9:**
+   ```bash
+   pyenv install 3.13.9
+   cd /path/to/d4bl_ai_agent
+   pyenv local 3.13.9
+   ```
+
+4. **Verify:**
+   ```bash
+   python --version  # Should show Python 3.13.9
+   ```
+
+**Alternative Solution: Direct Installation**
+
+1. **Check your current Python version:**
+   ```bash
+   python3 --version
+   ```
+
+2. **Install Python 3.13:**
+   ```bash
+   # macOS
+   brew install python@3.13
+   
+   # Linux (Ubuntu/Debian)
+   sudo apt install python3.13 python3.13-venv python3.13-pip
+   ```
+
+3. **Use the specific Python version:**
+   ```bash
+   # With uv
+   uv pip install -r requirements.txt --python python3.13
+   
+   # Or create a virtual environment
+   python3.13 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+4. **Run scripts with the correct Python version:**
+   ```bash
+   python3.13 d4bl.py "your query here"
+   ```
+
+### General Issues
+
+If you encounter other issues:
 
 1. Check your API key in `.env`
 2. Ensure all dependencies are installed
 3. Verify internet connection
 4. Check for rate limiting if making many requests
 5. Ensure query is properly formatted (use quotes for multi-word queries)
+6. Verify you're using a compatible Python version (see above)
 
 ## Contributing
 
