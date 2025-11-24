@@ -251,12 +251,29 @@ class D4Bl():
         """Creates the D4Bl crew"""
         # To learn how to add knowledge sources to your crew, check out the documentation:
         # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
+        # Memory documentation: https://docs.crewai.com/en/concepts/memory
+
+        # Configure memory with Ollama embeddings to match LLM provider
+        # This enables short-term, long-term, and entity memory for all agents
+        # CrewAI will automatically use environment variables for embedder configuration
+        # Environment variables are set in docker-compose.yml:
+        # - EMBEDDINGS_OLLAMA_BASE_URL
+        # - EMBEDDINGS_OLLAMA_MODEL_NAME
+        
+        # Ensure environment variables are set (fallback if not in docker-compose)
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        if not os.getenv("EMBEDDINGS_OLLAMA_BASE_URL"):
+            os.environ["EMBEDDINGS_OLLAMA_BASE_URL"] = ollama_base_url
+        if not os.getenv("EMBEDDINGS_OLLAMA_MODEL_NAME"):
+            os.environ["EMBEDDINGS_OLLAMA_MODEL_NAME"] = "mxbai-embed-large"
 
         return Crew(
             agents=self.agents, # Automatically created by the @agent decorator
             tasks=self.tasks, # Automatically created by the @task decorator
             process=Process.sequential,
             verbose=True,
+            memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
+            # embedder config is read from environment variables automatically
             # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
         )
 

@@ -6,9 +6,10 @@ import ProgressCard from '@/components/ProgressCard';
 import ResultsCard from '@/components/ResultsCard';
 import ErrorCard from '@/components/ErrorCard';
 import LiveLogs from '@/components/LiveLogs';
+import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { createResearchJob, getJobStatus } from '@/lib/api';
+import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 
 export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
@@ -101,6 +102,41 @@ export default function Home() {
     }
   };
 
+  const handleSelectJob = async (job: JobStatus) => {
+    try {
+      setError(null);
+      setJobId(null);
+      setProgress('');
+      setLiveLogs([]);
+      
+      // If job is completed, show results
+      if (job.status === 'completed' && job.result) {
+        setResults(job.result);
+        // Scroll to results
+        setTimeout(() => {
+          const resultsElement = document.querySelector('[data-results]');
+          resultsElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+      } else if (job.status === 'error') {
+        setError(job.error || 'Job failed');
+      } else {
+        // For running/pending jobs, fetch latest status
+        const latestStatus = await getJobStatus(job.job_id);
+        if (latestStatus.status === 'completed' && latestStatus.result) {
+          setResults(latestStatus.result);
+        } else if (latestStatus.status === 'error') {
+          setError(latestStatus.error || 'Job failed');
+        } else {
+          // Job is still running, set it as current job
+          setJobId(job.job_id);
+          setProgress(latestStatus.progress || 'Processing...');
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load job details');
+    }
+  };
+
   const clearError = () => {
     setError(null);
   };
@@ -136,9 +172,15 @@ export default function Home() {
             </>
           )}
 
-          {results && <ResultsCard results={results} />}
+          {results && (
+            <div data-results>
+              <ResultsCard results={results} />
+            </div>
+          )}
 
           {error && <ErrorCard message={error} onDismiss={clearError} />}
+
+          <JobHistory onSelectJob={handleSelectJob} />
         </main>
 
         <footer className="mt-16 pt-8 border-t border-[#404040]">

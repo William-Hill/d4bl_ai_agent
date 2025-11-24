@@ -9,21 +9,46 @@ import io
 import queue
 import threading
 from datetime import datetime
-from typing import Optional
-from uuid import uuid4
+from typing import Optional, List
+from uuid import uuid4, UUID
 from contextlib import redirect_stdout, redirect_stderr
 
 import os
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc, func
 
 from d4bl.crew import D4Bl
+from d4bl.database import (
+    init_db, get_db, create_tables, close_db,
+    ResearchJob, async_session_maker
+)
 
 app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on application startup"""
+    try:
+        init_db()
+        await create_tables()
+        print("✓ Database initialized successfully")
+    except Exception as e:
+        print(f"⚠ Warning: Database initialization failed: {e}")
+        print("  The application will continue but jobs won't be persisted.")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connections on shutdown"""
+    await close_db()
+
 
 # Get project root directory
 project_root = Path(__file__).parent.parent.parent
@@ -69,10 +94,19 @@ class JobStatus(BaseModel):
     progress: Optional[str] = None
     result: Optional[dict] = None
     error: Optional[str] = None
+    query: Optional[str] = None
+    summary_format: Optional[str] = None
+    logs: Optional[List[str]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
-# In-memory job storage (use a database in production)
-jobs: dict[str, JobStatus] = {}
+class JobHistoryResponse(BaseModel):
+    jobs: List[JobStatus]
+    total: int
+    page: int
+    page_size: int
 
 
 async def send_websocket_update(job_id: str, message: dict):
@@ -127,14 +161,56 @@ class LiveOutputHandler:
         """Get all captured logs"""
         return self.logs
 
+async def update_job_status(
+    db: AsyncSession,
+    job_id: str,
+    status: str,
+    progress: Optional[str] = None,
+    result: Optional[dict] = None,
+    error: Optional[str] = None,
+    logs: Optional[list] = None
+):
+    """Update job status in database"""
+    try:
+        job_uuid = UUID(job_id)
+        result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
+        result_obj = await db.execute(result_query)
+        job = result_obj.scalar_one_or_none()
+        
+        if job:
+            job.status = status
+            if progress is not None:
+                job.progress = progress
+            if result is not None:
+                job.result = result
+            if error is not None:
+                job.error = error
+            if logs is not None:
+                job.logs = logs
+            if status in ["completed", "error"]:
+                job.completed_at = datetime.utcnow()
+            job.updated_at = datetime.utcnow()
+            await db.commit()
+            await db.refresh(job)
+    except Exception as e:
+        print(f"Error updating job status in database: {e}")
+        await db.rollback()
+
+
 async def run_research_job(job_id: str, query: str, summary_format: str):
     """Run the research crew and send progress updates via WebSocket"""
     # Initialize logs for this job
     job_logs[job_id] = []
     
+    # Get database session
+    async for db in get_db():
+        try:
+            await update_job_status(db, job_id, "running", "Initializing research crew...")
+            break
+        except Exception as e:
+            print(f"Error updating job status: {e}")
+    
     try:
-        jobs[job_id].status = "running"
-        jobs[job_id].progress = "Initializing research crew..."
         
         await send_websocket_update(job_id, {
             "type": "progress",
@@ -142,6 +218,14 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
             "status": "running",
             "progress": "Initializing research crew..."
         })
+        
+        # Update database
+        async for db in get_db():
+            try:
+                await update_job_status(db, job_id, "running", "Initializing research crew...")
+                break
+            except Exception as e:
+                print(f"Error updating job status: {e}")
 
         inputs = {
             'query': query,
@@ -155,6 +239,14 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
             "status": "running",
             "progress": "Starting research task..."
         })
+        
+        # Update database
+        async for db in get_db():
+            try:
+                await update_job_status(db, job_id, "running", "Starting research task...")
+                break
+            except Exception as e:
+                print(f"Error updating job status: {e}")
 
         # Initialize crew with error handling
         try:
@@ -188,9 +280,7 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
                     if message:
                         await send_websocket_update(job_id, message)
                 except queue.Empty:
-                    # Check if job is still running
-                    if job_id not in jobs or jobs[job_id].status not in ["running"]:
-                        break
+                    # Continue processing (job status is tracked in database)
                     await asyncio.sleep(0.1)
                 except Exception as e:
                     print(f"Error processing log queue: {e}")
@@ -252,6 +342,14 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
             "status": "running",
             "progress": "Research completed, processing results..."
         })
+        
+        # Update database
+        async for db in get_db():
+            try:
+                await update_job_status(db, job_id, "running", "Research completed, processing results...")
+                break
+            except Exception as e:
+                print(f"Error updating job status: {e}")
 
         # Extract results with error handling
         result_dict = {
@@ -314,9 +412,18 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
         except Exception as e:
             print(f"Error reading report file: {e}")
 
-        jobs[job_id].status = "completed"
-        jobs[job_id].result = result_dict
-        jobs[job_id].progress = "Research completed successfully!"
+        # Update database with completed status
+        async for db in get_db():
+            try:
+                await update_job_status(
+                    db, job_id, "completed",
+                    progress="Research completed successfully!",
+                    result=result_dict,
+                    logs=job_logs.get(job_id, [])
+                )
+                break
+            except Exception as e:
+                print(f"Error updating job status: {e}")
 
         await send_websocket_update(job_id, {
             "type": "complete",
@@ -328,9 +435,19 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
 
     except Exception as e:
         error_msg = str(e)
-        jobs[job_id].status = "error"
-        jobs[job_id].error = error_msg
-        jobs[job_id].progress = f"Error: {error_msg}"
+        
+        # Update database with error status
+        async for db in get_db():
+            try:
+                await update_job_status(
+                    db, job_id, "error",
+                    progress=f"Error: {error_msg}",
+                    error=error_msg,
+                    logs=job_logs.get(job_id, [])
+                )
+                break
+            except Exception as db_error:
+                print(f"Error updating job status in database: {db_error}")
 
         await send_websocket_update(job_id, {
             "type": "error",
@@ -356,7 +473,7 @@ async def read_root():
 
 
 @app.post("/api/research", response_model=ResearchResponse)
-async def create_research(request: ResearchRequest):
+async def create_research(request: ResearchRequest, db: AsyncSession = Depends(get_db)):
     """Create a new research job"""
     try:
         if not request.query or not request.query.strip():
@@ -365,12 +482,18 @@ async def create_research(request: ResearchRequest):
         if request.summary_format not in ["brief", "detailed", "comprehensive"]:
             raise HTTPException(status_code=400, detail="Invalid summary_format. Must be: brief, detailed, or comprehensive")
         
-        job_id = str(uuid4())
-        jobs[job_id] = JobStatus(
-            job_id=job_id,
+        # Create job in database
+        job = ResearchJob(
+            query=request.query,
+            summary_format=request.summary_format,
             status="pending",
             progress="Job created, waiting to start..."
         )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        
+        job_id = str(job.job_id)
         
         # Start the research job in the background (WebSocket will connect separately)
         asyncio.create_task(run_research_job(job_id, request.query, request.summary_format))
@@ -393,23 +516,66 @@ async def create_research(request: ResearchRequest):
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
     """Get the status of a research job"""
-    if job_id not in jobs:
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+    
+    result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
+    result_obj = await db.execute(result_query)
+    job = result_obj.scalar_one_or_none()
+    
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    job = jobs[job_id]
-    # Ensure result is JSON serializable
-    if job.result:
-        try:
-            # Test if result is JSON serializable
-            import json
-            json.dumps(job.result)
-        except (TypeError, ValueError) as e:
-            # If not serializable, convert to string
-            job.result = {"error": f"Result serialization error: {str(e)}", "raw": str(job.result)}
-    
-    return job
+    return JobStatus(**job.to_dict())
+
+
+@app.get("/api/jobs", response_model=JobHistoryResponse)
+async def get_job_history(
+    page: int = 1,
+    page_size: int = 20,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get paginated job history"""
+    try:
+        # Build query
+        query = select(ResearchJob)
+        
+        # Filter by status if provided
+        if status:
+            query = query.where(ResearchJob.status == status)
+        
+        # Order by created_at descending (newest first)
+        query = query.order_by(desc(ResearchJob.created_at))
+        
+        # Get total count
+        count_query = select(func.count(ResearchJob.job_id))
+        if status:
+            count_query = count_query.where(ResearchJob.status == status)
+        count_result = await db.execute(count_query)
+        total = count_result.scalar() or 0
+        
+        # Apply pagination
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        
+        # Execute query
+        result = await db.execute(query)
+        jobs = result.scalars().all()
+        
+        return JobHistoryResponse(
+            jobs=[JobStatus(**job.to_dict()) for job in jobs],
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    except Exception as e:
+        print(f"Error fetching job history: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching job history: {str(e)}")
 
 
 @app.websocket("/ws/{job_id}")
@@ -420,28 +586,47 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     
     try:
         # Send current status if job exists (in case job already completed)
-        if job_id in jobs:
-            job = jobs[job_id]
-            if job.status == "completed":
-                await websocket.send_json({
-                    "type": "complete",
-                    "job_id": job_id,
-                    "status": "completed",
-                    "result": job.result
-                })
-            elif job.status == "error":
-                await websocket.send_json({
-                    "type": "error",
-                    "job_id": job_id,
-                    "status": "error",
-                    "error": job.error
-                })
-            else:
+        # Try to get from database first
+        try:
+            job_uuid = UUID(job_id)
+            async for db in get_db():
+                result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
+                result_obj = await db.execute(result_query)
+                job = result_obj.scalar_one_or_none()
+                
+                if job:
+                    job_dict = job.to_dict()
+                    if job.status == "completed":
+                        await websocket.send_json({
+                            "type": "complete",
+                            "job_id": job_id,
+                            "status": "completed",
+                            "result": job_dict.get("result")
+                        })
+                    elif job.status == "error":
+                        await websocket.send_json({
+                            "type": "error",
+                            "job_id": job_id,
+                            "status": "error",
+                            "error": job_dict.get("error")
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "status",
+                            "job_id": job_id,
+                            "status": job.status,
+                            "progress": job_dict.get("progress"),
+                            "logs": job_dict.get("logs") or job_logs.get(job_id, [])
+                        })
+                break
+        except Exception as db_error:
+            print(f"Error fetching job from database: {db_error}")
+            # Fallback to in-memory logs if available
+            if job_id in job_logs:
                 await websocket.send_json({
                     "type": "status",
                     "job_id": job_id,
-                    "status": job.status,
-                    "progress": job.progress,
+                    "status": "unknown",
                     "logs": job_logs.get(job_id, [])
                 })
         
