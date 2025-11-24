@@ -2,7 +2,9 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-from typing import List
+from crewai.tools import BaseTool
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Type, Union
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -82,6 +84,64 @@ def get_ollama_llm():
             ) from e
     return _ollama_llm
 
+
+class FirecrawlSearchWrapperInput(BaseModel):
+    """Input schema for Firecrawl Search Wrapper tool."""
+    query: Union[str, dict] = Field(..., description="The search query as a plain text string. Example: 'data science trends 2025'")
+    
+    @field_validator('query', mode='before')
+    @classmethod
+    def normalize_query(cls, v):
+        """Normalize input - handle both strings and dicts from Ollama."""
+        if isinstance(v, dict):
+            # Extract the actual query value from various possible dict formats
+            if 'query' in v:
+                return v['query']
+            elif 'description' in v:
+                # Sometimes Ollama passes the description field as the value
+                desc = v['description']
+                # If description contains the actual query, use it
+                if isinstance(desc, str) and len(desc) > 5:
+                    return desc
+            elif 'value' in v:
+                return v['value']
+            else:
+                # Try to get the first string value that looks like a query
+                for key, value in v.items():
+                    if isinstance(value, str) and len(value) > 5:
+                        return value
+                # Last resort: convert dict to string
+                return str(v)
+        elif isinstance(v, str):
+            return v
+        else:
+            return str(v)
+
+
+class FirecrawlSearchWrapper(BaseTool):
+    """Wrapper tool for FirecrawlSearchTool that normalizes input format for Ollama compatibility."""
+    name: str = "Firecrawl web search tool"
+    description: str = (
+        "Search webpages using Firecrawl and return the results. "
+        "Pass the search query as a plain text string. "
+        "Example: Use 'data science trends 2025' not a dictionary or schema."
+    )
+    args_schema: Type[BaseModel] = FirecrawlSearchWrapperInput
+    
+    def __init__(self, firecrawl_tool: FirecrawlSearchTool):
+        super().__init__()
+        # Use object.__setattr__ to bypass Pydantic's validation for internal attributes
+        object.__setattr__(self, '_firecrawl_tool', firecrawl_tool)
+    
+    def _run(self, query: str) -> str:
+        """Execute the search with normalized input."""
+        # Ensure query is a string (should already be normalized by schema)
+        if not isinstance(query, str):
+            query = str(query)
+        
+        # Call the actual Firecrawl tool
+        return self._firecrawl_tool._run(query=query)
+
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -116,15 +176,20 @@ class D4Bl():
                 "with: FIRECRAWL_API_KEY=your_api_key_here"
             )
         
+        # Create the base Firecrawl tool
         firecrawl_tool = FirecrawlSearchTool(
             api_key=firecrawl_api_key,
             max_pages=3,  # Limit to 3 pages
             max_results=5  # Limit to 5 results per page
         )
+        
+        # Wrap it to handle Ollama's function calling format issues
+        firecrawl_wrapper = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
+        
         return Agent(
             config=self.agents_config['researcher'], # type: ignore[index]
             llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            tools=[firecrawl_tool],
+            tools=[firecrawl_wrapper],
             verbose=True,
             allow_delegation=False
         )
@@ -255,17 +320,21 @@ class D4Bl():
 
         # Configure memory with Ollama embeddings to match LLM provider
         # This enables short-term, long-term, and entity memory for all agents
-        # CrewAI will automatically use environment variables for embedder configuration
-        # Environment variables are set in docker-compose.yml:
-        # - EMBEDDINGS_OLLAMA_BASE_URL
-        # - EMBEDDINGS_OLLAMA_MODEL_NAME
+        # Explicitly configure embedder to use Ollama instead of default OpenAI
         
-        # Ensure environment variables are set (fallback if not in docker-compose)
         ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        if not os.getenv("EMBEDDINGS_OLLAMA_BASE_URL"):
-            os.environ["EMBEDDINGS_OLLAMA_BASE_URL"] = ollama_base_url
-        if not os.getenv("EMBEDDINGS_OLLAMA_MODEL_NAME"):
-            os.environ["EMBEDDINGS_OLLAMA_MODEL_NAME"] = "mxbai-embed-large"
+        embedder_model = "mxbai-embed-large"
+        
+        # Construct the embedder configuration
+        # CrewAI requires explicit embedder config to avoid defaulting to OpenAI
+        # Note: Use "url" pointing to /api/embeddings endpoint, not "base_url"
+        embedder_config = {
+            "provider": "ollama",
+            "config": {
+                "model": embedder_model,
+                "url": f"{ollama_base_url}/api/embeddings"
+            }
+        }
 
         return Crew(
             agents=self.agents, # Automatically created by the @agent decorator
@@ -273,7 +342,7 @@ class D4Bl():
             process=Process.sequential,
             verbose=True,
             memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
-            # embedder config is read from environment variables automatically
+            embedder=embedder_config,  # Explicitly set Ollama embedder to avoid OpenAI default
             # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
         )
 
