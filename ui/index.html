@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D4BL AI Agent - Research Tool</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔬 D4BL AI Agent</h1>
+            <p class="subtitle">Data for Black Lives Research & Analysis Tool</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Start New Research</h2>
+                <form id="researchForm">
+                    <div class="form-group">
+                        <label for="query">Research Query</label>
+                        <textarea 
+                            id="query" 
+                            name="query" 
+                            rows="4" 
+                            placeholder="Enter your research question here...&#10;&#10;Example: How does algorithmic bias affect criminal justice outcomes for Black communities?"
+                            required
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="summaryFormat">Summary Format</label>
+                        <select id="summaryFormat" name="summaryFormat">
+                            <option value="brief">Brief (250-500 words)</option>
+                            <option value="detailed" selected>Detailed (1000-1500 words)</option>
+                            <option value="comprehensive">Comprehensive (2000-3000 words)</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" id="submitBtn" class="btn btn-primary">
+                        <span id="submitText">Start Research</span>
+                        <span id="submitSpinner" class="spinner hidden"></span>
+                    </button>
+                </form>
+            </div>
+
+            <div id="progressCard" class="card hidden">
+                <h2>Research Progress</h2>
+                <div id="progressContent">
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill"></div>
+                    </div>
+                    <p id="progressText" class="progress-text">Initializing...</p>
+                </div>
+            </div>
+
+            <div id="resultsCard" class="card hidden">
+                <h2>Research Results</h2>
+                <div id="resultsContent">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+
+            <div id="errorCard" class="card error hidden">
+                <h2>Error</h2>
+                <p id="errorMessage"></p>
+                <button onclick="clearError()" class="btn btn-secondary">Dismiss</button>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by CrewAI & Ollama</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

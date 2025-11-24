@@ -55,18 +55,32 @@ if env_loaded:
     
 # Print LLM configuration
 print("🤖 LLM Configuration:")
-print("  Using Ollama with Llama 3.1")
+print("  Using Ollama with Mistral 7B")
 print(f"  Ollama Base URL: {os.getenv('OLLAMA_BASE_URL')}")
 print()
 
-# Configure Ollama LLM with Llama 3.1
+# Configure Ollama LLM with Mistral 7B
 # Using direct code configuration as per CrewAI documentation
-ollama_llm = LLM(
-    model="ollama/llama3.1",
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-    temperature=0.5,  # Lower temperature for more focused responses
-    timeout=120.0,    # 2 minutes timeout
-)
+# Initialize lazily to avoid import-time errors when API server starts
+_ollama_llm = None
+
+def get_ollama_llm():
+    """Get or create the Ollama LLM instance (lazy initialization)"""
+    global _ollama_llm
+    if _ollama_llm is None:
+        try:
+            _ollama_llm = LLM(
+                model="ollama/mistral",
+                base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                temperature=0.5,  # Lower temperature for more focused responses
+                timeout=120.0,    # 2 minutes timeout
+            )
+        except ImportError as e:
+            raise ImportError(
+                "LiteLLM is required for Ollama support. "
+                "Please install it with: pip install litellm"
+            ) from e
+    return _ollama_llm
 
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
@@ -109,7 +123,7 @@ class D4Bl():
         )
         return Agent(
             config=self.agents_config['researcher'], # type: ignore[index]
-            llm=ollama_llm,  # Use Ollama LLM configured above
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
             tools=[firecrawl_tool],
             verbose=True,
             allow_delegation=False
@@ -119,7 +133,7 @@ class D4Bl():
     def data_analyst(self) -> Agent:
         return Agent(
             config=self.agents_config['data_analyst'], # type: ignore[index]
-            llm=ollama_llm,  # Use Ollama LLM configured above
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
             verbose=True,
             allow_delegation=False,
             max_retries=3
@@ -129,7 +143,7 @@ class D4Bl():
     def writer(self) -> Agent:
         return Agent(
             config=self.agents_config['writer'], # type: ignore[index]
-            llm=ollama_llm,  # Use Ollama LLM configured above
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
             verbose=True,
             allow_delegation=False
         )

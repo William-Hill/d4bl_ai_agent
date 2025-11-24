@@ -1,0 +1,27 @@
+[project]
+name = "d4bl"
+version = "0.1.0"
+description = "d4bl using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]==1.5.0",
+    "firecrawl-py>=4.8.0",
+    "python-dotenv>=1.0.0",
+    "litellm>=1.0.0",
+]
+
+[project.scripts]
+d4bl = "d4bl.main:run"
+run_crew = "d4bl.main:run"
+train = "d4bl.main:train"
+replay = "d4bl.main:replay"
+test = "d4bl.main:test"
+run_with_trigger = "d4bl.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"

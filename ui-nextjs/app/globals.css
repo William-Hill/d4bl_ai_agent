@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+:root {
+  --background: #292929;
+  --foreground: #ffffff;
+  --d4bl-primary: #00ff32;
+  --d4bl-bg: #292929;
+  --d4bl-text: #ffffff;
+  --d4bl-text-secondary: #e5e5e5;
+  --d4bl-border: #404040;
+  --d4bl-card-bg: #333333;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--d4bl-bg);
+  color: var(--d4bl-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* D4BL Brand Styling */
+* {
+  box-sizing: border-box;
+}
+
+/* Ensure good text contrast in prose content */
+.prose {
+  color: var(--d4bl-text-secondary);
+}
+
+.prose p {
+  color: var(--d4bl-text-secondary);
+  line-height: 1.7;
+}
+
+.prose strong {
+  color: var(--d4bl-text);
+  font-weight: 700;
+}
+
+.prose code {
+  color: var(--d4bl-primary);
+  background-color: rgba(0, 255, 50, 0.1);
+  border: 1px solid var(--d4bl-border);
+}
+
+.prose pre {
+  background-color: #1a1a1a;
+  color: var(--d4bl-text-secondary);
+  border: 1px solid var(--d4bl-border);
+}
+
+.prose pre code {
+  background-color: transparent;
+  border: none;
+  color: var(--d4bl-text-secondary);
+}
+
+.prose a {
+  color: var(--d4bl-primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+
+.prose a:hover {
+  color: #00cc28;
+  text-decoration-thickness: 2px;
+}
+
+/* Ensure input fields have good contrast */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  color: var(--d4bl-text);
+  background-color: var(--d4bl-card-bg);
+  border-color: var(--d4bl-border);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #888888;
+  opacity: 1;
+}
+
+/* D4BL Button Styles */
+button {
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
