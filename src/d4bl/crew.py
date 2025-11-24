@@ -2,7 +2,9 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-from typing import List
+from crewai.tools import BaseTool
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Type, Union
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -64,23 +66,115 @@ print()
 # Initialize lazily to avoid import-time errors when API server starts
 _ollama_llm = None
 
+# Request queue management for Ollama
+# Note: Actual request queuing is handled by Ollama server-side
+# Client-side we can configure retries and timeouts, but the server manages the queue
+# Configure Ollama server-side queue via environment variables when starting Ollama:
+# - OLLAMA_MAX_QUEUE: Maximum number of queued requests (default: 512)
+# - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto, typically 4 or 1)
+# - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
+
 def get_ollama_llm():
     """Get or create the Ollama LLM instance (lazy initialization)"""
     global _ollama_llm
     if _ollama_llm is None:
         try:
+            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            # Ensure base_url doesn't have trailing slash for LiteLLM compatibility
+            ollama_base_url = ollama_base_url.rstrip('/')
+            
+            # Set environment variable for LiteLLM to use
+            os.environ["OLLAMA_API_BASE"] = ollama_base_url
+            
+            # Note: Ollama server-side queue settings can be configured via environment variables:
+            # - OLLAMA_MAX_QUEUE: Maximum number of queued requests (default: 512)
+            # - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto)
+            # - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
+            # These should be set when starting Ollama, not here.
+            
             _ollama_llm = LLM(
                 model="ollama/mistral",
-                base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                base_url=ollama_base_url,
                 temperature=0.5,  # Lower temperature for more focused responses
-                timeout=120.0,    # 2 minutes timeout
+                timeout=180.0,    # 3 minutes timeout (increased for reliability)
+                num_retries=5,    # Increased retries for connection issues
             )
+            print(f"✅ Initialized Ollama LLM with base_url: {ollama_base_url}")
+            print(f"   Note: Configure Ollama server queue settings (OLLAMA_MAX_QUEUE, OLLAMA_NUM_PARALLEL) when starting Ollama")
         except ImportError as e:
             raise ImportError(
                 "LiteLLM is required for Ollama support. "
                 "Please install it with: pip install litellm"
             ) from e
+        except Exception as e:
+            print(f"⚠️ Error initializing Ollama LLM: {e}")
+            raise
     return _ollama_llm
+
+
+def reset_ollama_llm():
+    """Reset the Ollama LLM instance (useful for connection issues)"""
+    global _ollama_llm
+    _ollama_llm = None
+    print("🔄 Reset Ollama LLM instance")
+
+
+class FirecrawlSearchWrapperInput(BaseModel):
+    """Input schema for Firecrawl Search Wrapper tool."""
+    query: Union[str, dict] = Field(..., description="The search query as a plain text string. Example: 'data science trends 2025'")
+    
+    @field_validator('query', mode='before')
+    @classmethod
+    def normalize_query(cls, v):
+        """Normalize input - handle both strings and dicts from Ollama."""
+        if isinstance(v, dict):
+            # Extract the actual query value from various possible dict formats
+            if 'query' in v:
+                return v['query']
+            elif 'description' in v:
+                # Sometimes Ollama passes the description field as the value
+                desc = v['description']
+                # If description contains the actual query, use it
+                if isinstance(desc, str) and len(desc) > 5:
+                    return desc
+            elif 'value' in v:
+                return v['value']
+            else:
+                # Try to get the first string value that looks like a query
+                for key, value in v.items():
+                    if isinstance(value, str) and len(value) > 5:
+                        return value
+                # Last resort: convert dict to string
+                return str(v)
+        elif isinstance(v, str):
+            return v
+        else:
+            return str(v)
+
+
+class FirecrawlSearchWrapper(BaseTool):
+    """Wrapper tool for FirecrawlSearchTool that normalizes input format for Ollama compatibility."""
+    name: str = "Firecrawl web search tool"
+    description: str = (
+        "Search webpages using Firecrawl and return the results. "
+        "Pass the search query as a plain text string. "
+        "Example: Use 'data science trends 2025' not a dictionary or schema."
+    )
+    args_schema: Type[BaseModel] = FirecrawlSearchWrapperInput
+    
+    def __init__(self, firecrawl_tool: FirecrawlSearchTool):
+        super().__init__()
+        # Use object.__setattr__ to bypass Pydantic's validation for internal attributes
+        object.__setattr__(self, '_firecrawl_tool', firecrawl_tool)
+    
+    def _run(self, query: str) -> str:
+        """Execute the search with normalized input."""
+        # Ensure query is a string (should already be normalized by schema)
+        if not isinstance(query, str):
+            query = str(query)
+        
+        # Call the actual Firecrawl tool
+        return self._firecrawl_tool._run(query=query)
 
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
@@ -116,15 +210,20 @@ class D4Bl():
                 "with: FIRECRAWL_API_KEY=your_api_key_here"
             )
         
+        # Create the base Firecrawl tool
         firecrawl_tool = FirecrawlSearchTool(
             api_key=firecrawl_api_key,
             max_pages=3,  # Limit to 3 pages
             max_results=5  # Limit to 5 results per page
         )
+        
+        # Wrap it to handle Ollama's function calling format issues
+        firecrawl_wrapper = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
+        
         return Agent(
             config=self.agents_config['researcher'], # type: ignore[index]
             llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            tools=[firecrawl_tool],
+            tools=[firecrawl_wrapper],
             verbose=True,
             allow_delegation=False
         )
@@ -251,12 +350,33 @@ class D4Bl():
         """Creates the D4Bl crew"""
         # To learn how to add knowledge sources to your crew, check out the documentation:
         # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
+        # Memory documentation: https://docs.crewai.com/en/concepts/memory
+
+        # Configure memory with Ollama embeddings to match LLM provider
+        # This enables short-term, long-term, and entity memory for all agents
+        # Explicitly configure embedder to use Ollama instead of default OpenAI
+        
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        embedder_model = "mxbai-embed-large"
+        
+        # Construct the embedder configuration
+        # CrewAI requires explicit embedder config to avoid defaulting to OpenAI
+        # Note: Use "url" pointing to /api/embeddings endpoint, not "base_url"
+        embedder_config = {
+            "provider": "ollama",
+            "config": {
+                "model": embedder_model,
+                "url": f"{ollama_base_url}/api/embeddings"
+            }
+        }
 
         return Crew(
             agents=self.agents, # Automatically created by the @agent decorator
             tasks=self.tasks, # Automatically created by the @task decorator
             process=Process.sequential,
             verbose=True,
+            memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
+            embedder=embedder_config,  # Explicitly set Ollama embedder to avoid OpenAI default
             # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
         )
 

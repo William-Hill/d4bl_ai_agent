@@ -8,6 +8,12 @@ researcher:
     and the ability to synthesize complex information from multiple sources. 
     You excel at finding relevant information and presenting it in a clear, 
     organized manner. You specialize in data justice and social impact topics.
+    
+    IMPORTANT: When using the Firecrawl web search tool, you must pass the search query 
+    as a plain string value, NOT as a dictionary or schema. For example, if you want to 
+    search for "data science trends 2025", pass the string "data science trends 2025" 
+    directly to the query parameter. Never pass parameter schemas or dictionaries - only 
+    pass the actual search query as a simple text string.
 
 data_analyst:
   role: >

@@ -36,6 +36,19 @@ export interface JobStatus {
   progress?: string;
   result?: any;
   error?: string;
+  query?: string;
+  summary_format?: string;
+  logs?: string[];
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string;
+}
+
+export interface JobHistoryResponse {
+  jobs: JobStatus[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export async function createResearchJob(
@@ -66,6 +79,29 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
 
   if (!response.ok) {
     throw new Error('Failed to fetch job status');
+  }
+
+  return response.json();
+}
+
+export async function getJobHistory(
+  page: number = 1,
+  pageSize: number = 20,
+  status?: string
+): Promise<JobHistoryResponse> {
+  const params = new URLSearchParams({
+    page: page.toString(),
+    page_size: pageSize.toString(),
+  });
+  
+  if (status) {
+    params.append('status', status);
+  }
+
+  const response = await fetch(`${API_BASE}/api/jobs?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch job history');
   }
 
   return response.json();

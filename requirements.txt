@@ -6,7 +6,13 @@ uvicorn[standard]>=0.30.0
 # CrewAI and AI Agent Framework
 crewai[tools]==1.5.0
 
+# Database
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0
+alembic>=1.13.0
+
 # Tools and utilities
 firecrawl-py>=0.0.20
 python-dotenv>=1.1.1
 litellm>=1.0.0
+ollama>=0.1.0  # Required for Ollama embeddings in CrewAI memory
