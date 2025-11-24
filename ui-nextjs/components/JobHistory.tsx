@@ -68,13 +68,12 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <div className="bg-[#333333] border border-[#404040] rounded-lg p-6 shadow-sm">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-white">Query History</h2>
+    <div className="p-4">
+      <div className="flex items-center justify-between mb-4">
         <button
           onClick={loadHistory}
           disabled={loading}
-          className="px-4 py-2 bg-[#404040] hover:bg-[#505050] text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 bg-[#404040] hover:bg-[#505050] text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
@@ -138,46 +137,33 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
         </div>
       ) : (
         <>
-          <div className="space-y-3 mb-4">
+          <div className="space-y-2 mb-4">
             {jobs.map((job) => (
               <div
                 key={job.job_id}
-                className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-4 hover:border-[#00ff32]/50 transition-colors cursor-pointer"
+                className="bg-[#292929] border border-[#404040] rounded-lg p-3 hover:border-[#00ff32]/50 transition-colors cursor-pointer"
                 onClick={() => onSelectJob?.(job)}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={getStatusBadge(job.status)}>
-                        {job.status.toUpperCase()}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={getStatusBadge(job.status)}>
+                      {job.status.toUpperCase()}
+                    </span>
+                    {job.summary_format && (
+                      <span className="text-xs text-gray-500">
+                        {job.summary_format}
                       </span>
-                      {job.summary_format && (
-                        <span className="text-xs text-gray-500">
-                          {job.summary_format}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-white font-medium mb-1">
-                      {job.query ? truncateQuery(job.query) : 'No query'}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-gray-400 mt-2">
-                      <span>Created: {formatDate(job.created_at)}</span>
-                      {job.completed_at && (
-                        <span>Completed: {formatDate(job.completed_at)}</span>
-                      )}
-                    </div>
+                    )}
                   </div>
-                  {onSelectJob && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectJob(job);
-                      }}
-                      className="px-3 py-1 bg-[#00ff32] hover:bg-[#00cc28] text-black rounded text-sm font-medium transition-colors"
-                    >
-                      View
-                    </button>
-                  )}
+                  <p className="text-white text-sm font-medium line-clamp-2">
+                    {job.query ? truncateQuery(job.query, 60) : 'No query'}
+                  </p>
+                  <div className="flex flex-col gap-1 text-xs text-gray-400">
+                    <span>Created: {formatDate(job.created_at)}</span>
+                    {job.completed_at && (
+                      <span>Completed: {formatDate(job.completed_at)}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -185,25 +171,22 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t border-[#404040]">
-              <div className="text-sm text-gray-400">
-                Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, total)} of {total} jobs
+            <div className="flex flex-col gap-2 pt-4 border-t border-[#404040]">
+              <div className="text-xs text-gray-400 text-center">
+                Page {page} of {totalPages} ({total} total)
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 justify-center">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1 || loading}
-                  className="px-3 py-1 bg-[#404040] hover:bg-[#505050] text-white rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 bg-[#404040] hover:bg-[#505050] text-white rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Previous
+                  Prev
                 </button>
-                <span className="px-3 py-1 text-sm text-gray-300">
-                  Page {page} of {totalPages}
-                </span>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages || loading}
-                  className="px-3 py-1 bg-[#404040] hover:bg-[#505050] text-white rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 bg-[#404040] hover:bg-[#505050] text-white rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Next
                 </button>

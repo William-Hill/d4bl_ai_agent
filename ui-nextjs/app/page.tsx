@@ -17,6 +17,7 @@ export default function Home() {
   const [results, setResults] = useState<any>(null);
   const [progress, setProgress] = useState<string>('');
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
@@ -112,10 +113,10 @@ export default function Home() {
       // If job is completed, show results
       if (job.status === 'completed' && job.result) {
         setResults(job.result);
-        // Scroll to results
+        // Scroll main content area to top to show results
         setTimeout(() => {
-          const resultsElement = document.querySelector('[data-results]');
-          resultsElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const mainContent = document.querySelector('[data-main-content]');
+          mainContent?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
       } else if (job.status === 'error') {
         setError(job.error || 'Job failed');
@@ -143,75 +144,115 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#292929]">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <header className="text-center mb-12">
-          <div className="flex justify-center mb-8">
-            <D4BLLogo />
-          </div>
-          <div className="mb-6">
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">
-              AI Research & Analysis Tool
-            </h1>
-            <div className="w-24 h-1 bg-[#00ff32] mx-auto mb-4"></div>
-          </div>
-          <p className="text-lg text-gray-300 max-w-2xl mx-auto leading-relaxed">
-            Using data to create concrete and measurable change in the lives of Black people
-          </p>
-        </header>
-
-        <main className="space-y-6">
-          <ResearchForm onSubmit={handleSubmit} disabled={!!jobId} />
-
-          {jobId && (
-            <>
-              <ProgressCard
-                progress={progress}
-                isConnected={isConnected}
-              />
-              <LiveLogs logs={liveLogs} />
-            </>
-          )}
-
-          {results && (
-            <div data-results>
-              <ResultsCard results={results} />
+      <div className="flex flex-col lg:flex-row h-screen">
+        {/* Left Sidebar - Job History */}
+        <aside 
+          className={`${
+            sidebarOpen ? 'w-full lg:w-80 xl:w-96' : 'w-0 lg:w-0'
+          } bg-[#1a1a1a] border-r border-[#404040] flex flex-col overflow-hidden transition-all duration-300 ease-in-out`}
+        >
+          <div className={`${sidebarOpen ? 'flex' : 'hidden'} flex-col h-full`}>
+            <div className="p-4 border-b border-[#404040] flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Query History</h2>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 hover:bg-[#404040] rounded transition-colors"
+                aria-label="Close sidebar"
+              >
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-          )}
-
-          {error && <ErrorCard message={error} onDismiss={clearError} />}
-
-          <JobHistory onSelectJob={handleSelectJob} />
-        </main>
-
-        <footer className="mt-16 pt-8 border-t border-[#404040]">
-          <div className="text-center space-y-4">
-            <p className="text-sm text-gray-400">
-              Part of the <span className="font-semibold text-[#00ff32]">Data for Black Lives</span> movement
-            </p>
-            <p className="text-xs text-gray-500">
-              Powered by CrewAI & Ollama
-            </p>
-            <div className="flex justify-center space-x-6 mt-6">
-              <a 
-                href="https://d4bl.org" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-sm text-gray-400 hover:text-[#00ff32] transition-colors"
-              >
-                Visit d4bl.org
-              </a>
-              <span className="text-gray-600">|</span>
-              <a 
-                href="https://d4bl.org/get-involved" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-sm text-gray-400 hover:text-[#00ff32] transition-colors"
-              >
-                Get Involved
-              </a>
+            <div className="flex-1 overflow-y-auto">
+              <JobHistory onSelectJob={handleSelectJob} />
             </div>
           </div>
-        </footer>
+        </aside>
+
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-y-auto relative" data-main-content>
+          {/* Sidebar Toggle Button */}
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="absolute top-4 left-4 z-10 p-2 bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#404040] rounded-md transition-colors"
+              aria-label="Open sidebar"
+            >
+              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
+          <div className="max-w-5xl mx-auto px-4 py-8">
+            <header className="text-center mb-12">
+              <div className="flex justify-center mb-8">
+                <D4BLLogo />
+              </div>
+              <div className="mb-6">
+                <h1 className="text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">
+                  AI Research & Analysis Tool
+                </h1>
+                <div className="w-24 h-1 bg-[#00ff32] mx-auto mb-4"></div>
+              </div>
+              <p className="text-lg text-gray-300 max-w-2xl mx-auto leading-relaxed">
+                Using data to create concrete and measurable change in the lives of Black people
+              </p>
+            </header>
+
+            <main className="space-y-6">
+              <ResearchForm onSubmit={handleSubmit} disabled={!!jobId} />
+
+              {jobId && (
+                <>
+                  <ProgressCard
+                    progress={progress}
+                    isConnected={isConnected}
+                  />
+                  <LiveLogs logs={liveLogs} />
+                </>
+              )}
+
+              {results && (
+                <div data-results>
+                  <ResultsCard results={results} />
+                </div>
+              )}
+
+              {error && <ErrorCard message={error} onDismiss={clearError} />}
+            </main>
+
+            <footer className="mt-16 pt-8 border-t border-[#404040]">
+              <div className="text-center space-y-4">
+                <p className="text-sm text-gray-400">
+                  Part of the <span className="font-semibold text-[#00ff32]">Data for Black Lives</span> movement
+                </p>
+                <p className="text-xs text-gray-500">
+                  Powered by CrewAI & Ollama
+                </p>
+                <div className="flex justify-center space-x-6 mt-6">
+                  <a 
+                    href="https://d4bl.org" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-gray-400 hover:text-[#00ff32] transition-colors"
+                  >
+                    Visit d4bl.org
+                  </a>
+                  <span className="text-gray-600">|</span>
+                  <a 
+                    href="https://d4bl.org/get-involved" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-gray-400 hover:text-[#00ff32] transition-colors"
+                  >
+                    Get Involved
+                  </a>
+                </div>
+              </div>
+            </footer>
+          </div>
+        </div>
       </div>
     </div>
   );
