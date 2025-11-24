@@ -52,3 +52,107 @@ writing_task:
     - research_task
     - analysis_task
 
+fact_checker_task:
+  description: >
+    Review the written summary from writing_task and verify all factual claims.
+    Cross-reference claims with the original research sources from research_task.
+    Identify any statements that cannot be verified or that contradict the source material.
+    Flag any potentially inaccurate information or unsupported claims.
+    Focus on ensuring accuracy of statistics, dates, names, and key assertions.
+  expected_output: >
+    A fact-checking report that:
+    - Lists all verified claims
+    - Flags any unverified or potentially inaccurate claims
+    - Provides corrections or clarifications where needed
+    - References the original sources for verification
+  agent: fact_checker
+  context:
+    - research_task
+    - writing_task
+
+citation_task:
+  description: >
+    Review the written summary from writing_task and ensure all sources are properly cited.
+    Verify that all citations follow a consistent academic format (prefer APA style).
+    Check that all sources mentioned in the text have corresponding citations.
+    Ensure the annotated bibliography is complete and properly formatted.
+    Add missing citations where sources are referenced but not cited.
+  expected_output: >
+    A citation review report that:
+    - Lists all properly formatted citations
+    - Identifies any missing citations
+    - Provides corrected citation formats where needed
+    - Ensures the bibliography is complete and properly formatted
+  agent: citation_agent
+  context:
+    - research_task
+    - writing_task
+
+bias_detection_task:
+  description: >
+    Analyze the research findings, analysis, and written summary for potential biases.
+    Review research_task, analysis_task, and writing_task outputs.
+    Identify potential biases including:
+    - Confirmation bias (selective use of evidence)
+    - Selection bias (non-representative sources)
+    - Cultural bias (assumptions based on cultural norms)
+    - Systemic biases (structural inequalities in data or methodology)
+    - Language bias (biased terminology or framing)
+    Provide recommendations to mitigate identified biases.
+  expected_output: >
+    A bias detection report that:
+    - Identifies potential biases in the research and analysis
+    - Explains the nature and impact of each identified bias
+    - Provides recommendations to address or mitigate biases
+    - Suggests alternative perspectives or additional sources if needed
+  agent: bias_detection_agent
+  context:
+    - research_task
+    - analysis_task
+    - writing_task
+
+editor_task:
+  description: >
+    Review and refine the written summary from writing_task, incorporating feedback from
+    fact_checker_task, citation_task, and bias_detection_task.
+    Improve clarity, coherence, and readability while maintaining accuracy.
+    Ensure logical flow and consistency in tone and style.
+    Address any issues identified in the fact-checking, citation, and bias detection reports.
+    Polish the final document for publication quality.
+  expected_output: >
+    A refined and edited version of the summary that:
+    - Incorporates corrections from fact-checking
+    - Includes proper citations as verified
+    - Addresses identified biases
+    - Has improved clarity, coherence, and readability
+    - Maintains academic rigor and accuracy
+  agent: editor
+  context:
+    - writing_task
+    - fact_checker_task
+    - citation_task
+    - bias_detection_task
+
+data_visualization_task:
+  description: >
+    Create visual representations of the research findings and analysis.
+    Use the data and insights from analysis_task to generate appropriate visualizations.
+    Consider creating:
+    - Charts showing key statistics or trends
+    - Graphs illustrating relationships or comparisons
+    - Diagrams explaining concepts or processes
+    - Infographics summarizing main findings
+    Provide descriptions of what visualizations would be most effective and why.
+    Include recommendations for chart types, data to visualize, and design considerations.
+  expected_output: >
+    A data visualization plan that includes:
+    - Descriptions of recommended visualizations
+    - Rationale for each visualization type
+    - Data points to be visualized
+    - Design recommendations for clarity and accessibility
+    - Text descriptions that could accompany each visualization
+  agent: data_visualization_agent
+  context:
+    - analysis_task
+    - research_task
+
