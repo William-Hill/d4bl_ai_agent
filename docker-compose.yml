@@ -3,28 +3,54 @@ version: '3.8'
 services:
   d4bl-api:
     build: .
+    container_name: d4bl-api
     ports:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app/src
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      # Use host.docker.internal to access Ollama running on the host machine
+      # On Linux, you may need to use the host's IP address instead
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     env_file:
       - .env
     volumes:
       - ./output:/app/output
       - ./.env:/app/.env:ro
-    depends_on:
-      - ollama
+    # Removed depends_on: ollama since we're using host Ollama
     restart: unless-stopped
+    networks:
+      - d4bl-network
+    extra_hosts:
+      # Add host.docker.internal for Linux compatibility
+      - "host.docker.internal:host-gateway"
 
-  ollama:
-    image: ollama/ollama:latest
+  d4bl-frontend:
+    build:
+      context: ./ui-nextjs
+      dockerfile: Dockerfile
+      args:
+        # Pass NEXT_PUBLIC_API_URL at build time so it's embedded in the client bundle
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: d4bl-frontend
     ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # For client-side connections (browser), use the exposed port
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # For server-side rendering in Docker, use the internal service name
+      - API_INTERNAL_URL=http://d4bl-api:8000
+    depends_on:
+      - d4bl-api
     restart: unless-stopped
+    networks:
+      - d4bl-network
 
-volumes:
-  ollama_data:
+  # Ollama service removed - using Ollama running on the host machine
+  # Make sure Ollama is running on your host: ollama serve
+  # And pull the Mistral model: ollama pull mistral
+
+networks:
+  d4bl-network:
+    driver: bridge
 

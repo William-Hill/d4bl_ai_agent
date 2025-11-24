@@ -5,6 +5,7 @@ import ResearchForm from '@/components/ResearchForm';
 import ProgressCard from '@/components/ProgressCard';
 import ResultsCard from '@/components/ResultsCard';
 import ErrorCard from '@/components/ErrorCard';
+import LiveLogs from '@/components/LiveLogs';
 import D4BLLogo from '@/components/D4BLLogo';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus } from '@/lib/api';
@@ -14,6 +15,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<any>(null);
   const [progress, setProgress] = useState<string>('');
+  const [liveLogs, setLiveLogs] = useState<string[]>([]);
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
@@ -24,14 +26,29 @@ export default function Home() {
         const data = JSON.parse(lastMessage.data);
         console.log('WebSocket message received:', data);
         
-        if (data.type === 'progress' || data.type === 'status') {
+        if (data.type === 'log') {
+          // Append new log message
+          setLiveLogs(prev => [...prev, data.message]);
+        } else if (data.type === 'progress' || data.type === 'status') {
           setProgress(data.progress || 'Processing...');
+          // Initialize logs if provided
+          if (data.logs && Array.isArray(data.logs)) {
+            setLiveLogs(data.logs);
+          }
         } else if (data.type === 'complete') {
           setProgress('Research completed!');
           setResults(data.result);
+          // Keep logs from completion message
+          if (data.logs && Array.isArray(data.logs)) {
+            setLiveLogs(data.logs);
+          }
           setJobId(null);
         } else if (data.type === 'error') {
           setError(data.error || 'An error occurred during research');
+          // Keep logs from error message
+          if (data.logs && Array.isArray(data.logs)) {
+            setLiveLogs(data.logs);
+          }
           setJobId(null);
         }
       } catch (err) {
@@ -72,6 +89,7 @@ export default function Home() {
       setError(null);
       setResults(null);
       setProgress('Creating research job...');
+      setLiveLogs([]); // Clear previous logs
 
       const response = await createResearchJob(query, summaryFormat);
       setJobId(response.job_id);
@@ -79,6 +97,7 @@ export default function Home() {
     } catch (err: any) {
       setError(err.message || 'Failed to create research job');
       setJobId(null);
+      setLiveLogs([]);
     }
   };
 
@@ -108,10 +127,13 @@ export default function Home() {
           <ResearchForm onSubmit={handleSubmit} disabled={!!jobId} />
 
           {jobId && (
-            <ProgressCard
-              progress={progress}
-              isConnected={isConnected}
-            />
+            <>
+              <ProgressCard
+                progress={progress}
+                isConnected={isConnected}
+              />
+              <LiveLogs logs={liveLogs} />
+            </>
           )}
 
           {results && <ResultsCard results={results} />}

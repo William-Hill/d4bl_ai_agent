@@ -4,9 +4,14 @@ FastAPI backend for D4BL AI Agent UI
 import asyncio
 import json
 import os
+import sys
+import io
+import queue
+import threading
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
+from contextlib import redirect_stdout, redirect_stderr
 
 import os
 from pathlib import Path
@@ -39,6 +44,12 @@ app.add_middleware(
 
 # Store active WebSocket connections
 active_connections: dict[str, WebSocket] = {}
+
+# Store live output logs for each job
+job_logs: dict[str, list] = {}
+
+# Queues for sending log messages asynchronously (one per job)
+log_queues: dict[str, queue.Queue] = {}
 
 
 class ResearchRequest(BaseModel):
@@ -75,8 +86,52 @@ async def send_websocket_update(job_id: str, message: dict):
             if job_id in active_connections:
                 del active_connections[job_id]
 
+
+class LiveOutputHandler:
+    """Custom output handler that captures stdout/stderr and sends via WebSocket"""
+    def __init__(self, job_id: str, original_stdout, original_stderr, log_queue: queue.Queue):
+        self.job_id = job_id
+        self.original_stdout = original_stdout
+        self.original_stderr = original_stderr
+        self.log_queue = log_queue
+        self.buffer = io.StringIO()
+        self.logs = []
+        
+    def write(self, text: str):
+        """Write to buffer and send via WebSocket"""
+        if text.strip():  # Only send non-empty lines
+            self.buffer.write(text)
+            self.logs.append(text)
+            
+            # Queue message for async sending
+            try:
+                self.log_queue.put_nowait({
+                    "job_id": self.job_id,
+                    "type": "log",
+                    "message": text,
+                    "timestamp": datetime.now().isoformat()
+                })
+            except queue.Full:
+                pass  # Queue is full, skip this message
+            
+            # Also write to original stdout for terminal visibility
+            self.original_stdout.write(text)
+            self.original_stdout.flush()
+    
+    def flush(self):
+        """Flush the buffer"""
+        self.buffer.flush()
+        self.original_stdout.flush()
+    
+    def get_logs(self) -> list:
+        """Get all captured logs"""
+        return self.logs
+
 async def run_research_job(job_id: str, query: str, summary_format: str):
     """Run the research crew and send progress updates via WebSocket"""
+    # Initialize logs for this job
+    job_logs[job_id] = []
+    
     try:
         jobs[job_id].status = "running"
         jobs[job_id].progress = "Initializing research crew..."
@@ -101,9 +156,95 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
             "progress": "Starting research task..."
         })
 
-        # Run the crew
-        crew_instance = D4Bl()
-        result = crew_instance.crew().kickoff(inputs=inputs)
+        # Initialize crew with error handling
+        try:
+            crew_instance = D4Bl()
+        except Exception as e:
+            error_msg = f"Failed to initialize crew: {str(e)}"
+            print(f"ERROR initializing crew: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(error_msg) from e
+
+        # Set up live output capture
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        
+        # Create a queue for this job
+        job_log_queue = queue.Queue()
+        log_queues[job_id] = job_log_queue
+        output_handler = LiveOutputHandler(job_id, original_stdout, original_stderr, job_log_queue)
+        
+        # Start background task to process log queue
+        async def process_log_queue():
+            """Process log messages from queue and send via WebSocket"""
+            while True:
+                try:
+                    # Get message from queue with timeout
+                    message = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: job_log_queue.get(timeout=0.1)
+                    )
+                    if message:
+                        await send_websocket_update(job_id, message)
+                except queue.Empty:
+                    # Check if job is still running
+                    if job_id not in jobs or jobs[job_id].status not in ["running"]:
+                        break
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    print(f"Error processing log queue: {e}")
+                    await asyncio.sleep(0.1)
+        
+        log_processor_task = asyncio.create_task(process_log_queue())
+        
+        # Run the crew with output capture
+        try:
+            # Redirect stdout and stderr to capture live output
+            sys.stdout = output_handler
+            sys.stderr = output_handler
+            
+            # Run crew in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: crew_instance.crew().kickoff(inputs=inputs)
+            )
+            
+        except Exception as e:
+            error_msg = f"Failed to run crew: {str(e)}"
+            print(f"ERROR running crew: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(error_msg) from e
+        finally:
+            # Restore original stdout/stderr
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            # Store logs
+            job_logs[job_id] = output_handler.get_logs()
+            
+            # Flush remaining log messages (wait a bit for queue to empty)
+            await asyncio.sleep(0.5)
+            
+            # Process any remaining messages in the queue
+            while not job_log_queue.empty():
+                try:
+                    message = job_log_queue.get_nowait()
+                    if message:
+                        await send_websocket_update(job_id, message)
+                except queue.Empty:
+                    break
+            
+            # Cancel log processor task
+            log_processor_task.cancel()
+            try:
+                await log_processor_task
+            except asyncio.CancelledError:
+                pass
+            # Clean up queue
+            if job_id in log_queues:
+                del log_queues[job_id]
 
         await send_websocket_update(job_id, {
             "type": "progress",
@@ -181,7 +322,8 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
             "type": "complete",
             "job_id": job_id,
             "status": "completed",
-            "result": result_dict
+            "result": result_dict,
+            "logs": job_logs.get(job_id, [])
         })
 
     except Exception as e:
@@ -194,7 +336,8 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
             "type": "error",
             "job_id": job_id,
             "status": "error",
-            "error": error_msg
+            "error": error_msg,
+            "logs": job_logs.get(job_id, [])
         })
 
 
@@ -215,27 +358,38 @@ async def read_root():
 @app.post("/api/research", response_model=ResearchResponse)
 async def create_research(request: ResearchRequest):
     """Create a new research job"""
-    if not request.query or not request.query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-    
-    if request.summary_format not in ["brief", "detailed", "comprehensive"]:
-        raise HTTPException(status_code=400, detail="Invalid summary_format. Must be: brief, detailed, or comprehensive")
-    
-    job_id = str(uuid4())
-    jobs[job_id] = JobStatus(
-        job_id=job_id,
-        status="pending",
-        progress="Job created, waiting to start..."
-    )
-    
-    # Start the research job in the background (WebSocket will connect separately)
-    asyncio.create_task(run_research_job(job_id, request.query, request.summary_format))
-    
-    return ResearchResponse(
-        job_id=job_id,
-        status="pending",
-        message="Research job created successfully"
-    )
+    try:
+        if not request.query or not request.query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        if request.summary_format not in ["brief", "detailed", "comprehensive"]:
+            raise HTTPException(status_code=400, detail="Invalid summary_format. Must be: brief, detailed, or comprehensive")
+        
+        job_id = str(uuid4())
+        jobs[job_id] = JobStatus(
+            job_id=job_id,
+            status="pending",
+            progress="Job created, waiting to start..."
+        )
+        
+        # Start the research job in the background (WebSocket will connect separately)
+        asyncio.create_task(run_research_job(job_id, request.query, request.summary_format))
+        
+        return ResearchResponse(
+            job_id=job_id,
+            status="pending",
+            message="Research job created successfully"
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Catch any other errors during job creation
+        error_msg = f"Error creating research job: {str(e)}"
+        print(f"ERROR in create_research: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
@@ -287,7 +441,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                     "type": "status",
                     "job_id": job_id,
                     "status": job.status,
-                    "progress": job.progress
+                    "progress": job.progress,
+                    "logs": job_logs.get(job_id, [])
                 })
         
         # Keep connection alive and handle messages

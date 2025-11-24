@@ -55,11 +55,11 @@ if env_loaded:
     
 # Print LLM configuration
 print("🤖 LLM Configuration:")
-print("  Using Ollama with Llama 3.1")
+print("  Using Ollama with Mistral 7B")
 print(f"  Ollama Base URL: {os.getenv('OLLAMA_BASE_URL')}")
 print()
 
-# Configure Ollama LLM with Llama 3.1
+# Configure Ollama LLM with Mistral 7B
 # Using direct code configuration as per CrewAI documentation
 # Initialize lazily to avoid import-time errors when API server starts
 _ollama_llm = None
@@ -70,7 +70,7 @@ def get_ollama_llm():
     if _ollama_llm is None:
         try:
             _ollama_llm = LLM(
-                model="ollama/llama3.1",
+                model="ollama/mistral",
                 base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
                 temperature=0.5,  # Lower temperature for more focused responses
                 timeout=120.0,    # 2 minutes timeout

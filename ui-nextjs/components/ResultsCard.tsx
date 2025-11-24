@@ -43,7 +43,8 @@ export default function ResultsCard({ results }: ResultsCardProps) {
 
     // Lists
     html = html.replace(/^\- (.*$)/gim, '<li class="ml-4 mb-1 text-gray-300">$1</li>');
-    html = html.replace(/(<li.*<\/li>)/s, '<ul class="list-disc ml-6 mb-4 text-gray-300">$1</ul>');
+    // Use [\s\S] instead of . with s flag for ES2017 compatibility
+    html = html.replace(/(<li[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-6 mb-4 text-gray-300">$1</ul>');
 
     return html;
   };
