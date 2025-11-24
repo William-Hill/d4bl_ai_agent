@@ -66,23 +66,57 @@ print()
 # Initialize lazily to avoid import-time errors when API server starts
 _ollama_llm = None
 
+# Request queue management for Ollama
+# Note: Actual request queuing is handled by Ollama server-side
+# Client-side we can configure retries and timeouts, but the server manages the queue
+# Configure Ollama server-side queue via environment variables when starting Ollama:
+# - OLLAMA_MAX_QUEUE: Maximum number of queued requests (default: 512)
+# - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto, typically 4 or 1)
+# - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
+
 def get_ollama_llm():
     """Get or create the Ollama LLM instance (lazy initialization)"""
     global _ollama_llm
     if _ollama_llm is None:
         try:
+            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            # Ensure base_url doesn't have trailing slash for LiteLLM compatibility
+            ollama_base_url = ollama_base_url.rstrip('/')
+            
+            # Set environment variable for LiteLLM to use
+            os.environ["OLLAMA_API_BASE"] = ollama_base_url
+            
+            # Note: Ollama server-side queue settings can be configured via environment variables:
+            # - OLLAMA_MAX_QUEUE: Maximum number of queued requests (default: 512)
+            # - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto)
+            # - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
+            # These should be set when starting Ollama, not here.
+            
             _ollama_llm = LLM(
                 model="ollama/mistral",
-                base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                base_url=ollama_base_url,
                 temperature=0.5,  # Lower temperature for more focused responses
-                timeout=120.0,    # 2 minutes timeout
+                timeout=180.0,    # 3 minutes timeout (increased for reliability)
+                num_retries=5,    # Increased retries for connection issues
             )
+            print(f"✅ Initialized Ollama LLM with base_url: {ollama_base_url}")
+            print(f"   Note: Configure Ollama server queue settings (OLLAMA_MAX_QUEUE, OLLAMA_NUM_PARALLEL) when starting Ollama")
         except ImportError as e:
             raise ImportError(
                 "LiteLLM is required for Ollama support. "
                 "Please install it with: pip install litellm"
             ) from e
+        except Exception as e:
+            print(f"⚠️ Error initializing Ollama LLM: {e}")
+            raise
     return _ollama_llm
+
+
+def reset_ollama_llm():
+    """Reset the Ollama LLM instance (useful for connection issues)"""
+    global _ollama_llm
+    _ollama_llm = None
+    print("🔄 Reset Ollama LLM instance")
 
 
 class FirecrawlSearchWrapperInput(BaseModel):

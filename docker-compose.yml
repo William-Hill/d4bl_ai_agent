@@ -40,6 +40,11 @@ services:
       # Embedder configuration for CrewAI memory
       - EMBEDDINGS_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - EMBEDDINGS_OLLAMA_MODEL_NAME=mxbai-embed-large
+      # Client-side request throttling (for documentation - actual throttling happens on Ollama server)
+      # Configure Ollama server-side queue via environment variables when starting Ollama:
+      # - OLLAMA_MAX_QUEUE: Max queued requests (default: 512)
+      # - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto)
+      # - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
     env_file:
       - .env
     volumes:
