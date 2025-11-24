@@ -148,6 +148,51 @@ class D4Bl():
             allow_delegation=False
         )
 
+    @agent
+    def editor(self) -> Agent:
+        return Agent(
+            config=self.agents_config['editor'], # type: ignore[index]
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
+            verbose=True,
+            allow_delegation=False
+        )
+
+    @agent
+    def fact_checker(self) -> Agent:
+        return Agent(
+            config=self.agents_config['fact_checker'], # type: ignore[index]
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
+            verbose=True,
+            allow_delegation=False
+        )
+
+    @agent
+    def citation_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['citation_agent'], # type: ignore[index]
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
+            verbose=True,
+            allow_delegation=False
+        )
+
+    @agent
+    def bias_detection_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['bias_detection_agent'], # type: ignore[index]
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
+            verbose=True,
+            allow_delegation=False
+        )
+
+    @agent
+    def data_visualization_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['data_visualization_agent'], # type: ignore[index]
+            llm=get_ollama_llm(),  # Use Ollama LLM configured above
+            verbose=True,
+            allow_delegation=False
+        )
+
     # To learn more about structured task outputs,
     # task dependencies, and task callbacks, check out the documentation:
     # https://docs.crewai.com/concepts/tasks#overview-of-a-task
@@ -168,6 +213,37 @@ class D4Bl():
         return Task(
             config=self.tasks_config['writing_task'], # type: ignore[index]
             output_file='output/report.md'  # This is the file that will contain the final report
+        )
+
+    @task
+    def fact_checker_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['fact_checker_task'], # type: ignore[index]
+        )
+
+    @task
+    def citation_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['citation_task'], # type: ignore[index]
+        )
+
+    @task
+    def bias_detection_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['bias_detection_task'], # type: ignore[index]
+        )
+
+    @task
+    def editor_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['editor_task'], # type: ignore[index]
+            output_file='output/report_edited.md'  # This is the file that will contain the edited report
+        )
+
+    @task
+    def data_visualization_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['data_visualization_task'], # type: ignore[index]
         )
 
     @crew
