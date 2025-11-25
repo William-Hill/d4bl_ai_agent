@@ -40,7 +40,10 @@ if env_loaded:
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "GROQ_API_KEY",
-        "OLLAMA_BASE_URL"
+        "OLLAMA_BASE_URL",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST"
     ]
     for var in env_vars_to_check:
         value = os.getenv(var)
@@ -60,6 +63,146 @@ print("🤖 LLM Configuration:")
 print("  Using Ollama with Mistral 7B")
 print(f"  Ollama Base URL: {os.getenv('OLLAMA_BASE_URL')}")
 print()
+
+# Initialize Langfuse for observability
+_langfuse_client = None
+_langfuse_instrumented = False
+
+def initialize_langfuse():
+    """Initialize Langfuse client and CrewAI instrumentation"""
+    global _langfuse_client, _langfuse_instrumented
+    
+    if _langfuse_instrumented:
+        return _langfuse_client
+    
+    try:
+        from langfuse import get_client
+        from openinference.instrumentation.crewai import CrewAIInstrumentor
+        
+        # Get Langfuse configuration from environment
+        langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+        langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
+        langfuse_host = os.getenv("LANGFUSE_HOST") or os.getenv("LANGFUSE_BASE_URL") or "http://localhost:3000"
+        
+        # Only initialize if keys are provided
+        if langfuse_public_key and langfuse_secret_key:
+            # Set OpenTelemetry exporter endpoint for traces (used by CrewAI instrumentation)
+            # This must be set before instrumenting
+            otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+            if not otel_endpoint:
+                # Construct the OTLP endpoint from Langfuse host
+                otel_endpoint = f"{langfuse_host}/api/public/otel/v1/traces"
+                os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otel_endpoint
+                os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otel_endpoint
+            
+            # Set authentication headers for OTLP exporter
+            # Format: "Authorization=Basic <base64(public_key:secret_key)>"
+            # CRITICAL: Must be set BEFORE any OpenTelemetry initialization
+            import base64
+            credentials = f"{langfuse_public_key}:{langfuse_secret_key}"
+            encoded_credentials = base64.b64encode(credentials.encode()).decode()
+            otel_headers = f"Authorization=Basic {encoded_credentials}"
+            
+            # Always set headers to ensure they're available before OpenTelemetry initializes
+            os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = otel_headers
+            print(f"   OTLP Headers: Authorization=Basic {encoded_credentials[:20]}...")
+            
+            # Configure OpenTelemetry SDK programmatically to ensure headers are used
+            # The OpenInference instrumentation will use the existing TracerProvider if configured
+            # This ensures the exporter has authentication before instrumentation runs
+            try:
+                from opentelemetry.sdk.trace import TracerProvider
+                from opentelemetry.sdk.trace.export import BatchSpanProcessor
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+                from opentelemetry import trace
+                
+                # Check if TracerProvider is already configured
+                current_provider = trace.get_tracer_provider()
+                if isinstance(current_provider, TracerProvider):
+                    # Provider exists, add our exporter to it
+                    otlp_exporter = OTLPSpanExporter(
+                        endpoint=otel_endpoint,
+                        headers={"Authorization": f"Basic {encoded_credentials}"}
+                    )
+                    current_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                    print(f"   ✅ Added OTLP exporter with authentication to existing TracerProvider")
+                else:
+                    # Create a new TracerProvider
+                    provider = TracerProvider()
+                    
+                    # Create OTLP exporter with authentication
+                    otlp_exporter = OTLPSpanExporter(
+                        endpoint=otel_endpoint,
+                        headers={"Authorization": f"Basic {encoded_credentials}"}
+                    )
+                    
+                    # Add batch span processor
+                    provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                    
+                    # Set as global provider
+                    trace.set_tracer_provider(provider)
+                    print(f"   ✅ OpenTelemetry TracerProvider configured with authentication")
+            except Exception as otel_error:
+                print(f"   ⚠️ Could not configure OpenTelemetry programmatically: {otel_error}")
+                print(f"   Will rely on environment variables - instrumentation should pick them up")
+            
+            # Initialize Langfuse client
+            _langfuse_client = get_client()
+            
+            # Verify connection (optional - instrumentation will still work even if this fails)
+            try:
+                if _langfuse_client.auth_check():
+                    print("✅ Langfuse client authenticated and ready!")
+                else:
+                    print("⚠️ Langfuse authentication check failed, but instrumentation will continue.")
+                    print("   Traces will be sent via OpenTelemetry exporter.")
+            except Exception as auth_error:
+                print(f"⚠️ Langfuse authentication check failed: {auth_error}")
+                print("   This is non-fatal - instrumentation will continue and traces will be sent via OpenTelemetry.")
+            
+            # Initialize CrewAI instrumentation
+            # This will work even if auth_check failed, as it uses OpenTelemetry exporter
+            # IMPORTANT: Headers must be set before instrumentation
+            CrewAIInstrumentor().instrument(skip_dep_check=True)
+            _langfuse_instrumented = True
+            print(f"✅ CrewAI instrumentation initialized for Langfuse observability")
+            print(f"   Langfuse Host: {langfuse_host}")
+            print(f"   OTLP Endpoint: {otel_endpoint}")
+            print(f"   OTLP Headers set: {bool(os.getenv('OTEL_EXPORTER_OTLP_HEADERS'))}")
+            
+            # Verify OpenTelemetry configuration
+            try:
+                from opentelemetry import trace
+                from opentelemetry.sdk.trace import TracerProvider
+                provider = trace.get_tracer_provider()
+                if isinstance(provider, TracerProvider):
+                    print(f"   OpenTelemetry TracerProvider configured")
+                else:
+                    print(f"   ⚠️ OpenTelemetry TracerProvider type: {type(provider)}")
+            except Exception as e:
+                print(f"   ⚠️ Could not verify OpenTelemetry configuration: {e}")
+        else:
+            print("⚠️ Langfuse keys not found. Skipping Langfuse initialization.")
+            print("   Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY to enable observability.")
+            _langfuse_client = None
+    except ImportError as e:
+        print(f"⚠️ Langfuse dependencies not installed: {e}")
+        print("   Install with: pip install langfuse openinference-instrumentation-crewai")
+        _langfuse_client = None
+    except Exception as e:
+        print(f"⚠️ Error initializing Langfuse: {e}")
+        _langfuse_client = None
+    
+    return _langfuse_client
+
+def get_langfuse_client():
+    """Get the Langfuse client instance"""
+    if _langfuse_client is None:
+        initialize_langfuse()
+    return _langfuse_client
+
+# Initialize Langfuse on module import
+initialize_langfuse()
 
 # Configure Ollama LLM with Mistral 7B
 # Using direct code configuration as per CrewAI documentation

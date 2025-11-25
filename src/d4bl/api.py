@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 
-from d4bl.crew import D4Bl
+from d4bl.crew import D4Bl, get_langfuse_client
 from d4bl.database import (
     init_db, get_db, create_tables, close_db,
     ResearchJob, async_session_maker
@@ -288,18 +288,36 @@ async def run_research_job(job_id: str, query: str, summary_format: str):
         
         log_processor_task = asyncio.create_task(process_log_queue())
         
-        # Run the crew with output capture
+        # Run the crew with output capture and Langfuse tracing
         try:
             # Redirect stdout and stderr to capture live output
             sys.stdout = output_handler
             sys.stderr = output_handler
             
-            # Run crew in executor to avoid blocking
+            # Get Langfuse client for tracing
+            langfuse = get_langfuse_client()
+            
+            # Run crew in executor to avoid blocking, wrapped with Langfuse observation
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: crew_instance.crew().kickoff(inputs=inputs)
-            )
+            
+            def run_crew_with_tracing():
+                """Run crew with Langfuse tracing"""
+                if langfuse:
+                    # Wrap crew execution with Langfuse observation (as per official docs)
+                    # https://langfuse.com/integrations/frameworks/crewai
+                    with langfuse.start_as_current_observation(
+                        as_type="span",
+                        name=f"research-job-{job_id}"
+                    ):
+                        result = crew_instance.crew().kickoff(inputs=inputs)
+                    # Flush traces to Langfuse (important for short-lived applications)
+                    langfuse.flush()
+                    return result
+                else:
+                    # No Langfuse, run normally
+                    return crew_instance.crew().kickoff(inputs=inputs)
+            
+            result = await loop.run_in_executor(None, run_crew_with_tracing)
             
         except Exception as e:
             error_msg = f"Failed to run crew: {str(e)}"

@@ -16,3 +16,7 @@ firecrawl-py>=0.0.20
 python-dotenv>=1.1.1
 litellm>=1.0.0
 ollama>=0.1.0  # Required for Ollama embeddings in CrewAI memory
+
+# Langfuse for observability
+langfuse>=2.0.0
+openinference-instrumentation-crewai>=0.1.0
