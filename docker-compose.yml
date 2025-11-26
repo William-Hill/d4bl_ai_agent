@@ -43,18 +43,9 @@ services:
       # - OLLAMA_MAX_QUEUE: Max queued requests (default: 512)
       # - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto)
       # - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
-      # Langfuse configuration for observability
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      # Use Docker service name for internal communication (not localhost)
-      - LANGFUSE_HOST=http://langfuse:3000
-      - LANGFUSE_BASE_URL=http://langfuse:3000
-      # OpenTelemetry exporter endpoint for traces (used by CrewAI instrumentation)
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://langfuse:3000/api/public/otel/v1/traces}
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://langfuse:3000/api/public/otel/v1/traces}
-      # OpenTelemetry headers - will be set by Python code if not provided
-      # Format: Authorization=Basic <base64(public_key:secret_key)>
-      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
+      # Phoenix by Arize AI configuration for observability
+      # Phoenix runs as a Docker service, accessible via service name "phoenix"
+      - PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-d4bl-crewai}
     env_file:
       - .env
     volumes:
@@ -63,7 +54,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      langfuse:
+      phoenix:
         condition: service_started
     restart: unless-stopped
     networks:
@@ -98,125 +89,14 @@ services:
   # Make sure Ollama is running on your host: ollama serve
   # And pull the Mistral model: ollama pull mistral
 
-  # Langfuse services for observability
-  langfuse-postgres:
-    image: postgres:16-alpine
-    container_name: langfuse-postgres
-    environment:
-      - POSTGRES_USER=${LANGFUSE_POSTGRES_USER:-langfuse}
-      - POSTGRES_PASSWORD=${LANGFUSE_POSTGRES_PASSWORD:-langfuse_password}
-      - POSTGRES_DB=${LANGFUSE_POSTGRES_DB:-langfuse}
+  # Phoenix by Arize AI for observability
+  # Reference: https://arize.com/docs/phoenix/self-hosting/deployment-options/docker
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
     ports:
-      - "5433:5432"
-    volumes:
-      - langfuse_postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - d4bl-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_POSTGRES_USER:-langfuse} -d ${LANGFUSE_POSTGRES_DB:-langfuse}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  langfuse-clickhouse:
-    image: clickhouse/clickhouse-server:24-alpine
-    container_name: langfuse-clickhouse
-    environment:
-      - CLICKHOUSE_DB=${LANGFUSE_CLICKHOUSE_DB:-langfuse}
-      - CLICKHOUSE_USER=${LANGFUSE_CLICKHOUSE_USER:-langfuse}
-      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse_password}
-      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-    volumes:
-      - langfuse_clickhouse_data:/var/lib/clickhouse
-    restart: unless-stopped
-    networks:
-      - d4bl-network
-
-  langfuse-redis:
-    image: redis:7
-    container_name: langfuse-redis
-    command: --requirepass ${REDIS_AUTH:-myredissecret}
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-    networks:
-      - d4bl-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 3s
-      timeout: 10s
-      retries: 10
-
-  langfuse-minio:
-    image: minio/minio
-    container_name: langfuse-minio
-    entrypoint: sh
-    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
-    ports:
-      - "9090:9000"
-      - "9091:9001"
-    volumes:
-      - langfuse_minio_data:/data
-    restart: unless-stopped
-    networks:
-      - d4bl-network
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 1s
-      timeout: 5s
-      retries: 5
-      start_period: 1s
-
-  langfuse:
-    image: langfuse/langfuse:latest
-    container_name: langfuse
-    ports:
-      - "3001:3000"
-    environment:
-      - DATABASE_URL=postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse_password}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse}
-      - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
-      - CLICKHOUSE_MIGRATION_URL=clickhouse://${LANGFUSE_CLICKHOUSE_USER:-langfuse}:${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse_password}@langfuse-clickhouse:9000
-      - CLICKHOUSE_USER=${LANGFUSE_CLICKHOUSE_USER:-langfuse}
-      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse_password}
-      - CLICKHOUSE_CLUSTER_ENABLED=${CLICKHOUSE_CLUSTER_ENABLED:-false}
-      - REDIS_HOST=langfuse-redis
-      - REDIS_PORT=6379
-      - REDIS_AUTH=${REDIS_AUTH:-myredissecret}
-      - REDIS_TLS_ENABLED=${REDIS_TLS_ENABLED:-false}
-      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
-      - LANGFUSE_S3_EVENT_UPLOAD_REGION=${LANGFUSE_S3_EVENT_UPLOAD_REGION:-auto}
-      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minio}
-      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-miniosecret}
-      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://langfuse-minio:9000
-      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
-      - LANGFUSE_S3_EVENT_UPLOAD_PREFIX=events/
-      - LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}
-      - LANGFUSE_S3_MEDIA_UPLOAD_REGION=${LANGFUSE_S3_MEDIA_UPLOAD_REGION:-auto}
-      - LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minio}
-      - LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-miniosecret}
-      - LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://localhost:9090
-      - LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE=true
-      - LANGFUSE_S3_MEDIA_UPLOAD_PREFIX=media/
-      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-your-secret-key-change-in-production}
-      - NEXTAUTH_URL=${LANGFUSE_NEXTAUTH_URL:-http://localhost:3001}
-      - SALT=${LANGFUSE_SALT:-your-salt-change-in-production}
-      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
-    depends_on:
-      langfuse-postgres:
-        condition: service_healthy
-      langfuse-clickhouse:
-        condition: service_started
-      langfuse-redis:
-        condition: service_healthy
-      langfuse-minio:
-        condition: service_healthy
+      - "6006:6006"  # UI and OTLP HTTP collector
+      - "4317:4317"  # OTLP gRPC collector
     restart: unless-stopped
     networks:
       - d4bl-network
@@ -227,7 +107,4 @@ networks:
 
 volumes:
   postgres_data:
-  langfuse_postgres_data:
-  langfuse_clickhouse_data:
-  langfuse_minio_data:
 
