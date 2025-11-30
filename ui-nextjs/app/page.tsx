@@ -10,9 +10,11 @@ import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
+import EvaluationsPanel from '@/components/EvaluationsPanel';
 
 export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);  // Track selected job from history
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<any>(null);
   const [progress, setProgress] = useState<string>('');
@@ -90,6 +92,7 @@ export default function Home() {
     try {
       setError(null);
       setResults(null);
+      setSelectedJobId(null);  // Clear selected job when starting new job
       setProgress('Creating research job...');
       setLiveLogs([]); // Clear previous logs
 
@@ -107,6 +110,7 @@ export default function Home() {
     try {
       setError(null);
       setJobId(null);
+      setSelectedJobId(job.job_id);  // Track selected job ID for filtering evaluations
       setProgress('');
       setLiveLogs([]);
       
@@ -218,6 +222,8 @@ export default function Home() {
                   <ResultsCard results={results} />
                 </div>
               )}
+
+              <EvaluationsPanel jobId={selectedJobId || jobId} />
 
               {error && <ErrorCard message={error} onDismiss={clearError} />}
             </main>

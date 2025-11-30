@@ -87,9 +87,15 @@ The following are automatically captured:
 ### Viewing Traces
 
 1. **Access Phoenix UI**: http://localhost:6006
-2. **Navigate to Traces**: Traces will appear automatically as your agents run
-3. **Filter and Search**: Use filters to find specific traces
-4. **View Details**: Click on any trace to see detailed execution information
+2. **Navigate to Projects**: Click on "Projects" in the sidebar or go to http://localhost:6006/projects
+3. **Select Your Project**: Click on your project (default: "d4bl-crewai" or the project name you configured)
+4. **View Traces**: Traces will appear automatically as your agents run
+5. **Filter and Search**: Use filters to find specific traces
+6. **View Details**: Click on any trace to see detailed execution information including:
+   - Agent executions and steps
+   - LLM calls with prompts and responses
+   - Tool usage and results
+   - Timing and performance metrics
 
 ## Configuration
 
@@ -168,7 +174,8 @@ The following are automatically captured:
 
 1. **Run a test research job** through your UI or API
 2. **Check Phoenix UI**: http://localhost:6006
-3. **Look for traces** - they should appear automatically as the crew runs
+3. **Navigate to your project**: Go to Projects → Select your project (e.g., "d4bl-crewai")
+4. **Look for traces** - they should appear automatically as the crew runs
 
 ## Additional Resources
 

@@ -46,6 +46,12 @@ services:
       # Phoenix by Arize AI configuration for observability
       # Phoenix runs as a Docker service, accessible via service name "phoenix"
       - PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-d4bl-crewai}
+      # When Phoenix authentication is enabled, the client libraries and OTEL exporters
+      # use PHOENIX_API_KEY / PHOENIX_ENDPOINT for auth and routing.
+      # After you create a System API key in the Phoenix UI, set PHOENIX_API_KEY in
+      # your .env file so this service can continue sending traces.
+      - PHOENIX_ENDPOINT=${PHOENIX_ENDPOINT:-http://phoenix:6006}
+      - PHOENIX_API_KEY=${PHOENIX_API_KEY:-}
     env_file:
       - .env
     volumes:
@@ -94,6 +100,16 @@ services:
   phoenix:
     image: arizephoenix/phoenix:latest
     container_name: phoenix
+    # Authentication is currently disabled (default behavior).
+    # To enable auth, uncomment the environment section below and set:
+    # - PHOENIX_ENABLE_AUTH=true
+    # - PHOENIX_SECRET=<your-secret-key>
+    # Docs: https://arize.com/docs/phoenix/self-hosting/features/authentication
+    # environment:
+    #   - PHOENIX_ENABLE_AUTH=${PHOENIX_ENABLE_AUTH:-true}
+    #   - PHOENIX_SECRET=${PHOENIX_SECRET:-change-me-32chars-min1digit1lower}
+    #   - PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD=${PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD:-admin}
+    #   - PHOENIX_USE_SECURE_COOKIES=${PHOENIX_USE_SECURE_COOKIES:-false}
     ports:
       - "6006:6006"  # UI and OTLP HTTP collector
       - "4317:4317"  # OTLP gRPC collector

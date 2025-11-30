@@ -18,3 +18,7 @@ output/
 dist/
 build/
 uv.lock
+# Evaluation output files
+eval_results*.csv
+*.csv
+!requirements.txt

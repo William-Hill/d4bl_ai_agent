@@ -32,6 +32,7 @@ export interface ResearchResponse {
 
 export interface JobStatus {
   job_id: string;
+  trace_id?: string;
   status: 'pending' | 'running' | 'completed' | 'error';
   progress?: string;
   result?: any;
@@ -49,6 +50,20 @@ export interface JobHistoryResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface EvaluationResultItem {
+  id: string;
+  span_id: string;
+  trace_id?: string;
+  eval_name: string;
+  label?: string;
+  score?: number;
+  explanation?: string;
+  input_text?: string;
+  output_text?: string;
+  context_text?: string;
+  created_at?: string;
 }
 
 export async function createResearchJob(
@@ -69,6 +84,31 @@ export async function createResearchJob(
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to create research job');
+  }
+
+  return response.json();
+}
+
+export async function getEvaluations(params?: {
+  trace_id?: string;
+  job_id?: string;  // job_id maps to trace_id in Phoenix
+  span_id?: string;
+  eval_name?: string;
+  limit?: number;
+}): Promise<EvaluationResultItem[]> {
+  const search = new URLSearchParams();
+  if (params?.job_id) search.append('job_id', params.job_id);
+  if (params?.trace_id) search.append('trace_id', params.trace_id);
+  if (params?.span_id) search.append('span_id', params.span_id);
+  if (params?.eval_name) search.append('eval_name', params.eval_name);
+  if (params?.limit) search.append('limit', params.limit.toString());
+
+  const queryString = search.toString();
+  const url = queryString ? `${API_BASE}/api/evaluations?${queryString}` : `${API_BASE}/api/evaluations`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch evaluations');
   }
 
   return response.json();
