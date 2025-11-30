@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Text, Column, String, DateTime
+from sqlalchemy import JSON, Text, Column, String, DateTime, Float
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -19,11 +19,13 @@ class ResearchJob(Base):
     __tablename__ = "research_jobs"
 
     job_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trace_id = Column(String(64), nullable=True, index=True)
     query = Column(Text, nullable=False, index=True)
     summary_format = Column(String(20), nullable=False, default="detailed")
     status = Column(String(20), nullable=False, default="pending", index=True)
     progress = Column(Text, nullable=True)
     result = Column(JSON, nullable=True)  # Store the full result dict as JSON
+    research_data = Column(JSON, nullable=True)  # Store research data for use as reference in evaluations
     error = Column(Text, nullable=True)
     logs = Column(JSON, nullable=True)  # Store logs array as JSON
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
@@ -34,16 +36,52 @@ class ResearchJob(Base):
         """Convert model to dictionary"""
         return {
             "job_id": str(self.job_id),
+             "trace_id": self.trace_id,
             "query": self.query,
             "summary_format": self.summary_format,
             "status": self.status,
             "progress": self.progress,
             "result": self.result,
+            "research_data": self.research_data,
             "error": self.error,
             "logs": self.logs,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+class EvaluationResult(Base):
+    """Store evaluator outputs for spans"""
+    __tablename__ = "evaluation_results"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    span_id = Column(String(64), nullable=False, index=True)
+    trace_id = Column(String(64), nullable=True, index=True)
+    job_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)  # Link to ResearchJob
+    eval_name = Column(String(100), nullable=False, index=True)
+    label = Column(String(100), nullable=True)
+    score = Column(Float, nullable=True)
+    explanation = Column(Text, nullable=True)
+    input_text = Column(Text, nullable=True)
+    output_text = Column(Text, nullable=True)
+    context_text = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "span_id": self.span_id,
+            "trace_id": self.trace_id,
+            "job_id": str(self.job_id) if self.job_id else None,
+            "eval_name": self.eval_name,
+            "label": self.label,
+            "score": self.score,
+            "explanation": self.explanation,
+            "input_text": self.input_text,
+            "output_text": self.output_text,
+            "context_text": self.context_text,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
