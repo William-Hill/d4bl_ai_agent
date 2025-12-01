@@ -177,7 +177,7 @@ async def main(no_archive=False, skip_confirm=False):
         print("=" * 60)
         print("\nNext steps:")
         print("1. Run a new research job through the frontend")
-        print("2. Run evaluations: docker compose exec d4bl-api python /app/scripts/run_evals_test.py")
+        print("2. Run evaluations: docker compose exec d4bl-api python /app/scripts/run_evals.py")
         print("3. Check that evaluations are linked to the job in the frontend")
     else:
         print("\n❌ Database wipe failed. Check errors above.")

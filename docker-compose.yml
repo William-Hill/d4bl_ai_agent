@@ -100,16 +100,28 @@ services:
   phoenix:
     image: arizephoenix/phoenix:latest
     container_name: phoenix
-    # Authentication is currently disabled (default behavior).
-    # To enable auth, uncomment the environment section below and set:
-    # - PHOENIX_ENABLE_AUTH=true
-    # - PHOENIX_SECRET=<your-secret-key>
-    # Docs: https://arize.com/docs/phoenix/self-hosting/features/authentication
-    # environment:
-    #   - PHOENIX_ENABLE_AUTH=${PHOENIX_ENABLE_AUTH:-true}
-    #   - PHOENIX_SECRET=${PHOENIX_SECRET:-change-me-32chars-min1digit1lower}
-    #   - PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD=${PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD:-admin}
-    #   - PHOENIX_USE_SECURE_COOKIES=${PHOENIX_USE_SECURE_COOKIES:-false}
+    environment: {}
+      # --- Authentication options (see docs) ---
+      # Docs: https://arize.com/docs/phoenix/self-hosting/features/authentication
+      #
+      # Set PHOENIX_ENABLE_AUTH=true to require login & API keys.
+      # WARNING: When enabling auth, all trace ingestion and API access
+      # will be blocked until you create a System API key in the UI.
+      # - PHOENIX_ENABLE_AUTH=${PHOENIX_ENABLE_AUTH:-true}
+      #
+      # PHOENIX_SECRET is required when auth is enabled. Override this in
+      # your .env file with a long, random value and keep it secret.
+      # - PHOENIX_SECRET=${PHOENIX_SECRET:-change-me-32chars-min1digit1lower}
+      #
+      # Optional: set an initial admin password on first startup.
+      # Default admin user: admin@localhost
+      # - PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD=${PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD:-admin}
+      #
+      # Optional: use secure cookies when serving Phoenix over HTTPS.
+      # - PHOENIX_USE_SECURE_COOKIES=${PHOENIX_USE_SECURE_COOKIES:-false}
+      #
+      # Optional: root URL if you front Phoenix with a reverse proxy.
+      # - PHOENIX_ROOT_URL=${PHOENIX_ROOT_URL:-https://example.com/phoenix}
     ports:
       - "6006:6006"  # UI and OTLP HTTP collector
       - "4317:4317"  # OTLP gRPC collector
