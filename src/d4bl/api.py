@@ -2,33 +2,29 @@
 FastAPI backend for D4BL AI Agent UI
 """
 import asyncio
-import json
 import os
-import sys
-import io
-import queue
-import threading
 from datetime import datetime
-from typing import Optional, List
-from uuid import uuid4, UUID
-from contextlib import redirect_stdout, redirect_stderr
-
-import os
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
-from opentelemetry import trace
+from typing import List, Optional
+from uuid import UUID
 
-from d4bl.crew import D4Bl
-from d4bl.database import (
-    init_db, get_db, create_tables, close_db,
-    ResearchJob, EvaluationResult, async_session_maker
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from d4bl.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
+from d4bl.research_runner import run_research_job
+from d4bl.schemas import (
+    EvaluationResultItem,
+    JobHistoryResponse,
+    JobStatus,
+    ResearchRequest,
+    ResearchResponse,
 )
+from d4bl.websocket_manager import get_job_logs, register_connection, remove_connection
 
 app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
@@ -67,421 +63,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Store active WebSocket connections
-active_connections: dict[str, WebSocket] = {}
-
-# Store live output logs for each job
-job_logs: dict[str, list] = {}
-
-# Queues for sending log messages asynchronously (one per job)
-log_queues: dict[str, queue.Queue] = {}
-
-
-class ResearchRequest(BaseModel):
-    query: str
-    summary_format: str = "detailed"  # brief, detailed, comprehensive
-
-
-class ResearchResponse(BaseModel):
-    job_id: str
-    status: str
-    message: str
-
-
-class JobStatus(BaseModel):
-    job_id: str
-    trace_id: Optional[str] = None
-    status: str  # pending, running, completed, error
-    progress: Optional[str] = None
-    result: Optional[dict] = None
-    error: Optional[str] = None
-    query: Optional[str] = None
-    summary_format: Optional[str] = None
-    logs: Optional[List[str]] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    completed_at: Optional[str] = None
-
-
-class JobHistoryResponse(BaseModel):
-    jobs: List[JobStatus]
-    total: int
-    page: int
-    page_size: int
-
-
-class EvaluationResultItem(BaseModel):
-    id: str
-    span_id: str
-    trace_id: Optional[str] = None
-    job_id: Optional[str] = None
-    eval_name: str
-    label: Optional[str] = None
-    score: Optional[float] = None
-    explanation: Optional[str] = None
-    input_text: Optional[str] = None
-    output_text: Optional[str] = None
-    context_text: Optional[str] = None
-    created_at: Optional[str] = None
-
-
-async def send_websocket_update(job_id: str, message: dict):
-    """Send WebSocket update if connection exists"""
-    if job_id in active_connections:
-        try:
-            await active_connections[job_id].send_json(message)
-        except Exception as e:
-            print(f"Error sending WebSocket update: {e}")
-            # Remove broken connection
-            if job_id in active_connections:
-                del active_connections[job_id]
-
-
-class LiveOutputHandler:
-    """Custom output handler that captures stdout/stderr and sends via WebSocket"""
-    def __init__(self, job_id: str, original_stdout, original_stderr, log_queue: queue.Queue):
-        self.job_id = job_id
-        self.original_stdout = original_stdout
-        self.original_stderr = original_stderr
-        self.log_queue = log_queue
-        self.buffer = io.StringIO()
-        self.logs = []
-        
-    def write(self, text: str):
-        """Write to buffer and send via WebSocket"""
-        if text.strip():  # Only send non-empty lines
-            self.buffer.write(text)
-            self.logs.append(text)
-            
-            # Queue message for async sending
-            try:
-                self.log_queue.put_nowait({
-                    "job_id": self.job_id,
-                    "type": "log",
-                    "message": text,
-                    "timestamp": datetime.now().isoformat()
-                })
-            except queue.Full:
-                pass  # Queue is full, skip this message
-            
-            # Also write to original stdout for terminal visibility
-            self.original_stdout.write(text)
-            self.original_stdout.flush()
-    
-    def flush(self):
-        """Flush the buffer"""
-        self.buffer.flush()
-        self.original_stdout.flush()
-    
-    def get_logs(self) -> list:
-        """Get all captured logs"""
-        return self.logs
-
-async def update_job_status(
-    db: AsyncSession,
-    job_id: str,
-    status: str,
-    progress: Optional[str] = None,
-    result: Optional[dict] = None,
-    research_data: Optional[dict] = None,
-    error: Optional[str] = None,
-    logs: Optional[list] = None,
-    trace_id: Optional[str] = None,
-):
-    """Update job status in database"""
-    try:
-        job_uuid = UUID(job_id)
-        result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
-        result_obj = await db.execute(result_query)
-        job = result_obj.scalar_one_or_none()
-        
-        if job:
-            job.status = status
-            if progress is not None:
-                job.progress = progress
-            if result is not None:
-                job.result = result
-            if research_data is not None:
-                job.research_data = research_data
-            if error is not None:
-                job.error = error
-            if logs is not None:
-                job.logs = logs
-            if trace_id:
-                job.trace_id = trace_id
-            if status in ["completed", "error"]:
-                job.completed_at = datetime.utcnow()
-            job.updated_at = datetime.utcnow()
-            await db.commit()
-            await db.refresh(job)
-    except Exception as e:
-        print(f"Error updating job status in database: {e}")
-        await db.rollback()
-
-
-async def run_research_job(job_id: str, query: str, summary_format: str):
-    """Run the research crew and send progress updates via WebSocket."""
-    job_logs[job_id] = []
-
-    tracer = trace.get_tracer("d4bl.research_job")
-    span_attributes = {
-        "d4bl.job_id": job_id,
-        "d4bl.query": query,
-        "d4bl.summary_format": summary_format,
-    }
-    trace_id_hex: Optional[str] = None
-
-    async def set_status(
-        progress_msg: Optional[str],
-        status: str = "running",
-        result: Optional[dict] = None,
-        research_data: Optional[dict] = None,
-        error: Optional[str] = None,
-        logs: Optional[list] = None,
-        trace_override: Optional[str] = None,
-    ):
-        trace_value = trace_override or trace_id_hex
-        async for db in get_db():
-            try:
-                await update_job_status(
-                    db,
-                    job_id,
-                    status,
-                    progress=progress_msg,
-                    result=result,
-                    research_data=research_data,
-                    error=error,
-                    logs=logs,
-                    trace_id=trace_value,
-                )
-                break
-            except Exception as update_err:
-                print(f"Error updating job status: {update_err}")
-                break
-
-    try:
-        with tracer.start_as_current_span("d4bl.research_job", attributes=span_attributes) as job_span:
-            span_context = job_span.get_span_context()
-            trace_id_hex = format(span_context.trace_id, "032x")
-
-            await set_status("Initializing research crew...")
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "progress",
-                    "job_id": job_id,
-                    "status": "running",
-                    "progress": "Initializing research crew...",
-                    "trace_id": trace_id_hex,
-                },
-            )
-
-            inputs = {
-                "query": query,
-                "summary_format": summary_format,
-                "current_year": str(datetime.now().year),
-            }
-
-            await set_status("Starting research task...")
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "progress",
-                    "job_id": job_id,
-                    "status": "running",
-                    "progress": "Starting research task...",
-                    "trace_id": trace_id_hex,
-                },
-            )
-
-            try:
-                crew_instance = D4Bl()
-            except Exception as e:
-                error_msg = f"Failed to initialize crew: {str(e)}"
-                print(f"ERROR initializing crew: {error_msg}")
-                import traceback
-
-                traceback.print_exc()
-                raise Exception(error_msg) from e
-
-            original_stdout = sys.stdout
-            original_stderr = sys.stderr
-            job_log_queue = queue.Queue()
-            log_queues[job_id] = job_log_queue
-            output_handler = LiveOutputHandler(job_id, original_stdout, original_stderr, job_log_queue)
-
-            async def process_log_queue():
-                while True:
-                    try:
-                        message = await asyncio.get_event_loop().run_in_executor(
-                            None, lambda: job_log_queue.get(timeout=0.1)
-                        )
-                        if message:
-                            await send_websocket_update(job_id, message)
-                    except queue.Empty:
-                        await asyncio.sleep(0.1)
-                    except Exception as proc_err:
-                        print(f"Error processing log queue: {proc_err}")
-                        await asyncio.sleep(0.1)
-
-            log_processor_task = asyncio.create_task(process_log_queue())
-
-            try:
-                sys.stdout = output_handler
-                sys.stderr = output_handler
-                result = await asyncio.to_thread(lambda: crew_instance.crew().kickoff(inputs=inputs))
-            finally:
-                sys.stdout = original_stdout
-                sys.stderr = original_stderr
-                job_logs[job_id] = output_handler.get_logs()
-                await asyncio.sleep(0.5)
-                while not job_log_queue.empty():
-                    try:
-                        message = job_log_queue.get_nowait()
-                        if message:
-                            await send_websocket_update(job_id, message)
-                    except queue.Empty:
-                        break
-                log_processor_task.cancel()
-                try:
-                    await log_processor_task
-                except asyncio.CancelledError:
-                    pass
-                if job_id in log_queues:
-                    del log_queues[job_id]
-
-            await set_status("Research completed, processing results...")
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "progress",
-                    "job_id": job_id,
-                    "status": "running",
-                    "progress": "Research completed, processing results...",
-                    "trace_id": trace_id_hex,
-                },
-            )
-
-            result_dict = {
-                "raw_output": str(result.raw) if hasattr(result, "raw") else str(result),
-                "tasks_output": [],
-            }
-            research_data_dict = {
-                "research_findings": [],
-                "analysis_data": [],
-                "all_research_content": "",
-            }
-
-            try:
-                if hasattr(result, "tasks_output") and result.tasks_output:
-                    for task_output in result.tasks_output:
-                        try:
-                            agent_name = "Unknown"
-                            if hasattr(task_output, "agent"):
-                                agent = task_output.agent
-                                if hasattr(agent, "role"):
-                                    agent_name = agent.role
-                                elif isinstance(agent, str):
-                                    agent_name = agent
-                                elif hasattr(agent, "__str__"):
-                                    agent_name = str(agent)
-
-                            description = ""
-                            if hasattr(task_output, "description"):
-                                description = str(task_output.description)
-
-                            output = ""
-                            if hasattr(task_output, "raw"):
-                                output = str(task_output.raw)
-                            elif hasattr(task_output, "output"):
-                                output = str(task_output.output)
-                            else:
-                                output = str(task_output)
-
-                            result_dict["tasks_output"].append(
-                                {"agent": agent_name, "description": description, "output": output}
-                            )
-
-                            if "research" in agent_name.lower() or "researcher" in agent_name.lower():
-                                research_data_dict["research_findings"].append(
-                                    {"agent": agent_name, "description": description, "content": output}
-                                )
-                                if research_data_dict["all_research_content"]:
-                                    research_data_dict["all_research_content"] += "\n\n"
-                                research_data_dict["all_research_content"] += (
-                                    f"## {agent_name}: {description}\n\n{output}"
-                                )
-                            elif "analyst" in agent_name.lower() or "analysis" in agent_name.lower():
-                                research_data_dict["analysis_data"].append(
-                                    {"agent": agent_name, "description": description, "content": output}
-                                )
-                                if research_data_dict["all_research_content"]:
-                                    research_data_dict["all_research_content"] += "\n\n"
-                                research_data_dict["all_research_content"] += (
-                                    f"## {agent_name}: {description}\n\n{output}"
-                                )
-                        except Exception as extract_err:
-                            print(f"Error extracting task output: {extract_err}")
-                            result_dict["tasks_output"].append(
-                                {
-                                    "agent": "Unknown",
-                                    "description": "",
-                                    "output": str(task_output) if task_output else "Error extracting output",
-                                }
-                            )
-            except Exception as e:
-                print(f"Error processing tasks_output: {e}")
-
-            try:
-                report_path = "output/report.md"
-                if os.path.exists(report_path):
-                    with open(report_path, "r", encoding="utf-8") as f:
-                        result_dict["report"] = f.read()
-            except Exception as e:
-                print(f"Error reading report file: {e}")
-
-            await set_status(
-                "Research completed successfully!",
-                status="completed",
-                result=result_dict,
-                research_data=research_data_dict,
-                logs=job_logs.get(job_id, []),
-            )
-
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "complete",
-                    "job_id": job_id,
-                    "status": "completed",
-                    "result": result_dict,
-                    "logs": job_logs.get(job_id, []),
-                    "trace_id": trace_id_hex,
-                },
-            )
-
-    except Exception as e:
-        error_msg = str(e)
-        await set_status(
-            f"Error: {error_msg}",
-            status="error",
-            error=error_msg,
-            logs=job_logs.get(job_id, []),
-            trace_override=trace_id_hex,
-        )
-        await send_websocket_update(
-            job_id,
-            {
-                "type": "error",
-                "job_id": job_id,
-                "status": "error",
-                "error": error_msg,
-                "logs": job_logs.get(job_id, []),
-                "trace_id": trace_id_hex,
-            },
-        )
-
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -656,7 +237,7 @@ async def get_evaluations(
 async def websocket_endpoint(websocket: WebSocket, job_id: str):
     """WebSocket endpoint for real-time progress updates"""
     await websocket.accept()
-    active_connections[job_id] = websocket
+    register_connection(job_id, websocket)
     
     try:
         # Send current status if job exists (in case job already completed)
@@ -690,18 +271,19 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                             "job_id": job_id,
                             "status": job.status,
                             "progress": job_dict.get("progress"),
-                            "logs": job_dict.get("logs") or job_logs.get(job_id, [])
+                            "logs": job_dict.get("logs") or get_job_logs(job_id)
                         })
                 break
         except Exception as db_error:
             print(f"Error fetching job from database: {db_error}")
             # Fallback to in-memory logs if available
-            if job_id in job_logs:
+            fallback_logs = get_job_logs(job_id)
+            if fallback_logs:
                 await websocket.send_json({
                     "type": "status",
                     "job_id": job_id,
                     "status": "unknown",
-                    "logs": job_logs.get(job_id, [])
+                    "logs": fallback_logs
                 })
         
         # Keep connection alive and handle messages
@@ -718,8 +300,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:
-        if job_id in active_connections:
-            del active_connections[job_id]
+        remove_connection(job_id)
 
 
 @app.get("/api/health")

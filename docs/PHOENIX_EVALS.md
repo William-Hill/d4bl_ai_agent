@@ -41,7 +41,7 @@ This includes:
 
 ### Method 1: Using the Evaluation Script (Recommended)
 
-The project includes a comprehensive evaluation script (`scripts/run_evals_test.py`) that:
+The project includes a comprehensive evaluation script (`scripts/run_evals.py`) that:
 - Connects to Phoenix and retrieves traces
 - Supports interactive job selection
 - Runs evaluations using Ollama (same LLM as your agents)
@@ -52,16 +52,16 @@ The project includes a comprehensive evaluation script (`scripts/run_evals_test.
 
 ```bash
 # Run from inside Docker container
-docker compose exec d4bl-api python /app/scripts/run_evals_test.py
+docker compose exec d4bl-api python /app/scripts/run_evals.py
 
 # Interactive mode - select which job(s) to evaluate
-docker compose exec d4bl-api python /app/scripts/run_evals_test.py --interactive
+docker compose exec d4bl-api python /app/scripts/run_evals.py --interactive
 
 # Limit rows for faster testing
-docker compose exec d4bl-api python /app/scripts/run_evals_test.py --max-rows 10 --eval-types bias
+docker compose exec d4bl-api python /app/scripts/run_evals.py --max-rows 10 --eval-types bias
 
 # Run specific evaluators
-docker compose exec d4bl-api python /app/scripts/run_evals_test.py --eval-types bias hallucination
+docker compose exec d4bl-api python /app/scripts/run_evals.py --eval-types bias hallucination
 ```
 
 #### Command Line Options
@@ -481,7 +481,7 @@ Evaluations are now stored in two places automatically:
 python scripts/add_evaluation_results_table.py
 ```
 
-Every time you execute `scripts/run_evals_test.py`, each evaluation row (hallucination, bias, reference) is inserted with span/trace IDs, label, score, explanation, and the underlying input/output/context. These rows are exposed through the FastAPI endpoint `GET /api/evaluations` and surfaced in the Next.js UI under the **“LLM Evaluations”** panel so you can review recent judgments without leaving the app.
+Every time you execute `scripts/run_evals.py`, each evaluation row (hallucination, bias, reference) is inserted with span/trace IDs, label, score, explanation, and the underlying input/output/context. These rows are exposed through the FastAPI endpoint `GET /api/evaluations` and surfaced in the Next.js UI under the **“LLM Evaluations”** panel so you can review recent judgments without leaving the app.
 
 The script still exports a CSV (`eval_results_with_explanations.csv`) for ad‑hoc analysis, giving you three synchronized views of the same data (Phoenix UI, Postgres/API, and CSV).
 
