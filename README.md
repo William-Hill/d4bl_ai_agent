@@ -12,15 +12,16 @@ This tool combines web research, data analysis, and writing capabilities to inve
 - 📝 **Multiple Output Formats**: Brief, detailed, and comprehensive summaries
 - 🎨 **D4BL Branding**: Custom styling with D4BL colors and logo
 
-## Quick Start (Docker Compose)
+## Quick Start (Docker Compose + Supabase)
 
-The easiest way to run the application is using Docker Compose with a local Ollama instance.
+The easiest way to run the application is using Docker Compose with a local Ollama instance and a Supabase (Postgres) instance started by the Supabase CLI.
 
 ### Prerequisites
 
 - **Docker** and **Docker Compose** installed
 - **Ollama** installed and running on your host machine
 - **Mistral model** pulled in Ollama
+- **Supabase CLI** installed (`brew install supabase/tap/supabase` or see Supabase docs)
 
 See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions.
 
@@ -41,13 +42,20 @@ See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions
 
 3. **Start the application**:
    ```bash
-   docker-compose up --build
+   supabase start  # starts Supabase locally; Postgres listens on 54322
+   docker-compose up --build d4bl-api d4bl-frontend phoenix
    ```
 
 4. **Access the application**:
    - **Frontend**: http://localhost:3000
    - **Backend API**: http://localhost:8000
    - **API Docs**: http://localhost:8000/docs
+
+### Database (Supabase)
+
+- The app now connects to the Supabase Postgres instance started by `supabase start`.
+- By default it uses `POSTGRES_HOST=host.docker.internal`, `POSTGRES_PORT=54322`, `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=postgres`, `POSTGRES_DB=postgres`.
+- To point at a remote Supabase project, override those `POSTGRES_*` environment variables (and set SSL as required by your project).
 
 ### Stopping the Application
 

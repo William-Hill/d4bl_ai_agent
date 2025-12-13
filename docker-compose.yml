@@ -1,24 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: d4bl-postgres
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-d4bl_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-d4bl_password}
-      - POSTGRES_DB=${POSTGRES_DB:-d4bl_db}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - d4bl-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-d4bl_user} -d ${POSTGRES_DB:-d4bl_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   d4bl-api:
     build: .
     container_name: d4bl-api
@@ -30,11 +10,13 @@ services:
       # On Linux, you may need to use the host's IP address instead
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # Database configuration
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-d4bl_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-d4bl_password}
-      - POSTGRES_DB=${POSTGRES_DB:-d4bl_db}
+      # Supabase CLI defaults to localhost:54322 with postgres/postgres credentials
+      # Ensure `supabase start` is running on the host before `docker compose up`
+      - POSTGRES_HOST=${POSTGRES_HOST:-host.docker.internal}
+      - POSTGRES_PORT=${POSTGRES_PORT:-54322}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
       # Embedder configuration for CrewAI memory
       - EMBEDDINGS_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - EMBEDDINGS_OLLAMA_MODEL_NAME=mxbai-embed-large
@@ -58,8 +40,6 @@ services:
       - ./output:/app/output
       - ./.env:/app/.env:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       phoenix:
         condition: service_started
     restart: unless-stopped
@@ -132,7 +112,4 @@ services:
 networks:
   d4bl-network:
     driver: bridge
-
-volumes:
-  postgres_data:
 
