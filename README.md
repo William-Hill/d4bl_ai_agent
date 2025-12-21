@@ -12,9 +12,9 @@ This tool combines web research, data analysis, and writing capabilities to inve
 - 📝 **Multiple Output Formats**: Brief, detailed, and comprehensive summaries
 - 🎨 **D4BL Branding**: Custom styling with D4BL colors and logo
 
-## Quick Start (Docker Compose + Supabase)
+## Quick Start (Docker Compose + Supabase + Langfuse)
 
-The easiest way to run the application is using Docker Compose with a local Ollama instance and a Supabase (Postgres) instance started by the Supabase CLI.
+The easiest way to run the application is using Docker Compose with a local Ollama instance, a Supabase (Postgres) instance started by the Supabase CLI, and Langfuse for tracing.
 
 ### Prerequisites
 
@@ -22,6 +22,7 @@ The easiest way to run the application is using Docker Compose with a local Olla
 - **Ollama** installed and running on your host machine
 - **Mistral model** pulled in Ollama
 - **Supabase CLI** installed (`brew install supabase/tap/supabase` or see Supabase docs)
+- **Langfuse** requirements are bundled in Docker Compose (Postgres, ClickHouse, Redis)
 
 See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions.
 
@@ -43,19 +44,30 @@ See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions
 3. **Start the application**:
    ```bash
    supabase start  # starts Supabase locally; Postgres listens on 54322
-   docker-compose up --build d4bl-api d4bl-frontend phoenix
+   docker-compose up --build d4bl-api d4bl-frontend langfuse
    ```
 
 4. **Access the application**:
    - **Frontend**: http://localhost:3000
    - **Backend API**: http://localhost:8000
    - **API Docs**: http://localhost:8000/docs
+- **Langfuse UI**: http://localhost:3001
 
 ### Database (Supabase)
 
 - The app now connects to the Supabase Postgres instance started by `supabase start`.
 - By default it uses `POSTGRES_HOST=host.docker.internal`, `POSTGRES_PORT=54322`, `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=postgres`, `POSTGRES_DB=postgres`.
 - To point at a remote Supabase project, override those `POSTGRES_*` environment variables (and set SSL as required by your project).
+
+### Tracing (Langfuse)
+
+- Langfuse runs inside Docker Compose and is reachable from the host at `http://localhost:3001` and from services via `http://langfuse:3000`.
+- Default credentials are seeded via env (override in `.env`):
+  - `LANGFUSE_INIT_USER_EMAIL=admin@localhost`
+  - `LANGFUSE_INIT_USER_PASSWORD=changeme-password`
+- The API uses:
+  - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (set your own)
+  - `LANGFUSE_HOST` / `LANGFUSE_BASE_URL` (defaults point to the Docker service)
 
 ### Stopping the Application
 
