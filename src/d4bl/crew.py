@@ -32,6 +32,95 @@ else:
 if not os.getenv("OLLAMA_BASE_URL"):
     os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434"
 
+# Configure Langfuse OTLP endpoint EARLY, before any OpenTelemetry imports
+# This must be set before OpenInference instrumentation initializes
+# Priority: Use environment variable if set (from docker-compose), otherwise compute it
+
+# Get Langfuse host configuration (needed for both paths)
+langfuse_host = os.getenv("LANGFUSE_HOST", "http://localhost:3002")
+langfuse_otel_host = os.getenv("LANGFUSE_OTEL_HOST")
+
+# If running in Docker, use service name for internal communication
+if os.path.exists("/.dockerenv"):
+    # Replace localhost with service name if needed
+    if "localhost" in langfuse_host:
+        langfuse_host = langfuse_host.replace("localhost", "langfuse-web")
+    if not langfuse_otel_host:
+        # Use port 3000 (internal) not 3002 (external)
+        langfuse_otel_host = langfuse_host.replace(":3002", ":3000").replace(":3001", ":3000")
+
+# Check if OTLP endpoint is already set (from docker-compose.yml)
+otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+
+if not otlp_endpoint:
+    # Compute OTLP endpoint if not already set
+    otlp_endpoint = f"{langfuse_otel_host or langfuse_host}/api/public/otel/v1/traces"
+    os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
+    os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
+else:
+    # Use the existing value, but ensure TRACES_ENDPOINT is also set
+    if not os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
+        os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
+
+# Ensure otlp_endpoint is always defined for logging
+if not otlp_endpoint:
+    otlp_endpoint = f"{langfuse_otel_host or langfuse_host}/api/public/otel/v1/traces"
+
+# Also set LANGFUSE_OTEL_HOST for Langfuse SDK's built-in OTLP exporter
+if langfuse_otel_host and not os.getenv("LANGFUSE_OTEL_HOST"):
+    os.environ["LANGFUSE_OTEL_HOST"] = langfuse_otel_host
+elif not os.getenv("LANGFUSE_OTEL_HOST"):
+    os.environ["LANGFUSE_OTEL_HOST"] = langfuse_host
+
+# Debug: Print OTLP configuration (only in Docker or if explicitly enabled)
+if os.path.exists("/.dockerenv") or os.getenv("DEBUG_OTLP"):
+    print(f"🔧 OTLP Configuration:")
+    print(f"   LANGFUSE_HOST: {langfuse_host}")
+    print(f"   LANGFUSE_OTEL_HOST: {langfuse_otel_host or langfuse_host}")
+    print(f"   OTEL_EXPORTER_OTLP_ENDPOINT: {os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT')}")
+    print(f"   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {os.getenv('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT')}")
+    print()
+
+# Log environment variables to file for debugging
+try:
+    import json
+    from datetime import datetime
+    
+    env_debug_file = project_root / "output" / "langfuse_env_debug.json"
+    os.makedirs(project_root / "output", exist_ok=True)
+    
+    env_debug = {
+        "timestamp": datetime.now().isoformat(),
+        "is_docker": os.path.exists("/.dockerenv"),
+        "environment_variables": {
+            "LANGFUSE_PUBLIC_KEY": os.getenv("LANGFUSE_PUBLIC_KEY", "NOT SET"),
+            "LANGFUSE_SECRET_KEY": "***" if os.getenv("LANGFUSE_SECRET_KEY") else "NOT SET",
+            "LANGFUSE_HOST": os.getenv("LANGFUSE_HOST", "NOT SET"),
+            "LANGFUSE_BASE_URL": os.getenv("LANGFUSE_BASE_URL", "NOT SET"),
+            "LANGFUSE_OTEL_HOST": os.getenv("LANGFUSE_OTEL_HOST", "NOT SET"),
+            "OTEL_EXPORTER_OTLP_ENDPOINT": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "NOT SET"),
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "NOT SET"),
+            "OTEL_EXPORTER_OTLP_PROTOCOL": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "NOT SET"),
+            "OTEL_SERVICE_NAME": os.getenv("OTEL_SERVICE_NAME", "NOT SET"),
+        },
+        "computed_values": {
+            "langfuse_host": langfuse_host,
+            "langfuse_otel_host": langfuse_otel_host or langfuse_host,
+            "otlp_endpoint": otlp_endpoint,
+        },
+        "all_otel_env_vars": {
+            k: v for k, v in os.environ.items() 
+            if k.startswith("OTEL_") or k.startswith("LANGFUSE_")
+        }
+    }
+    
+    with open(env_debug_file, "w") as f:
+        json.dump(env_debug, f, indent=2)
+    
+    print(f"📝 Environment variables logged to: {env_debug_file}")
+except Exception as e:
+    print(f"⚠️ Could not write environment debug file: {e}")
+
 # Print which environment variables are loaded (without showing full values)
 if env_loaded:
     print("\n📋 Environment variables loaded:")
@@ -41,7 +130,9 @@ if env_loaded:
         "ANTHROPIC_API_KEY",
         "GROQ_API_KEY",
         "OLLAMA_BASE_URL",
-        "PHOENIX_HOST"
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST"
     ]
     for var in env_vars_to_check:
         value = os.getenv(var)
@@ -62,72 +153,142 @@ print("  Using Ollama with Mistral 7B")
 print(f"  Ollama Base URL: {os.getenv('OLLAMA_BASE_URL')}")
 print()
 
-# Initialize Phoenix by Arize AI for observability
-# Reference: https://arize.com/docs/phoenix/integrations/python/crewai/crewai-tracing
-_phoenix_initialized = False
+# Initialize Langfuse for observability and tracing
+# Reference: https://langfuse.com/integrations/frameworks/crewai
+_langfuse_initialized = False
+_langfuse_client = None
 
-def initialize_phoenix():
-    """Initialize Phoenix observability and CrewAI instrumentation"""
-    global _phoenix_initialized
+def initialize_langfuse():
+    """Initialize Langfuse observability and CrewAI instrumentation"""
+    global _langfuse_initialized, _langfuse_client
     
-    if _phoenix_initialized:
-        return True
+    if _langfuse_initialized:
+        return _langfuse_client
     
     try:
-        # Configure OpenTelemetry endpoint for Phoenix BEFORE importing
-        # Phoenix supports both HTTP (port 6006) and gRPC (port 4317)
-        # Use gRPC endpoint for better performance and reliability
-        # If running in Docker, Phoenix service is accessible via service name
-        # If running on host, Phoenix is on localhost
-        if not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
-            if os.path.exists("/.dockerenv"):
-                # Running in Docker - use service name for internal communication
-                # Use gRPC endpoint on port 4317 (no /v1/traces path needed for gRPC)
-                phoenix_otel_endpoint = "http://phoenix:4317"
+        from langfuse import get_client
+        from openinference.instrumentation.crewai import CrewAIInstrumentor
+        
+        # Get Langfuse configuration from environment
+        # OTLP endpoint should already be configured above (before imports)
+        langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+        langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
+        langfuse_host = os.getenv("LANGFUSE_HOST", "http://localhost:3002")
+        langfuse_base_url = os.getenv("LANGFUSE_BASE_URL", langfuse_host)
+        langfuse_otel_host = os.getenv("LANGFUSE_OTEL_HOST", langfuse_host)
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", f"{langfuse_otel_host}/api/public/otel/v1/traces")
+        
+        # If running in Docker, ensure BASE_URL uses service name and internal port
+        if os.path.exists("/.dockerenv"):
+            # Fix LANGFUSE_BASE_URL if it's using localhost or wrong port
+            if "localhost" in langfuse_base_url or ":3002" in langfuse_base_url:
+                langfuse_base_url = langfuse_host  # Use the corrected host (langfuse-web:3000)
+        
+        # Set environment variables if not already set
+        if langfuse_public_key and not os.getenv("LANGFUSE_PUBLIC_KEY"):
+            os.environ["LANGFUSE_PUBLIC_KEY"] = langfuse_public_key
+        if langfuse_secret_key and not os.getenv("LANGFUSE_SECRET_KEY"):
+            os.environ["LANGFUSE_SECRET_KEY"] = langfuse_secret_key
+        if not os.getenv("LANGFUSE_HOST"):
+            os.environ["LANGFUSE_HOST"] = langfuse_host
+        # Always set BASE_URL to the corrected value in Docker
+        if os.path.exists("/.dockerenv"):
+            os.environ["LANGFUSE_BASE_URL"] = langfuse_base_url
+        elif not os.getenv("LANGFUSE_BASE_URL"):
+            os.environ["LANGFUSE_BASE_URL"] = langfuse_base_url
+        
+        # Initialize Langfuse client
+        _langfuse_client = get_client()
+        
+        # Verify connection (non-blocking - don't fail if Langfuse isn't ready yet)
+        # The OTLP exporter will still work even if auth check fails
+        try:
+            if _langfuse_client.auth_check():
+                print("✅ Langfuse client authenticated and ready!")
             else:
-                # Running on host - use localhost
-                phoenix_otel_endpoint = "http://localhost:4317"
-            os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = phoenix_otel_endpoint
-            os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = phoenix_otel_endpoint
-            # For gRPC, also set the gRPC-specific endpoint
-            os.environ["OTEL_EXPORTER_OTLP_GRPC_ENDPOINT"] = phoenix_otel_endpoint
-            print(f"   OTLP gRPC Endpoint: {phoenix_otel_endpoint}")
+                print("⚠️ Langfuse authentication failed. Please check your credentials and host.")
+                print(f"   LANGFUSE_HOST: {langfuse_host}")
+                print(f"   LANGFUSE_BASE_URL: {langfuse_base_url}")
+                print("   Continuing anyway - OTLP traces will still be sent when Langfuse is ready.")
+        except Exception as auth_error:
+            print(f"⚠️ Could not connect to Langfuse for auth check: {auth_error}")
+            print(f"   LANGFUSE_HOST: {langfuse_host}")
+            print(f"   LANGFUSE_BASE_URL: {langfuse_base_url}")
+            print("   This is OK - Langfuse may not be ready yet. OTLP traces will be sent when it's available.")
+            # Don't fail - continue with instrumentation
         
-        from phoenix.otel import register
+        # Initialize CrewAI instrumentation
+        # This automatically captures CrewAI operations and exports OpenTelemetry spans to Langfuse
+        # The OTLP endpoint is configured above via OTEL_EXPORTER_OTLP_ENDPOINT
         
-        # Get Phoenix configuration from environment
-        phoenix_project_name = os.getenv("PHOENIX_PROJECT_NAME", "d4bl-crewai")
+        # CRITICAL: Verify OTLP endpoint is set correctly before instrumentation
+        # The exporter reads this when it's created, so it must be set before instrument() is called
+        current_otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+        current_traces_endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
         
-        # Register Phoenix tracer - this automatically configures OpenTelemetry
-        # and sets up the exporter to send traces to Phoenix
-        # auto_instrument=True will automatically instrument based on installed dependencies
-        # The endpoint should be set via OTEL_EXPORTER_OTLP_ENDPOINT environment variable
-        tracer_provider = register(
-            project_name=phoenix_project_name,
-            auto_instrument=True  # Auto-instrument based on installed OpenInference packages
-        )
+        # Log all OTLP-related environment variables right before instrumentation
+        otlp_debug = {
+            "before_instrumentation": {
+                "OTEL_EXPORTER_OTLP_ENDPOINT": current_otlp_endpoint,
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": current_traces_endpoint,
+                "OTEL_EXPORTER_OTLP_PROTOCOL": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL"),
+                "OTEL_SERVICE_NAME": os.getenv("OTEL_SERVICE_NAME"),
+            },
+            "all_otel_vars": {k: v for k, v in os.environ.items() if k.startswith("OTEL_")}
+        }
         
-        _phoenix_initialized = True
-        print(f"✅ Phoenix observability initialized")
-        print(f"   Project: {phoenix_project_name}")
-        print(f"   View traces at: http://localhost:6006")
-        print(f"   (Make sure Phoenix is running: phoenix serve)")
+        try:
+            import json
+            debug_file = project_root / "output" / "otlp_before_instrumentation.json"
+            with open(debug_file, "w") as f:
+                json.dump(otlp_debug, f, indent=2)
+            print(f"📝 OTLP config before instrumentation logged to: {debug_file}")
+        except Exception as e:
+            print(f"⚠️ Could not write OTLP debug file: {e}")
         
-        return True
+        if not current_otlp_endpoint:
+            # Force set it if somehow not set
+            os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
+            os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
+            print(f"⚠️  OTLP endpoint was not set! Forced to: {otlp_endpoint}")
+        else:
+            print(f"✓ OTLP endpoint configured: {current_otlp_endpoint}")
+            if current_otlp_endpoint != otlp_endpoint:
+                print(f"⚠️  WARNING: OTLP endpoint mismatch!")
+                print(f"   Expected: {otlp_endpoint}")
+                print(f"   Actual: {current_otlp_endpoint}")
+        
+        # Now instrument - this will create the exporter with the endpoint above
+        CrewAIInstrumentor().instrument(skip_dep_check=True)
+        print(f"✅ CrewAI instrumentation initialized")
+        
+        _langfuse_initialized = True
+        print(f"✅ CrewAI instrumentation initialized for Langfuse observability")
+        print(f"   Langfuse Host: {langfuse_host}")
+        print(f"   View traces at: {langfuse_base_url}")
+        
+        return _langfuse_client
     except ImportError as e:
-        print(f"⚠️ Phoenix dependencies not installed: {e}")
-        print("   Install with: pip install arize-phoenix openinference-instrumentation-crewai")
-        _phoenix_initialized = False
-        return False
+        print(f"⚠️ Langfuse dependencies not installed: {e}")
+        print("   Install with: pip install langfuse openinference-instrumentation-crewai")
+        _langfuse_initialized = False
+        return None
     except Exception as e:
-        print(f"⚠️ Error initializing Phoenix: {e}")
+        print(f"⚠️ Error initializing Langfuse: {e}")
         import traceback
         traceback.print_exc()
-        _phoenix_initialized = False
-        return False
+        _langfuse_initialized = False
+        return None
 
-# Initialize Phoenix on module import
-initialize_phoenix()
+# Initialize Langfuse on module import
+initialize_langfuse()
+
+def get_langfuse_client():
+    """Get the initialized Langfuse client, initializing if necessary."""
+    global _langfuse_client
+    if _langfuse_client is None:
+        _langfuse_client = initialize_langfuse()
+    return _langfuse_client
 
 # Configure Ollama LLM with Mistral 7B
 # Using direct code configuration as per CrewAI documentation

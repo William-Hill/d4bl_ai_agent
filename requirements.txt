@@ -17,14 +17,11 @@ python-dotenv>=1.1.1
 litellm>=1.0.0
 ollama>=0.1.0  # Required for Ollama embeddings in CrewAI memory
 
-# Phoenix by Arize AI for observability
-arize-phoenix>=3.0.0
-# Phoenix Evals 2.0 (separate package for evaluations)
-arize-phoenix-evals>=2.0.0
-# Phoenix client for API access
-arize-phoenix-client>=1.19.0
+# Langfuse for observability and tracing
+langfuse>=2.0.0
+# OpenInference instrumentation for CrewAI and LiteLLM
 openinference-instrumentation-crewai>=0.1.0
 # CrewAI >= 0.63.0 uses LiteLLM, so we need this for LLM call visibility
 openinference-instrumentation-litellm>=0.1.0
-# Additional dependencies for Phoenix evaluations
+# Additional dependencies for evaluations
 pandas>=2.0.0  # Required for running evaluations

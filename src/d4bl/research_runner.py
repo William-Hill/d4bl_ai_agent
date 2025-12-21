@@ -16,7 +16,7 @@ from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.crew import D4Bl
+from d4bl.crew import D4Bl, get_langfuse_client
 from d4bl.database import ResearchJob, get_db
 from d4bl.websocket_manager import (
     create_log_queue,
@@ -222,10 +222,32 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
 
             log_processor_task = asyncio.create_task(process_log_queue())
 
+            # Get Langfuse client for tracing
+            langfuse = get_langfuse_client()
+            
             try:
                 sys.stdout = output_handler
                 sys.stderr = output_handler
-                result = await asyncio.to_thread(lambda: crew_instance.crew().kickoff(inputs=inputs))
+                
+                # Wrap crew execution with Langfuse observation for better trace visibility
+                if langfuse:
+                    with langfuse.start_as_current_observation(
+                        as_type="span",
+                        name="d4bl-research-crew",
+                        input={"query": query, "summary_format": summary_format, **inputs},
+                    ) as langfuse_span:
+                        result = await asyncio.to_thread(
+                            lambda: crew_instance.crew().kickoff(inputs=inputs)
+                        )
+                        # Update trace with output
+                        langfuse_span.update_trace(
+                            output=str(result.raw) if hasattr(result, "raw") else str(result)
+                        )
+                        # Flush to ensure traces are sent
+                        langfuse.flush()
+                else:
+                    # Fallback if Langfuse is not initialized
+                    result = await asyncio.to_thread(lambda: crew_instance.crew().kickoff(inputs=inputs))
             finally:
                 sys.stdout = original_stdout
                 sys.stderr = original_stderr
