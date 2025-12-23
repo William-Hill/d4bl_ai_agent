@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 from d4bl.services.langfuse.quality import evaluate_research_quality
 from d4bl.services.langfuse.source_relevance import evaluate_source_relevance
 from d4bl.services.langfuse.bias import evaluate_bias_detection
+from d4bl.services.langfuse.hallucination import evaluate_hallucination
+from d4bl.services.langfuse.reference import evaluate_reference
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
@@ -62,6 +64,30 @@ def run_comprehensive_evaluation(
         results["evaluations"]["source_relevance"] = {"error": str(e), "status": "failed"}
 
     eval_logger.info("Running bias detection evaluation...")
+    eval_logger.info("Running hallucination evaluation...")
+    try:
+        results["evaluations"]["hallucination"] = evaluate_hallucination(
+            query=query,
+            answer=research_output,
+            context="; ".join(sources[:5]) if sources else "",
+            trace_id=trace_id,
+        )
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Failed to run hallucination evaluation: %s", e, exc_info=True)
+        results["evaluations"]["hallucination"] = {"error": str(e), "status": "failed"}
+
+    eval_logger.info("Running reference grounding evaluation...")
+    try:
+        results["evaluations"]["reference"] = evaluate_reference(
+            query=query,
+            answer=research_output,
+            context="; ".join(sources[:5]) if sources else "",
+            trace_id=trace_id,
+        )
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Failed to run reference evaluation: %s", e, exc_info=True)
+        results["evaluations"]["reference"] = {"error": str(e), "status": "failed"}
+
     try:
         results["evaluations"]["bias"] = evaluate_bias_detection(
             research_output=research_output,
@@ -77,6 +103,8 @@ def run_comprehensive_evaluation(
         quality_score = results["evaluations"]["quality"].get("scores", {}).get("overall", 3.0)
         source_score = results["evaluations"]["source_relevance"].get("average", 3.0)
         bias_score = results["evaluations"]["bias"].get("bias_score", 3.0)
+        hallucination_score = results["evaluations"]["hallucination"].get("hallucination_score", 3.0)
+        reference_score = results["evaluations"]["reference"].get("reference_score", 3.0)
 
         if results["evaluations"]["quality"].get("status") != "success":
             quality_score = 3.0
@@ -87,14 +115,24 @@ def run_comprehensive_evaluation(
         if results["evaluations"]["bias"].get("status") != "success":
             bias_score = 3.0
             eval_logger.warning("Using default bias score due to evaluation failure")
+        if results["evaluations"]["hallucination"].get("status") != "success":
+            hallucination_score = 3.0
+            eval_logger.warning("Using default hallucination score due to evaluation failure")
+        if results["evaluations"]["reference"].get("status") != "success":
+            reference_score = 3.0
+            eval_logger.warning("Using default reference score due to evaluation failure")
 
-        overall_score = (quality_score + source_score + bias_score) / 3.0
+        overall_score = (
+            quality_score + source_score + bias_score + hallucination_score + reference_score
+        ) / 5.0
         results["overall_score"] = overall_score
 
         eval_logger.info("Overall evaluation score: %.2f", overall_score)
         eval_logger.info("  - Quality: %.2f", quality_score)
         eval_logger.info("  - Source Relevance: %.2f", source_score)
         eval_logger.info("  - Bias: %.2f", bias_score)
+        eval_logger.info("  - Hallucination: %.2f", hallucination_score)
+        eval_logger.info("  - Reference: %.2f", reference_score)
 
     except Exception as score_error:  # pragma: no cover - defensive
         logger.error("Failed to calculate overall score: %s", score_error, exc_info=True)
