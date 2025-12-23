@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
+from d4bl.infra.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
 from d4bl.services.research_runner import run_research_job
 from d4bl.app.schemas import (
     EvaluationResultItem,

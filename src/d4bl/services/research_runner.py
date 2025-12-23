@@ -16,9 +16,9 @@ from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.crew import D4Bl
+from d4bl.agents.crew import D4Bl
 from d4bl.observability import get_langfuse_client
-from d4bl.database import ResearchJob, get_db
+from d4bl.infra.database import ResearchJob, get_db
 from d4bl.app.websocket_manager import (
     create_log_queue,
     get_job_logs,

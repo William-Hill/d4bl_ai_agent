@@ -5,7 +5,7 @@ import argparse
 
 from datetime import datetime
 
-from d4bl.crew import D4Bl
+from d4bl.agents.crew import D4Bl
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 

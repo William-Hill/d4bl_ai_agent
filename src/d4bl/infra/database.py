@@ -92,7 +92,7 @@ def get_database_url() -> str:
     db_password = os.getenv("POSTGRES_PASSWORD", "d4bl_password")
     db_host = os.getenv("POSTGRES_HOST", "localhost")
     db_port = os.getenv("POSTGRES_PORT", "5432")
-    db_name = os.getenv("POSTGRES_DB", "d4bl_db")
+    db_name = os.getenv("POSTGRES_DB", "postgres")
     
     # CRITICAL: In Docker, we MUST use 'postgres' as the hostname (Docker service name)
     # If POSTGRES_HOST is not set or is 'localhost', we're likely in Docker and should use 'postgres'
@@ -107,7 +107,7 @@ def get_database_url() -> str:
     
     # Ensure we're using the correct database name (not the username)
     if not db_name or db_name == db_user:
-        db_name = "d4bl_db"
+        db_name = "postgres"
         print(f"⚠ Warning: Using default database name: {db_name}")
     
     # Use asyncpg driver for async operations
