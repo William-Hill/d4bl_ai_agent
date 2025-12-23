@@ -18,13 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.crew import D4Bl, get_langfuse_client
 from d4bl.database import ResearchJob, get_db
-from d4bl.websocket_manager import (
+from d4bl.app.websocket_manager import (
     create_log_queue,
     get_job_logs,
     remove_log_queue,
     send_websocket_update,
     set_job_logs,
 )
+from d4bl.services.error_handling import safe_execute, ErrorRecoveryStrategy
+from d4bl.services.langfuse_evals import run_comprehensive_evaluation
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LiveOutputHandler:
@@ -82,6 +87,7 @@ async def update_job_status(
     error: Optional[str] = None,
     logs: Optional[list] = None,
     trace_id: Optional[str] = None,
+    evaluation_results: Optional[dict] = None,
 ) -> None:
     """Persist job state updates to the database."""
     try:
@@ -97,6 +103,10 @@ async def update_job_status(
         if progress is not None:
             job.progress = progress
         if result is not None:
+            # Include evaluation results in result dict
+            if evaluation_results is not None:
+                result = result or {}
+                result["evaluation_results"] = evaluation_results
             job.result = result
         if research_data is not None:
             job.research_data = research_data
@@ -136,6 +146,7 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
         error: Optional[str] = None,
         logs: Optional[list] = None,
         trace_override: Optional[str] = None,
+        evaluation_results: Optional[dict] = None,
     ) -> None:
         trace_value = trace_override or trace_id_hex
         async for db in get_db():
@@ -150,6 +161,7 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
                     error=error,
                     logs=logs,
                     trace_id=trace_value,
+                    evaluation_results=evaluation_results,
                 )
                 break
             except Exception as update_err:  # noqa: BLE001
@@ -222,32 +234,41 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
 
             log_processor_task = asyncio.create_task(process_log_queue())
 
-            # Get Langfuse client for tracing
-            langfuse = get_langfuse_client()
+            # Use OpenTelemetry trace_id_hex for Langfuse trace linking
+            # CrewAI is already instrumented with OpenTelemetry, so traces are automatically
+            # sent to Langfuse via OTLP. The trace_id_hex from OpenTelemetry is what Langfuse uses.
+            langfuse_trace_id = trace_id_hex
+            logger.info(f"Using OpenTelemetry trace_id for Langfuse: {langfuse_trace_id[:16]}...")
             
             try:
                 sys.stdout = output_handler
                 sys.stderr = output_handler
                 
-                # Wrap crew execution with Langfuse observation for better trace visibility
+                # Execute crew with error handling
+                def execute_crew():
+                    try:
+                        return crew_instance.crew().kickoff(inputs=inputs)
+                    except Exception as e:
+                        logger.error(f"Crew execution failed: {e}", exc_info=True)
+                        # Try recovery strategy
+                        recovery_result = ErrorRecoveryStrategy.return_partial_results(
+                            e, {"query": query, "partial_results": []}
+                        )
+                        # Create a mock result object for partial failure
+                        class PartialResult:
+                            def __init__(self, error_data):
+                                self.raw = error_data
+                                self.tasks_output = []
+                        
+                        return PartialResult(recovery_result)
+                
+                # Execute crew - traces are automatically sent via OpenTelemetry instrumentation
+                result = await asyncio.to_thread(execute_crew)
+                
+                # Flush Langfuse client if available to ensure all traces are sent
+                langfuse = get_langfuse_client()
                 if langfuse:
-                    with langfuse.start_as_current_observation(
-                        as_type="span",
-                        name="d4bl-research-crew",
-                        input={"query": query, "summary_format": summary_format, **inputs},
-                    ) as langfuse_span:
-                        result = await asyncio.to_thread(
-                            lambda: crew_instance.crew().kickoff(inputs=inputs)
-                        )
-                        # Update trace with output
-                        langfuse_span.update_trace(
-                            output=str(result.raw) if hasattr(result, "raw") else str(result)
-                        )
-                        # Flush to ensure traces are sent
-                        langfuse.flush()
-                else:
-                    # Fallback if Langfuse is not initialized
-                    result = await asyncio.to_thread(lambda: crew_instance.crew().kickoff(inputs=inputs))
+                    langfuse.flush()
             finally:
                 sys.stdout = original_stdout
                 sys.stderr = original_stderr
@@ -356,13 +377,97 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
             except Exception as exc:  # noqa: BLE001
                 print(f"Error reading report file: {exc}")
 
+            # Run Langfuse evaluations on the research output
+            evaluation_results = None
+            try:
+                research_output = research_data_dict.get("all_research_content", "") or result_dict.get("raw_output", "")
+                sources = []
+                
+                # Extract sources from research data
+                import re
+                for finding in research_data_dict.get("research_findings", []):
+                    # Try to extract URLs from content
+                    urls = re.findall(r'https?://[^\s\)]+', finding.get("content", ""))
+                    sources.extend(urls)
+                
+                # Also check raw output for URLs
+                if result_dict.get("raw_output"):
+                    urls = re.findall(r'https?://[^\s\)]+', result_dict.get("raw_output", ""))
+                    sources.extend(urls)
+                
+                # Use the OpenTelemetry trace_id_hex for evaluations
+                # This links evaluations to the trace that Langfuse receives via OTLP
+                if research_output and langfuse_trace_id:
+                    logger.info(f"🔍 Starting Langfuse evaluations for trace_id: {langfuse_trace_id[:16]}...")
+                    logger.debug(f"   Research output length: {len(research_output)} chars")
+                    logger.debug(f"   Sources found: {len(sources)}")
+                    
+                    try:
+                        evaluation_results = run_comprehensive_evaluation(
+                            query=query,
+                            research_output=research_output[:5000],  # Limit size
+                            sources=list(set(sources))[:10],  # Deduplicate and limit
+                            trace_id=langfuse_trace_id  # Use OpenTelemetry trace ID
+                        )
+                        
+                        eval_status = evaluation_results.get('status', 'unknown')
+                        elapsed_time = evaluation_results.get('elapsed_time', 0)
+                        
+                        if eval_status == 'success':
+                            overall_score = evaluation_results.get('overall_score', 'N/A')
+                            logger.info(f"✅ Evaluations completed successfully in {elapsed_time:.2f}s")
+                            logger.info(f"   Overall score: {overall_score:.2f}" if isinstance(overall_score, (int, float)) else f"   Overall score: {overall_score}")
+                        elif eval_status == 'partial_success':
+                            overall_score = evaluation_results.get('overall_score', 'N/A')
+                            logger.warning(f"⚠️ Evaluations completed with partial success in {elapsed_time:.2f}s")
+                            logger.warning(f"   Overall score: {overall_score:.2f}" if isinstance(overall_score, (int, float)) else f"   Overall score: {overall_score}")
+                            # Log which evaluations failed
+                            for eval_name, eval_result in evaluation_results.get('evaluations', {}).items():
+                                if eval_result.get('status') != 'success':
+                                    logger.warning(f"   - {eval_name}: {eval_result.get('status')} - {eval_result.get('error', 'Unknown error')}")
+                        else:
+                            logger.error(f"❌ Evaluations failed in {elapsed_time:.2f}s")
+                            # Log evaluation errors
+                            for eval_name, eval_result in evaluation_results.get('evaluations', {}).items():
+                                if eval_result.get('status') != 'success':
+                                    logger.error(f"   - {eval_name}: {eval_result.get('error', 'Unknown error')}")
+                    
+                    except Exception as eval_exec_error:
+                        logger.error(f"❌ Exception during evaluation execution: {eval_exec_error}", exc_info=True)
+                        evaluation_results = {
+                            "status": "evaluation_failed",
+                            "error": str(eval_exec_error),
+                            "error_type": type(eval_exec_error).__name__
+                        }
+                        
+                elif not research_output:
+                    logger.warning("No research output available, skipping evaluations")
+                    evaluation_results = {"status": "skipped", "reason": "no_research_output"}
+                elif not langfuse_trace_id:
+                    logger.warning("No trace_id available, skipping evaluations")
+                    evaluation_results = {"status": "skipped", "reason": "no_trace_id"}
+            except Exception as eval_error:
+                logger.error(f"❌ Failed to run evaluations: {eval_error}", exc_info=True)
+                logger.error(f"   Error type: {type(eval_error).__name__}")
+                evaluation_results = {
+                    "status": "evaluation_failed",
+                    "error": str(eval_error),
+                    "error_type": type(eval_error).__name__
+                }
+            
             final_logs = get_job_logs(job_id)
+            
+            # Include evaluation results in result dict
+            if evaluation_results:
+                result_dict["evaluation_results"] = evaluation_results
+            
             await set_status(
                 "Research completed successfully!",
                 status="completed",
                 result=result_dict,
                 research_data=research_data_dict,
                 logs=final_logs,
+                evaluation_results=evaluation_results,
             )
 
             await send_websocket_update(

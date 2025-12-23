@@ -13,15 +13,15 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
-from d4bl.research_runner import run_research_job
-from d4bl.schemas import (
+from d4bl.services.research_runner import run_research_job
+from d4bl.app.schemas import (
     EvaluationResultItem,
     JobHistoryResponse,
     JobStatus,
     ResearchRequest,
     ResearchResponse,
 )
-from d4bl.websocket_manager import get_job_logs, register_connection, remove_connection
+from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 
 app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
