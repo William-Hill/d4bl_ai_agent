@@ -4,14 +4,11 @@ FastAPI backend for D4BL AI Agent UI
 import asyncio
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,14 +44,6 @@ async def shutdown_event():
     await close_db()
 
 
-# Get project root directory
-project_root = Path(__file__).parent.parent.parent
-ui_dir = project_root / "ui"
-
-# Serve static files if UI directory exists
-if ui_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(ui_dir)), name="static")
-
 # CORS middleware for local development
 app.add_middleware(
     CORSMiddleware,
@@ -64,18 +53,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def read_root():
-    """Serve the main UI"""
-    html_path = ui_dir / "index.html"
-    if html_path.exists():
-        with open(html_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            # Replace relative paths with /static/ for CSS and JS
-            content = content.replace('href="styles.css"', 'href="/static/styles.css"')
-            content = content.replace('src="app.js"', 'src="/static/app.js"')
-            return HTMLResponse(content=content)
-    return HTMLResponse(content="<h1>D4BL AI Agent API</h1><p>UI not found. Please check the ui directory.</p>")
+    """Root endpoint for health/status."""
+    return {"status": "ok", "message": "D4BL AI Agent API"}
 
 
 @app.post("/api/research", response_model=ResearchResponse)

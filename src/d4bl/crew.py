@@ -2,12 +2,23 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-from crewai.tools import BaseTool
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Type, Union
+import json
+from typing import List
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
+
+# Import error handling utilities
+from d4bl.error_handling import retry_with_backoff, safe_execute, ErrorRecoveryStrategy
+from d4bl.settings import get_settings
+from d4bl.tools import Crawl4AISearchTool, FirecrawlSearchWrapper
+
+logger = logging.getLogger(__name__)
+
+# Serper.dev API for search query to URL conversion
+# Crawl4AI only works with URLs, so we use Serper.dev to convert search queries to URLs
+# Serper.dev uses a simple REST API (no package needed)
 
 # Load environment variables from multiple possible locations
 # File is at: src/d4bl/crew.py
@@ -80,46 +91,6 @@ if os.path.exists("/.dockerenv") or os.getenv("DEBUG_OTLP"):
     print(f"   OTEL_EXPORTER_OTLP_ENDPOINT: {os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT')}")
     print(f"   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {os.getenv('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT')}")
     print()
-
-# Log environment variables to file for debugging
-try:
-    import json
-    from datetime import datetime
-    
-    env_debug_file = project_root / "output" / "langfuse_env_debug.json"
-    os.makedirs(project_root / "output", exist_ok=True)
-    
-    env_debug = {
-        "timestamp": datetime.now().isoformat(),
-        "is_docker": os.path.exists("/.dockerenv"),
-        "environment_variables": {
-            "LANGFUSE_PUBLIC_KEY": os.getenv("LANGFUSE_PUBLIC_KEY", "NOT SET"),
-            "LANGFUSE_SECRET_KEY": "***" if os.getenv("LANGFUSE_SECRET_KEY") else "NOT SET",
-            "LANGFUSE_HOST": os.getenv("LANGFUSE_HOST", "NOT SET"),
-            "LANGFUSE_BASE_URL": os.getenv("LANGFUSE_BASE_URL", "NOT SET"),
-            "LANGFUSE_OTEL_HOST": os.getenv("LANGFUSE_OTEL_HOST", "NOT SET"),
-            "OTEL_EXPORTER_OTLP_ENDPOINT": os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "NOT SET"),
-            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "NOT SET"),
-            "OTEL_EXPORTER_OTLP_PROTOCOL": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "NOT SET"),
-            "OTEL_SERVICE_NAME": os.getenv("OTEL_SERVICE_NAME", "NOT SET"),
-        },
-        "computed_values": {
-            "langfuse_host": langfuse_host,
-            "langfuse_otel_host": langfuse_otel_host or langfuse_host,
-            "otlp_endpoint": otlp_endpoint,
-        },
-        "all_otel_env_vars": {
-            k: v for k, v in os.environ.items() 
-            if k.startswith("OTEL_") or k.startswith("LANGFUSE_")
-        }
-    }
-    
-    with open(env_debug_file, "w") as f:
-        json.dump(env_debug, f, indent=2)
-    
-    print(f"📝 Environment variables logged to: {env_debug_file}")
-except Exception as e:
-    print(f"⚠️ Could not write environment debug file: {e}")
 
 # Print which environment variables are loaded (without showing full values)
 if env_loaded:
@@ -226,26 +197,6 @@ def initialize_langfuse():
         current_otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
         current_traces_endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
         
-        # Log all OTLP-related environment variables right before instrumentation
-        otlp_debug = {
-            "before_instrumentation": {
-                "OTEL_EXPORTER_OTLP_ENDPOINT": current_otlp_endpoint,
-                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": current_traces_endpoint,
-                "OTEL_EXPORTER_OTLP_PROTOCOL": os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL"),
-                "OTEL_SERVICE_NAME": os.getenv("OTEL_SERVICE_NAME"),
-            },
-            "all_otel_vars": {k: v for k, v in os.environ.items() if k.startswith("OTEL_")}
-        }
-        
-        try:
-            import json
-            debug_file = project_root / "output" / "otlp_before_instrumentation.json"
-            with open(debug_file, "w") as f:
-                json.dump(otlp_debug, f, indent=2)
-            print(f"📝 OTLP config before instrumentation logged to: {debug_file}")
-        except Exception as e:
-            print(f"⚠️ Could not write OTLP debug file: {e}")
-        
         if not current_otlp_endpoint:
             # Force set it if somehow not set
             os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
@@ -348,70 +299,9 @@ def reset_ollama_llm():
     print("🔄 Reset Ollama LLM instance")
 
 
-class FirecrawlSearchWrapperInput(BaseModel):
-    """Input schema for Firecrawl Search Wrapper tool."""
-    query: Union[str, dict] = Field(..., description="The search query as a plain text string. Example: 'data science trends 2025'")
-    
-    @field_validator('query', mode='before')
-    @classmethod
-    def normalize_query(cls, v):
-        """Normalize input - handle both strings and dicts from Ollama."""
-        if isinstance(v, dict):
-            # Extract the actual query value from various possible dict formats
-            if 'query' in v:
-                return v['query']
-            elif 'description' in v:
-                # Sometimes Ollama passes the description field as the value
-                desc = v['description']
-                # If description contains the actual query, use it
-                if isinstance(desc, str) and len(desc) > 5:
-                    return desc
-            elif 'value' in v:
-                return v['value']
-            else:
-                # Try to get the first string value that looks like a query
-                for key, value in v.items():
-                    if isinstance(value, str) and len(value) > 5:
-                        return value
-                # Last resort: convert dict to string
-                return str(v)
-        elif isinstance(v, str):
-            return v
-        else:
-            return str(v)
-
-
-class FirecrawlSearchWrapper(BaseTool):
-    """Wrapper tool for FirecrawlSearchTool that normalizes input format for Ollama compatibility."""
-    name: str = "Firecrawl web search tool"
-    description: str = (
-        "Search webpages using Firecrawl and return the results. "
-        "Pass the search query as a plain text string. "
-        "Example: Use 'data science trends 2025' not a dictionary or schema."
-    )
-    args_schema: Type[BaseModel] = FirecrawlSearchWrapperInput
-    
-    def __init__(self, firecrawl_tool: FirecrawlSearchTool):
-        super().__init__()
-        # Use object.__setattr__ to bypass Pydantic's validation for internal attributes
-        object.__setattr__(self, '_firecrawl_tool', firecrawl_tool)
-    
-    def _run(self, query: str) -> str:
-        """Execute the search with normalized input."""
-        # Ensure query is a string (should already be normalized by schema)
-        if not isinstance(query, str):
-            query = str(query)
-        
-        # Call the actual Firecrawl tool
-        return self._firecrawl_tool._run(query=query)
-
-# If you want to run a snippet of code before or after the crew starts,
-# you can use the @before_kickoff and @after_kickoff decorators
-# https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
-
 @CrewBase
 class D4Bl():
-    """D4Bl crew"""
+    """D4Bl crew with enhanced error handling and reliability"""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -421,6 +311,13 @@ class D4Bl():
         """Ensure output directory exists before running the crew"""
         os.makedirs('output', exist_ok=True)
         print(f"Starting D4BL research crew with inputs: {inputs}")
+        
+        # Validate inputs
+        if not inputs.get("query"):
+            raise ValueError("Query is required for research")
+        
+        # Log input validation
+        logger.info(f"Research query validated: {inputs.get('query')[:100]}...")
         return inputs
 
     # Learn more about YAML configuration files here:
@@ -431,28 +328,34 @@ class D4Bl():
     # https://docs.crewai.com/concepts/agents#agent-tools
     @agent
     def researcher(self) -> Agent:
-        firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
-        if not firecrawl_api_key:
-            raise ValueError(
-                "FIRECRAWL_API_KEY not found in environment variables. "
-                "Please create a .env file in the project root "
-                "with: FIRECRAWL_API_KEY=your_api_key_here"
+        settings = get_settings()
+        provider = settings.crawl_provider
+
+        if provider == "crawl4ai":
+            print(f"🔧 Using Crawl4AI at: {settings.crawl4ai_base_url}")
+            crawl_tool = Crawl4AISearchTool(
+                base_url=settings.crawl4ai_base_url,
+                api_key=settings.crawl4ai_api_key,
             )
-        
-        # Create the base Firecrawl tool
-        firecrawl_tool = FirecrawlSearchTool(
-            api_key=firecrawl_api_key,
-            max_pages=3,  # Limit to 3 pages
-            max_results=5  # Limit to 5 results per page
-        )
-        
-        # Wrap it to handle Ollama's function calling format issues
-        firecrawl_wrapper = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
+            tool_wrapped = crawl_tool
+        else:
+            if not settings.firecrawl_api_key:
+                raise ValueError(
+                    "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai."
+                )
+
+            firecrawl_tool = FirecrawlSearchTool(
+                api_key=settings.firecrawl_api_key,
+                max_pages=3,
+                max_results=5
+            )
+            tool_wrapped = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
+            print("🔧 Using Firecrawl (cloud) provider")
         
         return Agent(
             config=self.agents_config['researcher'], # type: ignore[index]
             llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            tools=[firecrawl_wrapper],
+            tools=[tool_wrapped],
             verbose=True,
             allow_delegation=False
         )
