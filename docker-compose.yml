@@ -27,6 +27,15 @@ services:
       # Must be set before any OpenTelemetry imports
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
+      # Crawling provider: crawl4ai (self-hosted) or firecrawl (cloud)
+      # Crawl4AI requires URLs - use Serper API to convert search queries to URLs
+      # Note: Crawl4AI listens on port 11235 internally, 3100 is the external port mapping
+      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-crawl4ai}
+      - CRAWL4AI_BASE_URL=${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
+      # Serper API for converting search queries to URLs (required for Crawl4AI search support)
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - SERP_API_KEY=${SERP_API_KEY:-}  # Alternative name
       # Embedder configuration for CrewAI memory
       - EMBEDDINGS_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - EMBEDDINGS_OLLAMA_MODEL_NAME=mxbai-embed-large
@@ -54,6 +63,7 @@ services:
     restart: unless-stopped
     networks:
       - d4bl-network
+      - crawl4ai
     extra_hosts:
       # Add host.docker.internal for Linux compatibility
       - "host.docker.internal:host-gateway"
@@ -232,6 +242,23 @@ services:
       timeout: 10s
       retries: 10
 
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: crawl4ai
+    restart: unless-stopped
+    networks:
+      - crawl4ai
+    environment:
+      - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
+    ports:
+      - "3100:11235"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:11235/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   postgres:
     image: docker.io/postgres:${POSTGRES_VERSION:-17}
     restart: always
@@ -265,4 +292,7 @@ volumes:
 
 networks:
   d4bl-network:
+    driver: bridge
+
+  crawl4ai:
     driver: bridge
