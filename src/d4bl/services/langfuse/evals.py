@@ -159,7 +159,7 @@ Provide scores and brief explanations for each criterion. Format as JSON with ke
         # Use CrewAI LLM helper (callable or .call) to generate evaluation
         eval_logger.debug("Initializing LLM for evaluation via CrewAI helper")
         try:
-            from d4bl.crew import get_ollama_llm
+            from d4bl.llm import get_ollama_llm
             llm = get_ollama_llm()
             eval_logger.debug("LLM initialized successfully")
         except Exception as llm_error:

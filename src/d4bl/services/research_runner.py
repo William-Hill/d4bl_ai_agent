@@ -16,7 +16,8 @@ from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.crew import D4Bl, get_langfuse_client
+from d4bl.crew import D4Bl
+from d4bl.observability import get_langfuse_client
 from d4bl.database import ResearchJob, get_db
 from d4bl.app.websocket_manager import (
     create_log_queue,
@@ -26,7 +27,7 @@ from d4bl.app.websocket_manager import (
     set_job_logs,
 )
 from d4bl.services.error_handling import safe_execute, ErrorRecoveryStrategy
-from d4bl.services.langfuse_evals import run_comprehensive_evaluation
+from d4bl.services.langfuse.evals import run_comprehensive_evaluation
 import logging
 
 logger = logging.getLogger(__name__)
