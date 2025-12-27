@@ -41,11 +41,19 @@ See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions
    OLLAMA_BASE_URL=http://localhost:11434
    ```
 
-3. **Start the application**:
-   ```bash
-   supabase start  # starts Supabase locally; Postgres listens on 54322
-   docker-compose up --build d4bl-api d4bl-frontend langfuse
-   ```
+3. **Start the application (modular Compose)**:
+   - Core app (API + frontend + Postgres):
+     ```bash
+     docker compose -f docker-compose.base.yml up --build
+     ```
+   - Add Langfuse observability stack:
+     ```bash
+     docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up --build
+     ```
+   - Add Crawl4AI (self-hosted crawl provider):
+     ```bash
+     docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
+     ```
 
 4. **Access the application**:
    - **Frontend**: http://localhost:3000
@@ -53,21 +61,16 @@ See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions
    - **API Docs**: http://localhost:8000/docs
 - **Langfuse UI**: http://localhost:3001
 
-### Database (Supabase)
+### Database
 
-- The app now connects to the Supabase Postgres instance started by `supabase start`.
-- By default it uses `POSTGRES_HOST=host.docker.internal`, `POSTGRES_PORT=54322`, `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=postgres`, `POSTGRES_DB=postgres`.
-- To point at a remote Supabase project, override those `POSTGRES_*` environment variables (and set SSL as required by your project).
+- The app connects to Postgres in Docker (`docker-compose.base.yml`) by default.
+- Override `POSTGRES_*` env vars to point to Supabase/remote Postgres as needed (set SSL per your provider).
 
 ### Tracing (Langfuse)
 
-- Langfuse runs inside Docker Compose and is reachable from the host at `http://localhost:3001` and from services via `http://langfuse:3000`.
-- Default credentials are seeded via env (override in `.env`):
-  - `LANGFUSE_INIT_USER_EMAIL=admin@localhost`
-  - `LANGFUSE_INIT_USER_PASSWORD=changeme-password`
-- The API uses:
-  - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (set your own)
-  - `LANGFUSE_HOST` / `LANGFUSE_BASE_URL` (defaults point to the Docker service)
+- To enable Langfuse, include `docker-compose.observability.yml` when starting Compose.
+- Reachable from host at `http://localhost:3001` (web UI) and services via `http://langfuse:3000`.
+- Default credentials/env seeded via `.env`; override `LANGFUSE_*` keys as needed.
 
 ### Stopping the Application
 
