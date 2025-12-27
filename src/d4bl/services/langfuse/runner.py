@@ -66,10 +66,18 @@ def run_comprehensive_evaluation(
     eval_logger.info("Running bias detection evaluation...")
     eval_logger.info("Running hallucination evaluation...")
     try:
+        # Use sources if available, otherwise use a portion of research output as context
+        if sources and len(sources) > 0 and not sources[0].startswith("No URLs"):
+            context = "; ".join(sources[:5])
+        else:
+            # Fallback: use first part of research output as context
+            context = research_output[:1000] if research_output else "No context available"
+            eval_logger.warning("No sources found, using research output as context for hallucination evaluation")
+        
         results["evaluations"]["hallucination"] = evaluate_hallucination(
             query=query,
             answer=research_output,
-            context="; ".join(sources[:5]) if sources else "",
+            context=context,
             trace_id=trace_id,
         )
     except Exception as e:  # pragma: no cover - defensive
@@ -78,10 +86,18 @@ def run_comprehensive_evaluation(
 
     eval_logger.info("Running reference grounding evaluation...")
     try:
+        # Use sources if available, otherwise use a portion of research output as context
+        if sources and len(sources) > 0 and not sources[0].startswith("No URLs"):
+            context = "; ".join(sources[:5])
+        else:
+            # Fallback: use first part of research output as context
+            context = research_output[:1000] if research_output else "No context available"
+            eval_logger.warning("No sources found, using research output as context for reference evaluation")
+        
         results["evaluations"]["reference"] = evaluate_reference(
             query=query,
             answer=research_output,
-            context="; ".join(sources[:5]) if sources else "",
+            context=context,
             trace_id=trace_id,
         )
     except Exception as e:  # pragma: no cover - defensive
@@ -106,21 +122,41 @@ def run_comprehensive_evaluation(
         hallucination_score = results["evaluations"]["hallucination"].get("hallucination_score", 3.0)
         reference_score = results["evaluations"]["reference"].get("reference_score", 3.0)
 
-        if results["evaluations"]["quality"].get("status") != "success":
+        # Handle different statuses: success, skipped, failed
+        quality_status = results["evaluations"]["quality"].get("status")
+        if quality_status not in ("success", "skipped"):
             quality_score = 3.0
             eval_logger.warning("Using default quality score due to evaluation failure")
-        if results["evaluations"]["source_relevance"].get("status") != "success":
+        elif quality_status == "skipped":
+            eval_logger.info("Quality evaluation was skipped, using default score")
+        
+        source_status = results["evaluations"]["source_relevance"].get("status")
+        if source_status not in ("success", "skipped"):
             source_score = 3.0
             eval_logger.warning("Using default source relevance score due to evaluation failure")
-        if results["evaluations"]["bias"].get("status") != "success":
+        elif source_status == "skipped":
+            eval_logger.info("Source relevance evaluation was skipped (no sources), using default score")
+        
+        bias_status = results["evaluations"]["bias"].get("status")
+        if bias_status not in ("success", "skipped"):
             bias_score = 3.0
             eval_logger.warning("Using default bias score due to evaluation failure")
-        if results["evaluations"]["hallucination"].get("status") != "success":
+        elif bias_status == "skipped":
+            eval_logger.info("Bias evaluation was skipped, using default score")
+        
+        hallucination_status = results["evaluations"]["hallucination"].get("status")
+        if hallucination_status not in ("success", "skipped"):
             hallucination_score = 3.0
             eval_logger.warning("Using default hallucination score due to evaluation failure")
-        if results["evaluations"]["reference"].get("status") != "success":
+        elif hallucination_status == "skipped":
+            eval_logger.info("Hallucination evaluation was skipped, using default score")
+        
+        reference_status = results["evaluations"]["reference"].get("status")
+        if reference_status not in ("success", "skipped"):
             reference_score = 3.0
             eval_logger.warning("Using default reference score due to evaluation failure")
+        elif reference_status == "skipped":
+            eval_logger.info("Reference evaluation was skipped, using default score")
 
         overall_score = (
             quality_score + source_score + bias_score + hallucination_score + reference_score

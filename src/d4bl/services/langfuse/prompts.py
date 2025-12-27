@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 def quality_prompt(query: str, research_output: str, sources: list[str]) -> str:
+    newline = '\n'
+    sources_list = newline.join(f'- {s}' for s in sources[:5])
     return f"""Evaluate the following research output for quality:
 
 Original Query: {query}
@@ -9,7 +11,7 @@ Research Output:
 {research_output[:2000]}...
 
 Sources Used: {len(sources)} sources
-{'\n'.join(f'- {s}' for s in sources[:5])}
+{sources_list}
 
 Evaluate on the following criteria (1-5 scale):
 1. Relevance: How well does the output address the query?

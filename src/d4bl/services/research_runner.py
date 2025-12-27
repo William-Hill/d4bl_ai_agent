@@ -9,7 +9,7 @@ import os
 import queue
 import sys
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
 from opentelemetry import trace
@@ -127,7 +127,12 @@ async def update_job_status(
         await db.rollback()
 
 
-async def run_research_job(job_id: str, query: str, summary_format: str) -> None:
+async def run_research_job(
+    job_id: str, 
+    query: str, 
+    summary_format: str,
+    selected_agents: Optional[List[str]] = None
+) -> None:
     """Run the research crew and send progress updates via WebSocket."""
     set_job_logs(job_id, [])
 
@@ -206,6 +211,8 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
 
             try:
                 crew_instance = D4Bl()
+                if selected_agents:
+                    crew_instance.selected_agents = selected_agents
             except Exception as exc:
                 error_msg = f"Failed to initialize crew: {exc}"
                 print(f"ERROR initializing crew: {error_msg}")
@@ -378,23 +385,77 @@ async def run_research_job(job_id: str, query: str, summary_format: str) -> None
             except Exception as exc:  # noqa: BLE001
                 print(f"Error reading report file: {exc}")
 
+            # Set trace input/output in Langfuse for evaluations
+            # According to Langfuse docs: https://langfuse.com/faq/all/empty-trace-input-and-output
+            # We need to explicitly set trace input/output for evaluation features
+            research_output = research_data_dict.get("all_research_content", "") or result_dict.get("raw_output", "")
+            if langfuse_trace_id and research_output:
+                try:
+                    langfuse = get_langfuse_client()
+                    if langfuse:
+                        trace_input = {
+                            "query": query,
+                            "summary_format": summary_format,
+                            "job_id": job_id,
+                        }
+                        trace_output = {
+                            "raw_output": result_dict.get("raw_output", "")[:1000],  # Limit size
+                            "research_content_length": len(research_output),
+                            "tasks_completed": len(result_dict.get("tasks_output", [])),
+                        }
+                        
+                        # Note: For OTLP traces, trace input/output should be set via OpenTelemetry attributes
+                        # The Langfuse REST API doesn't support updating traces created via OTLP
+                        # The trace input/output will be populated from the root observation
+                        logger.debug(f"Trace input/output will be set from OpenTelemetry span attributes for trace_id: {langfuse_trace_id[:16]}...")
+                except Exception as trace_update_error:
+                    logger.warning(f"⚠️ Failed to update trace input/output: {trace_update_error}")
+                    logger.debug("   Trace update error details:", exc_info=True)
+                    # Continue with evaluations even if trace update fails
+
             # Run Langfuse evaluations on the research output
             evaluation_results = None
             try:
-                research_output = research_data_dict.get("all_research_content", "") or result_dict.get("raw_output", "")
                 sources = []
                 
                 # Extract sources from research data
                 import re
+                # More comprehensive URL pattern that handles parentheses and common URL endings
+                url_pattern = r'https?://[^\s\)\]\>\"\'\;]+'
+                
+                # Extract from research findings
                 for finding in research_data_dict.get("research_findings", []):
-                    # Try to extract URLs from content
-                    urls = re.findall(r'https?://[^\s\)]+', finding.get("content", ""))
+                    content = finding.get("content", "")
+                    if content:
+                        urls = re.findall(url_pattern, content)
+                        sources.extend(urls)
+                
+                # Extract from analysis data
+                for analysis in research_data_dict.get("analysis_data", []):
+                    content = analysis.get("content", "")
+                    if content:
+                        urls = re.findall(url_pattern, content)
+                        sources.extend(urls)
+                
+                # Extract from all research content
+                if research_data_dict.get("all_research_content"):
+                    urls = re.findall(url_pattern, research_data_dict["all_research_content"])
                     sources.extend(urls)
                 
                 # Also check raw output for URLs
                 if result_dict.get("raw_output"):
-                    urls = re.findall(r'https?://[^\s\)]+', result_dict.get("raw_output", ""))
+                    urls = re.findall(url_pattern, result_dict["raw_output"])
                     sources.extend(urls)
+                
+                # Deduplicate and clean URLs
+                sources = list(set(sources))
+                # Remove trailing punctuation that might have been captured
+                sources = [url.rstrip('.,;:!?)') for url in sources]
+                # Filter out invalid URLs (must start with http:// or https://)
+                sources = [url for url in sources if url.startswith(('http://', 'https://'))]
+                
+                if not sources:
+                    logger.warning("⚠️ No valid URLs found in research output")
                 
                 # Use the OpenTelemetry trace_id_hex for evaluations
                 # This links evaluations to the trace that Langfuse receives via OTLP

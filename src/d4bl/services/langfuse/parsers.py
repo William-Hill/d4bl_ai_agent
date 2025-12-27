@@ -16,21 +16,29 @@ def parse_first_json_block(text: str) -> Dict[str, Any]:
 
 
 def default_quality_scores(scores: Dict[str, Any], fallback_text: str) -> Dict[str, Any]:
-    scores.setdefault("relevance", 3.0)
-    scores.setdefault("completeness", 3.0)
-    scores.setdefault("accuracy", 3.0)
-    scores.setdefault("bias", 3.0)
-    scores.setdefault("clarity", 3.0)
-    scores.setdefault(
-        "overall",
-        sum([
-            scores.get("relevance", 3.0),
-            scores.get("completeness", 3.0),
-            scores.get("accuracy", 3.0),
-            scores.get("bias", 3.0),
-            scores.get("clarity", 3.0),
-        ]) / 5.0,
-    )
+    """Ensure all scores are floats and calculate overall score."""
+    # Convert all score values to float, defaulting to 3.0 if invalid
+    def to_float(value: Any, default: float = 3.0) -> float:
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    
+    scores["relevance"] = to_float(scores.get("relevance"), 3.0)
+    scores["completeness"] = to_float(scores.get("completeness"), 3.0)
+    scores["accuracy"] = to_float(scores.get("accuracy"), 3.0)
+    scores["bias"] = to_float(scores.get("bias"), 3.0)
+    scores["clarity"] = to_float(scores.get("clarity"), 3.0)
+    
+    # Calculate overall as average of all scores
+    scores["overall"] = (
+        scores["relevance"] +
+        scores["completeness"] +
+        scores["accuracy"] +
+        scores["bias"] +
+        scores["clarity"]
+    ) / 5.0
+    
     scores.setdefault("feedback", fallback_text[:500])
     return scores
 
