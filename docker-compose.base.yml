@@ -1,0 +1,90 @@
+services:
+  d4bl-api:
+    build: .
+    container_name: d4bl-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-pk-lf-dev}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-sk-lf-dev}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
+      - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-http://langfuse-web:3000}
+      - LANGFUSE_OTEL_HOST=${LANGFUSE_OTEL_HOST:-http://langfuse-web:3000}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
+      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-crawl4ai}
+      - CRAWL4AI_BASE_URL=${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - SERP_API_KEY=${SERP_API_KEY:-}
+      - EMBEDDINGS_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - EMBEDDINGS_OLLAMA_MODEL_NAME=mxbai-embed-large
+      - PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-d4bl-crewai}
+    env_file:
+      - .env
+    volumes:
+      - ./output:/app/output
+      - ./.env:/app/.env:ro
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  d4bl-frontend:
+    build:
+      context: ./ui-nextjs
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: d4bl-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - API_INTERNAL_URL=http://d4bl-api:8000
+    depends_on:
+      - d4bl-api
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+
+  postgres:
+    image: docker.io/postgres:${POSTGRES_VERSION:-17}
+    restart: always
+    networks:
+      - d4bl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  langfuse_postgres_data:
+    driver: local
+
+networks:
+  d4bl-network:
+    driver: bridge
+
