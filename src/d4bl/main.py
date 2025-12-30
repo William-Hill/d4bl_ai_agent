@@ -32,6 +32,15 @@ def run():
         choices=['brief', 'detailed', 'comprehensive'],
         help='Summary format: brief (250-500 words), detailed (1000-1500 words), or comprehensive (2000-3000 words)'
     )
+    parser.add_argument(
+        '--agents',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Select specific agents to run (e.g., --agents researcher writer). '
+             'Available agents: researcher, data_analyst, writer, fact_checker, '
+             'citation_agent, bias_detection_agent, editor, data_visualization_agent'
+    )
     
     args = parser.parse_args()
     
@@ -73,10 +82,15 @@ def run():
     print(f"\n{'='*80}")
     print(f"Starting research on: {args.query}")
     print(f"Summary format: {args.summary}")
+    if args.agents:
+        print(f"Selected agents: {', '.join(args.agents)}")
     print(f"{'='*80}\n")
 
     try:
-        result = D4Bl().crew().kickoff(inputs=inputs)
+        crew_instance = D4Bl()
+        if args.agents:
+            crew_instance.selected_agents = args.agents
+        result = crew_instance.crew().kickoff(inputs=inputs)
         print("\n" + "="*80)
         print("Research and Analysis Complete!")
         print("="*80)
