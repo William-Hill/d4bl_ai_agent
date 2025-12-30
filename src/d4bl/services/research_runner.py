@@ -33,6 +33,61 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def validate_research_relevance(query: str, output: str, agent_name: str = "Unknown") -> dict:
+    """
+    Quick validation to check if research output is relevant to the query.
+    Returns a dict with validation results and warnings.
+    """
+    validation_result = {
+        "is_relevant": True,
+        "warnings": [],
+        "query_keywords": [],
+        "output_keywords": [],
+    }
+    
+    if not output or len(output.strip()) < 50:
+        validation_result["is_relevant"] = False
+        validation_result["warnings"].append("Output is too short or empty")
+        return validation_result
+    
+    # Extract key terms from query (simple keyword extraction)
+    import re
+    query_lower = query.lower()
+    # Extract meaningful words (3+ characters, not common stop words)
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'how', 'what', 'when', 'where', 'why', 'which', 'who'}
+    query_words = [w for w in re.findall(r'\b\w{3,}\b', query_lower) if w not in stop_words]
+    validation_result["query_keywords"] = query_words[:10]  # Top 10 keywords
+    
+    output_lower = output.lower()
+    output_words = [w for w in re.findall(r'\b\w{3,}\b', output_lower) if w not in stop_words]
+    validation_result["output_keywords"] = list(set(output_words))[:20]  # Top 20 unique keywords
+    
+    # Check for keyword overlap
+    if query_words:
+        matching_keywords = [w for w in query_words if w in output_lower]
+        overlap_ratio = len(matching_keywords) / len(query_words)
+        
+        if overlap_ratio < 0.2:  # Less than 20% keyword overlap
+            validation_result["is_relevant"] = False
+            validation_result["warnings"].append(
+                f"Low keyword overlap ({overlap_ratio:.1%}). Output may not address the query."
+            )
+        elif overlap_ratio < 0.4:  # Less than 40% keyword overlap
+            validation_result["warnings"].append(
+                f"Moderate keyword overlap ({overlap_ratio:.1%}). Verify output addresses the query."
+            )
+    
+    # Check for common off-topic patterns
+    output_lower_short = output_lower[:500]  # Check first 500 chars
+    if query_words and not any(word in output_lower_short for word in query_words[:5]):
+        validation_result["is_relevant"] = False
+        validation_result["warnings"].append(
+            "Query keywords not found in output. Output may be off-topic."
+        )
+    
+    return validation_result
+
+
 class LiveOutputHandler:
     """Capture stdout/stderr and stream the output via WebSocket."""
 
@@ -316,6 +371,7 @@ async def run_research_job(
                 "research_findings": [],
                 "analysis_data": [],
                 "all_research_content": "",
+                "source_urls": [],  # Store source URLs from crawl results
             }
 
             try:
@@ -348,6 +404,42 @@ async def run_research_job(
                             )
 
                             if "research" in agent_name.lower() or "researcher" in agent_name.lower():
+                                # Extract source URLs from crawl tool results
+                                # The crawl tool returns JSON with source_urls or urls_crawled
+                                import json
+                                try:
+                                    # Try to parse output as JSON (crawl tool returns JSON)
+                                    if output.strip().startswith('{'):
+                                        crawl_data = json.loads(output)
+                                        # Extract source URLs from crawl results
+                                        source_urls = crawl_data.get("source_urls", [])
+                                        if not source_urls:
+                                            source_urls = crawl_data.get("urls_crawled", [])
+                                        if source_urls:
+                                            research_data_dict["source_urls"].extend(source_urls)
+                                            logger.info("Extracted %s source URLs from crawl results", len(source_urls))
+                                        
+                                        # Also extract URLs from results array
+                                        results = crawl_data.get("results", [])
+                                        for result in results:
+                                            url = result.get("url", "")
+                                            if url and url not in research_data_dict["source_urls"]:
+                                                research_data_dict["source_urls"].append(url)
+                                except (json.JSONDecodeError, KeyError, TypeError):
+                                    # Output is not JSON, try regex extraction
+                                    pass
+                                
+                                # Validate research output relevance
+                                validation = validate_research_relevance(query, output, agent_name)
+                                if not validation["is_relevant"] or validation["warnings"]:
+                                    logger.warning(
+                                        "⚠️ Research output relevance check failed for %s: %s",
+                                        agent_name,
+                                        "; ".join(validation["warnings"])
+                                    )
+                                    # Add validation info to result
+                                    result_dict["tasks_output"][-1]["validation"] = validation
+                                
                                 research_data_dict["research_findings"].append(
                                     {"agent": agent_name, "description": description, "content": output}
                                 )
@@ -418,7 +510,12 @@ async def run_research_job(
             try:
                 sources = []
                 
-                # Extract sources from research data
+                # First, use source URLs extracted from crawl results (most reliable)
+                if research_data_dict.get("source_urls"):
+                    sources.extend(research_data_dict["source_urls"])
+                    logger.info("Using %s source URLs from crawl results", len(research_data_dict["source_urls"]))
+                
+                # Also extract sources from research data text (fallback)
                 import re
                 # More comprehensive URL pattern that handles parentheses and common URL endings
                 url_pattern = r'https?://[^\s\)\]\>\"\'\;]+'
@@ -456,6 +553,37 @@ async def run_research_job(
                 
                 if not sources:
                     logger.warning("⚠️ No valid URLs found in research output")
+                else:
+                    logger.info("Found %s unique source URLs for evaluation", len(sources))
+                
+                # Extract content from crawl results for content relevance evaluation
+                extracted_contents = []
+                try:
+                    # Parse crawl results from research findings
+                    import json
+                    for finding in research_data_dict.get("research_findings", []):
+                        content = finding.get("content", "")
+                        if content and content.strip().startswith('{'):
+                            try:
+                                crawl_data = json.loads(content)
+                                results = crawl_data.get("results", [])
+                                for result in results:
+                                    url = result.get("url", "")
+                                    extracted_content = result.get("extracted_content") or result.get("content", "")
+                                    if url and extracted_content and len(extracted_content.strip()) > 50:
+                                        extracted_contents.append({
+                                            "url": url,
+                                            "content": extracted_content,
+                                            "extracted_content": extracted_content,
+                                        })
+                            except (json.JSONDecodeError, KeyError, TypeError):
+                                # Not JSON, skip
+                                pass
+                except Exception as extract_error:
+                    logger.warning("Error extracting content from crawl results: %s", extract_error)
+                
+                # Get report for report relevance evaluation
+                report_content = result_dict.get("report", "")
                 
                 # Use the OpenTelemetry trace_id_hex for evaluations
                 # This links evaluations to the trace that Langfuse receives via OTLP
@@ -463,13 +591,17 @@ async def run_research_job(
                     logger.info(f"🔍 Starting Langfuse evaluations for trace_id: {langfuse_trace_id[:16]}...")
                     logger.debug(f"   Research output length: {len(research_output)} chars")
                     logger.debug(f"   Sources found: {len(sources)}")
+                    logger.debug(f"   Extracted contents: {len(extracted_contents)}")
+                    logger.debug(f"   Report available: {bool(report_content)}")
                     
                     try:
                         evaluation_results = run_comprehensive_evaluation(
                             query=query,
                             research_output=research_output[:5000],  # Limit size
                             sources=list(set(sources))[:10],  # Deduplicate and limit
-                            trace_id=langfuse_trace_id  # Use OpenTelemetry trace ID
+                            trace_id=langfuse_trace_id,  # Use OpenTelemetry trace ID
+                            extracted_contents=extracted_contents[:10] if extracted_contents else None,  # Limit to 10
+                            report=report_content[:5000] if report_content else None,  # Limit size
                         )
                         
                         eval_status = evaluation_results.get('status', 'unknown')

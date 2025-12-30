@@ -83,7 +83,12 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         job_id = str(job.job_id)
         
         # Start the research job in the background (WebSocket will connect separately)
-        asyncio.create_task(run_research_job(job_id, request.query, request.summary_format))
+        asyncio.create_task(run_research_job(
+            job_id, 
+            request.query, 
+            request.summary_format,
+            request.selected_agents
+        ))
         
         return ResearchResponse(
             job_id=job_id,

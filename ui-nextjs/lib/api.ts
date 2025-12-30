@@ -22,6 +22,7 @@ const API_BASE = getApiBase();
 export interface ResearchRequest {
   query: string;
   summary_format: 'brief' | 'detailed' | 'comprehensive';
+  selected_agents?: string[];
 }
 
 export interface ResearchResponse {
@@ -68,7 +69,8 @@ export interface EvaluationResultItem {
 
 export async function createResearchJob(
   query: string,
-  summaryFormat: string
+  summaryFormat: string,
+  selectedAgents?: string[]
 ): Promise<ResearchResponse> {
   const response = await fetch(`${API_BASE}/api/research`, {
     method: 'POST',
@@ -78,6 +80,7 @@ export async function createResearchJob(
     body: JSON.stringify({
       query,
       summary_format: summaryFormat,
+      selected_agents: selectedAgents,
     }),
   });
 

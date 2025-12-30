@@ -9,6 +9,7 @@ from pydantic import BaseModel
 class ResearchRequest(BaseModel):
     query: str
     summary_format: str = "detailed"  # brief, detailed, comprehensive
+    selected_agents: Optional[List[str]] = None  # List of agent names to run (e.g., ["researcher", "writer"])
 
 
 class ResearchResponse(BaseModel):
