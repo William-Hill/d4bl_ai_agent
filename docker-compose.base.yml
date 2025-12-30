@@ -19,7 +19,9 @@ services:
       - LANGFUSE_OTEL_HOST=${LANGFUSE_OTEL_HOST:-http://langfuse-web:3000}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
-      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-crawl4ai}
+      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-firecrawl}
+      - FIRECRAWL_BASE_URL=${FIRECRAWL_BASE_URL:-http://firecrawl-api:3002}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
       - CRAWL4AI_BASE_URL=${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
       - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
       - SERPER_API_KEY=${SERPER_API_KEY:-}
@@ -87,4 +89,5 @@ volumes:
 networks:
   d4bl-network:
     driver: bridge
+
 

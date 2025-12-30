@@ -27,10 +27,16 @@ services:
       # Must be set before any OpenTelemetry imports
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
-      # Crawling provider: crawl4ai (self-hosted) or firecrawl (cloud)
-      # Crawl4AI requires URLs - use Serper API to convert search queries to URLs
-      # Note: Crawl4AI listens on port 11235 internally, 3100 is the external port mapping
-      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-crawl4ai}
+      # Crawling provider: firecrawl (self-hosted) or crawl4ai (self-hosted)
+      # Firecrawl: Self-hosted at http://firecrawl-api:3002 (internal Docker network)
+      #           For external access, use http://localhost:3003
+      #           Include docker-compose.firecrawl.yml to enable Firecrawl services
+      # Crawl4AI: Requires URLs - use Serper API to convert search queries to URLs
+      #           Note: Crawl4AI listens on port 11235 internally, 3100 is the external port mapping
+      #           Include docker-compose.crawl.yml to enable Crawl4AI service
+      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-firecrawl}
+      - FIRECRAWL_BASE_URL=${FIRECRAWL_BASE_URL:-http://firecrawl-api:3002}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
       - CRAWL4AI_BASE_URL=${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
       - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
       # Serper API for converting search queries to URLs (required for Crawl4AI search support)
@@ -259,6 +265,38 @@ services:
       retries: 5
       start_period: 20s
 
+  # Firecrawl services moved to docker-compose.firecrawl.yml
+  # Include it with: docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up
+
+  # nuq-postgres:
+  #   # Use Firecrawl's custom nuq-postgres build which includes the required schema and migrations
+  #   build: firecrawl-db/nuq-postgres
+  #   container_name: nuq-postgres
+  #   restart: unless-stopped
+  #   networks:
+  #     - d4bl-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}"]
+  #     interval: 3s
+  #     timeout: 3s
+  #     retries: 10
+  #   environment:
+  #     POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}
+  #     POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}
+  #     POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-${POSTGRES_DB:-postgres}}
+  #     TZ: UTC
+  #     PGTZ: UTC
+  #   ports:
+  #     - 127.0.0.1:5434:5432  # Different port to avoid conflict with main postgres (5432) and other services
+  #   volumes:
+  #     - firecrawl_postgres_data:/var/lib/postgresql/data
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #       compress: "true"
+
   postgres:
     image: docker.io/postgres:${POSTGRES_VERSION:-17}
     restart: always
@@ -283,6 +321,7 @@ services:
 volumes:
   langfuse_postgres_data:
     driver: local
+  # firecrawl_postgres_data moved to docker-compose.firecrawl.yml
   langfuse_clickhouse_data:
     driver: local
   langfuse_clickhouse_logs:
