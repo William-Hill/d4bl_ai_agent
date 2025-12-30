@@ -16,6 +16,7 @@ firecrawl-py>=0.0.20
 python-dotenv>=1.1.1
 litellm>=1.0.0
 ollama>=0.1.0  # Required for Ollama embeddings in CrewAI memory
+pypdf>=3.0.0  # PDF extraction fallback for Crawl4AI
 # Note: Serper.dev uses REST API (no package needed, uses requests)
 
 # Langfuse for observability and tracing

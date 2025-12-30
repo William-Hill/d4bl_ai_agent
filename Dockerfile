@@ -29,5 +29,5 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
 
 # Run the API server
-CMD ["python", "-m", "uvicorn", "d4bl.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "d4bl.app.api:app", "--host", "0.0.0.0", "--port", "8000"]
 

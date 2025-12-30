@@ -54,6 +54,14 @@ See [Prerequisites Guide](docs/PREREQUISITES.md) for detailed setup instructions
      ```bash
      docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
      ```
+   - Add Firecrawl (self-hosted crawl provider):
+     ```bash
+     docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up --build
+     ```
+   - Full stack (base + observability + Crawl4AI):
+     ```bash
+     docker compose up --build
+     ```
 
 4. **Access the application**:
    - **Frontend**: http://localhost:3000
