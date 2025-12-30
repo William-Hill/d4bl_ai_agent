@@ -9,6 +9,8 @@ from d4bl.services.langfuse.source_relevance import evaluate_source_relevance
 from d4bl.services.langfuse.bias import evaluate_bias_detection
 from d4bl.services.langfuse.hallucination import evaluate_hallucination
 from d4bl.services.langfuse.reference import evaluate_reference
+from d4bl.services.langfuse.content_relevance import evaluate_content_relevance
+from d4bl.services.langfuse.report_relevance import evaluate_report_relevance
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
@@ -20,6 +22,8 @@ def run_comprehensive_evaluation(
     research_output: str,
     sources: List[str],
     trace_id: Optional[str] = None,
+    extracted_contents: Optional[List[Dict[str, Any]]] = None,
+    report: Optional[str] = None,
 ) -> Dict[str, Any]:
     start_time = time.time()
     eval_logger.info("=" * 60)
@@ -114,6 +118,44 @@ def run_comprehensive_evaluation(
         logger.error("Failed to run bias detection evaluation: %s", e, exc_info=True)
         results["evaluations"]["bias"] = {"error": str(e), "status": "failed"}
 
+    # Evaluate extracted content relevance
+    eval_logger.info("Running content relevance evaluation...")
+    try:
+        if extracted_contents and len(extracted_contents) > 0:
+            results["evaluations"]["content_relevance"] = evaluate_content_relevance(
+                query=query,
+                extracted_contents=extracted_contents,
+                trace_id=trace_id,
+            )
+        else:
+            eval_logger.info("No extracted contents provided, skipping content relevance evaluation")
+            results["evaluations"]["content_relevance"] = {
+                "status": "skipped",
+                "reason": "no_extracted_contents",
+            }
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Failed to run content relevance evaluation: %s", e, exc_info=True)
+        results["evaluations"]["content_relevance"] = {"error": str(e), "status": "failed"}
+
+    # Evaluate report relevance
+    eval_logger.info("Running report relevance evaluation...")
+    try:
+        if report and report.strip():
+            results["evaluations"]["report_relevance"] = evaluate_report_relevance(
+                query=query,
+                report=report,
+                trace_id=trace_id,
+            )
+        else:
+            eval_logger.info("No report provided, skipping report relevance evaluation")
+            results["evaluations"]["report_relevance"] = {
+                "status": "skipped",
+                "reason": "no_report",
+            }
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Failed to run report relevance evaluation: %s", e, exc_info=True)
+        results["evaluations"]["report_relevance"] = {"error": str(e), "status": "failed"}
+
     # Calculate overall score with error handling
     try:
         quality_score = results["evaluations"]["quality"].get("scores", {}).get("overall", 3.0)
@@ -158,9 +200,31 @@ def run_comprehensive_evaluation(
         elif reference_status == "skipped":
             eval_logger.info("Reference evaluation was skipped, using default score")
 
-        overall_score = (
-            quality_score + source_score + bias_score + hallucination_score + reference_score
-        ) / 5.0
+        # Include new evaluations in overall score if available
+        content_relevance_score = results["evaluations"]["content_relevance"].get("average", 3.0)
+        report_relevance_score = results["evaluations"]["report_relevance"].get("relevance_score", 3.0)
+        
+        # Handle skipped evaluations
+        content_relevance_status = results["evaluations"]["content_relevance"].get("status")
+        if content_relevance_status not in ("success", "skipped"):
+            content_relevance_score = 3.0
+        elif content_relevance_status == "skipped":
+            content_relevance_score = None  # Don't include in average if skipped
+        
+        report_relevance_status = results["evaluations"]["report_relevance"].get("status")
+        if report_relevance_status not in ("success", "skipped"):
+            report_relevance_score = 3.0
+        elif report_relevance_status == "skipped":
+            report_relevance_score = None  # Don't include in average if skipped
+        
+        # Calculate overall score (average of all non-skipped evaluations)
+        scores_to_average = [quality_score, source_score, bias_score, hallucination_score, reference_score]
+        if content_relevance_score is not None:
+            scores_to_average.append(content_relevance_score)
+        if report_relevance_score is not None:
+            scores_to_average.append(report_relevance_score)
+        
+        overall_score = sum(scores_to_average) / len(scores_to_average) if scores_to_average else 3.0
         results["overall_score"] = overall_score
 
         eval_logger.info("Overall evaluation score: %.2f", overall_score)
@@ -169,6 +233,10 @@ def run_comprehensive_evaluation(
         eval_logger.info("  - Bias: %.2f", bias_score)
         eval_logger.info("  - Hallucination: %.2f", hallucination_score)
         eval_logger.info("  - Reference: %.2f", reference_score)
+        if content_relevance_status != "skipped":
+            eval_logger.info("  - Content Relevance: %.2f", content_relevance_score)
+        if report_relevance_status != "skipped":
+            eval_logger.info("  - Report Relevance: %.2f", report_relevance_score)
 
     except Exception as score_error:  # pragma: no cover - defensive
         logger.error("Failed to calculate overall score: %s", score_error, exc_info=True)

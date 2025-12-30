@@ -77,3 +77,60 @@ Choose one label:
 - UNGROUNDED        -> not supported or contradicts context
 
 Respond with JSON: {{"label": "WELL_REFERENCED" | "WEAKLY_REFERENCED" | "UNGROUNDED", "explanation": "..."}}"""
+
+
+def content_relevance_prompt(query: str, url: str, content: str) -> str:
+    return f"""Evaluate how relevant the extracted content from a URL is to the research query.
+
+Original Query:
+{query}
+
+URL:
+{url}
+
+Extracted Content:
+{content}
+
+Evaluate the relevance of this content to the query on a scale of 1-5:
+- 5: Highly relevant - directly addresses the query
+- 4: Mostly relevant - addresses most aspects of the query
+- 3: Moderately relevant - somewhat related but may miss key aspects
+- 2: Weakly relevant - tangentially related
+- 1: Not relevant - does not address the query
+
+Consider:
+- Does the content directly answer the query?
+- Are key topics from the query covered?
+- Is the information useful for addressing the query?
+
+Respond with JSON: {{"relevance_score": <1-5>, "explanation": "brief explanation of the score"}}"""
+
+
+def report_relevance_prompt(query: str, report: str) -> str:
+    return f"""Evaluate how relevant the generated report is to the original research query.
+
+Original Query:
+{query}
+
+Generated Report:
+{report}
+
+Evaluate the relevance of this report to the query on a scale of 1-5:
+- 5: Highly relevant - comprehensively addresses the query
+- 4: Mostly relevant - addresses most aspects of the query
+- 3: Moderately relevant - addresses some aspects but misses key points
+- 2: Weakly relevant - tangentially related to the query
+- 1: Not relevant - does not address the query
+
+Consider:
+- Does the report directly answer the query?
+- Are all key aspects of the query covered?
+- Is the information organized and focused on the query?
+- Are there missing aspects that should have been covered?
+
+Respond with JSON: {{
+    "relevance_score": <1-5>,
+    "explanation": "brief explanation of the score",
+    "key_points_addressed": ["list of key points from query that are addressed"],
+    "missing_aspects": ["list of aspects from query that are missing or not well covered"]
+}}"""
