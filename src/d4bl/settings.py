@@ -17,10 +17,11 @@ class Settings:
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
     # Crawl provider
-    crawl_provider: str = os.getenv("CRAWL_PROVIDER", "crawl4ai").lower()
+    crawl_provider: str = os.getenv("CRAWL_PROVIDER", "firecrawl").lower()
     crawl4ai_base_url: str = os.getenv("CRAWL4AI_BASE_URL", "http://crawl4ai:11235").rstrip("/")
     crawl4ai_api_key: str | None = os.getenv("CRAWL4AI_API_KEY")
     firecrawl_api_key: str | None = os.getenv("FIRECRAWL_API_KEY")
+    firecrawl_base_url: str | None = os.getenv("FIRECRAWL_BASE_URL", "http://firecrawl-api:3002")  # Default to self-hosted
 
     # Langfuse / OTLP
     langfuse_host: str = os.getenv("LANGFUSE_HOST", "http://localhost:3002")
