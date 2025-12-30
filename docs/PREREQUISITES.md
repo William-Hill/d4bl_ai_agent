@@ -166,3 +166,4 @@ Before running the application, verify:
 
 Once prerequisites are installed, proceed to the [Quick Start](../README.md#quick-start-docker-compose) in the main README.
 
+
