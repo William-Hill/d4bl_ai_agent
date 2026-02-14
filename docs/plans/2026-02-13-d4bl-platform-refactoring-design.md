@@ -43,37 +43,77 @@ Each iteration delivers a working end-to-end feature validated against the Missi
                     │  └──────────────────────────┘ │
                     └────────┬──────────────────────┘
                              │
-              ┌──────────────┼──────────────┐
-              │              │              │
-     ┌────────▼──────┐ ┌────▼─────┐ ┌──────▼───────┐
-     │ Unified Data   │ │ CrewAI   │ │ HITL         │
-     │ Layer          │ │ Agents   │ │ Framework    │
-     │ ┌────────────┐ │ │(realigned│ │(approvals,   │
-     │ │Vector Store│ │ │to D4BL   │ │ reviews)     │
-     │ │(Supabase)  │ │ │stages)   │ │              │
-     │ ├────────────┤ │ └──────────┘ └──────────────┘
-     │ │Structured  │ │
-     │ │DB (Postgres)│ │
-     │ ├────────────┤ │
-     │ │Public Data │ │
-     │ │Connectors  │ │
-     │ └────────────┘ │
-     └────────────────┘
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+  ┌─────▼──────┐   ┌────────▼────────┐   ┌──────▼───────┐
+  │ Dagster     │   │ CrewAI Agents   │   │ HITL         │
+  │ Orchestrator│   │ (realigned to   │   │ Framework    │
+  │ (pipelines, │   │  D4BL stages)   │   │ (approvals,  │
+  │  scheduling)│   └─────────────────┘   │  reviews)    │
+  └─────┬───────┘                         └──────────────┘
+        │
+  ┌─────▼───────────────────────────────────────────────────┐
+  │                   Unified Data Layer                     │
+  │                                                         │
+  │  Supabase (PostgreSQL + pgvector)    Snowflake (DW)     │
+  │  ┌─────────────────────────────┐  ┌─────────────────┐  │
+  │  │ Vector Store (pgvector)     │  │ D4BL_RAW        │  │
+  │  │  - scraped_content_vectors  │  │  - research_jobs │  │
+  │  │  - semantic similarity      │  │  - scraped_cont. │  │
+  │  ├─────────────────────────────┤  │  - census_demo.  │  │
+  │  │ Operational DB              │  │  - bls_employ.   │  │
+  │  │  - research_jobs (state)    │  │  - state_legis.  │  │
+  │  │  - evaluation_results       │  ├─────────────────┤  │
+  │  │  - hitl_checkpoints         │  │ D4BL_ANALYTICS  │  │
+  │  └─────────────────────────────┘  │  (dbt marts)    │  │
+  │                                   └─────────────────┘  │
+  │         Dagster syncs completed                        │
+  │         jobs + content ──────────►                     │
+  └────────────────────────────────────────────────────────┘
 ```
+
+### Supabase vs Snowflake: Role Separation
+
+The platform uses two database systems, each optimized for different workloads:
+
+**Supabase (PostgreSQL + pgvector) — Operational & Vector Store:**
+- **Vector search** — pgvector cosine similarity over scraped content embeddings (1024-dim, `mxbai-embed-large`). Snowflake has no native vector similarity search, so Supabase owns all semantic search.
+- **Operational state** — real-time job status, progress, logs, WebSocket coordination. Requires low-latency transactional reads/writes that Snowflake isn't designed for.
+- **HITL checkpoints** — checkpoint persistence for approval workflows (must survive browser refresh, needs fast writes).
+- **Evaluation results** — Langfuse evaluation scores stored alongside job data.
+
+**Snowflake — Analytics Data Warehouse:**
+- **Public datasets** — Census demographics, BLS employment, state legislature data. Bulk-loaded and transformed via dbt.
+- **Research analytics** — completed research job results and scraped content (text + metadata, not embeddings) synced from Supabase for analytical joins.
+- **dbt marts** — pre-computed analytical models (e.g., NIL policy analysis joined with demographics, research effectiveness metrics, geographic equity indicators).
+- **Complex analytical queries** — aggregations, joins across data sources, time series, KPI computation. Queries the NL query engine can't efficiently run against PostgreSQL.
+
+**Data flow between them:**
+- **Supabase → Snowflake:** Dagster sensor detects completed research jobs in Supabase, then a Dagster asset copies job results and scraped content (text + metadata, not embeddings) into Snowflake's `D4BL_RAW` layer. dbt transforms from there.
+- **Snowflake is never written to by the app directly** — only Dagster pipelines land data there.
+- **Supabase is the system of record** for operational data. Snowflake is a derived analytical copy.
+
+**NL query engine queries both:**
+- Semantic similarity → Supabase/pgvector
+- Analytical/structured queries → Snowflake dbt marts
+- Operational lookups (job status, logs) → Supabase/PostgreSQL
 
 ### New Modules
 
-- **`src/d4bl/query/`** — NL query engine (vector search + SQL generation + result fusion)
+- **`src/d4bl/query/`** — NL query engine (vector search + Snowflake SQL + result fusion)
 - **`src/d4bl/methodology/`** — D4BL cycle state machine and stage management
 - **`src/d4bl/hitl/`** — Human-in-the-loop checkpoint system
 - **`src/d4bl/data/`** — Public dataset connectors and importers
+- **`src/d4bl/orchestration/`** — Dagster asset definitions, jobs, and schedules
+- **`dbt_project/`** — dbt project root (models, sources, tests, macros)
 
 ### Enhanced Existing Modules
 
 - **`src/d4bl/infra/vector_store.py`** — Fully integrated into the research pipeline
-- **`src/d4bl/services/research_runner.py`** — HITL hooks, methodology stage awareness
+- **`src/d4bl/services/research_runner.py`** — Dagster-aware, HITL hooks, methodology stage awareness
 - **`src/d4bl/agents/`** — Agents mapped to methodology stages
 - **`src/d4bl/app/api.py`** — New endpoints for query, methodology, HITL
+- **`src/d4bl/settings.py`** — Snowflake credentials, Dagster config
 
 ## Iteration Plan
 
@@ -93,20 +133,54 @@ Each iteration delivers a working end-to-end feature validated against the Missi
 
 **Validation:** Run a Mississippi NIL research job, then query "What are the NIL policies affecting Black athletes in Mississippi?" and get a synthesized answer with source citations.
 
-### Iteration 2: Public Data Ingestion
+### Iteration 2: Dagster Orchestration + Snowflake Data Warehouse
 
-**Goal:** Combine qualitative research data with publicly available datasets for richer analysis.
+**Goal:** Replace ad-hoc job execution with Dagster-orchestrated pipelines and land public + research data into Snowflake for analytics-ready querying via dbt.
 
 **Scope:**
-- Create `src/d4bl/data/` module with connectors:
-  - Census API (demographics, income, education by geography)
-  - State legislature data (bill tracking, Mississippi-specific)
-  - BLS employment statistics
-- Data importers that normalize and store in PostgreSQL with consistent schema
-- Extend NL query engine to search across public datasets alongside research data
-- Dataset management endpoints: `POST /api/data/import`, `GET /api/data/sources`
 
-**Validation:** Query "What is the racial demographic breakdown of NCAA athletes in Mississippi?" and get results combining Census data with scraped research findings.
+**Dagster orchestration (`src/d4bl/orchestration/`):**
+- Define Dagster assets for: research job execution, crawl result storage, vector embedding generation
+- Define Dagster jobs wrapping the existing `run_research_job()` flow
+- Add Dagster schedules for recurring data ingestion (Census, BLS)
+- Dagster sensors to trigger downstream assets when new research completes
+- Dagster UI (dagit) running alongside the existing FastAPI app for pipeline observability
+
+**Snowflake data warehouse:**
+- Provision Snowflake account with `D4BL_RAW`, `D4BL_STAGING`, `D4BL_ANALYTICS` databases
+- Dagster assets to ingest into Snowflake raw layer:
+  - Research job results → `D4BL_RAW.research_jobs`
+  - Scraped content (text, metadata) → `D4BL_RAW.scraped_content`
+  - Census API demographics → `D4BL_RAW.census_demographics`
+  - BLS employment data → `D4BL_RAW.bls_employment`
+  - State legislature data → `D4BL_RAW.state_legislation`
+
+**dbt transformation (`dbt_project/`):**
+- **Staging models** (`models/staging/`):
+  - `stg_research_jobs` — cleaned research jobs with parsed metadata
+  - `stg_scraped_content` — normalized scraped content with source tracking
+  - `stg_census_demographics` — demographics by geography (state, county, MSA)
+  - `stg_bls_employment` — employment statistics by industry and demographics
+  - `stg_state_legislation` — bill status, sponsors, topics
+- **Intermediate models** (`models/intermediate/`):
+  - `int_research_with_sources` — research jobs joined with their scraped sources
+  - `int_demographic_profiles` — combined Census + BLS demographic profiles by geography
+- **Mart models** (`models/marts/`):
+  - `mart_nil_policy_analysis` — NIL policies joined with demographic and employment data
+  - `mart_research_effectiveness` — metrics on research quality (source count, diversity, evaluation scores)
+  - `mart_geographic_equity_indicators` — equity indicators by geography combining all data sources
+- **dbt tests** for data quality: uniqueness, not-null, accepted values, relationships
+- **dbt metrics** definitions for KPIs: research_success_rate, source_diversity_score, geographic_coverage
+
+**NL query engine extension:**
+- Extend `src/d4bl/query/` to query Snowflake analytics marts alongside vector store
+- Add Snowflake connector using `snowflake-connector-python`
+- LLM-generated SQL queries against dbt mart schemas
+
+**Validation:**
+- Dagster pipeline ingests Census demographic data for Mississippi into Snowflake
+- dbt builds `mart_nil_policy_analysis` combining NIL research with MS demographics
+- Query "What is the racial demographic breakdown of NCAA athletes in Mississippi?" returns results from Snowflake mart + vector store
 
 ### Iteration 3: Human-in-the-Loop Checkpoints
 
@@ -116,13 +190,14 @@ Each iteration delivers a working end-to-end feature validated against the Missi
 - Create `src/d4bl/hitl/` module:
   - Checkpoint type definitions (methodology-stage and agent-task levels)
   - WebSocket-based approval flow: pause → notify → wait for response
-  - Checkpoint state persistence in PostgreSQL (survives browser refresh)
+  - Checkpoint state persistence in Supabase/PostgreSQL (survives browser refresh, low-latency writes)
   - Configurable checkpoint placement
+- Integrate into Dagster jobs as Dagster hooks/sensors for pipeline-level HITL
 - Integrate into `research_runner.py` with hooks at configurable points
 - Frontend: Approval UI component showing context, agent output, and approve/reject/edit options
 
 **Checkpoint Flow:**
-1. Execution reaches checkpoint → pauses
+1. Execution reaches checkpoint → pauses (Dagster run pauses or agent task pauses)
 2. WebSocket sends checkpoint event with: stage, agent output, context
 3. User reviews and chooses: Approve / Reject with feedback / Edit output
 4. Approve → continue; Reject → re-run with user feedback injected
@@ -145,6 +220,7 @@ Each iteration delivers a working end-to-end feature validated against the Missi
   - Data Collection + Analysis: researcher, data analyst, fact checker, citation
   - Policy Innovation: writer, editor
   - Power Building: data visualization, communication agents
+- Model methodology stages as Dagster asset groups with cross-stage lineage
 - New endpoints: `POST /api/methodology/start`, `POST /api/methodology/{id}/advance`, `GET /api/methodology/{id}/status`
 
 **Validation:** Run the full Mississippi NIL case through all 5 methodology stages with stage-appropriate agents executing at each step.
@@ -160,6 +236,7 @@ Each iteration delivers a working end-to-end feature validated against the Missi
   - Stage detail panels showing progress, agent outputs, HITL checkpoints
   - NL query bar integrated into each stage for contextual questions
   - Progress visualization across the full cycle
+  - Data lineage view powered by Dagster asset graph
 - Design inspired by blackwealthdata.org patterns
 
 **Validation:** Complete the Mississippi NIL case entirely through the Methodology Mode UI, from community engagement input through power building outputs.
@@ -173,9 +250,10 @@ Each iteration delivers a working end-to-end feature validated against the Missi
   - Policy brief (for legislators)
   - Community report (for affected communities)
   - Academic summary (for researchers)
-  - Data dashboard (for analysts)
+  - Data dashboard (for analysts) — powered by Snowflake mart queries
 - Export formats: PDF, presentation slides, structured data
 - Communication channel suggestions based on audience analysis
+- dbt exposure definitions linking mart models to their downstream dashboard/report consumers
 
 **Validation:** Generate a policy brief about Mississippi NIL for state legislators AND a community summary for affected athletes from the same research run.
 
@@ -195,15 +273,15 @@ User: "What NIL policies affect Black athletes in Mississippi?"
          │  Query Router    │
          │  (decides which  │
          │   data sources)  │
-         └──┬─────┬─────┬──┘
-            │     │     │
-   ┌────────▼┐ ┌──▼───┐ ┌▼──────────┐
-   │Vector   │ │SQL   │ │Public API  │
-   │Search   │ │Query │ │Connector   │
-   │(Supabase│ │(PG)  │ │(Census etc)│
-   └────┬────┘ └──┬───┘ └─────┬─────┘
-        │         │            │
-        └─────────┼────────────┘
+         └──┬────┬────┬──┬─┘
+            │    │    │  │
+   ┌────────▼┐ ┌─▼──┐ ┌▼────────┐ ┌▼──────────┐
+   │Vector   │ │SQL │ │Snowflake│ │Public API  │
+   │Search   │ │(PG)│ │(dbt     │ │Connector   │
+   │(Supabase│ │    │ │ marts)  │ │(Census etc)│
+   └────┬────┘ └─┬──┘ └───┬────┘ └─────┬─────┘
+        │        │        │            │
+        └────────┴────────┴────────────┘
                   │
          ┌────────▼────────┐
          │  Result Fusion   │
@@ -213,6 +291,36 @@ User: "What NIL policies affect Black athletes in Mississippi?"
                   │
                   ▼
          Synthesized Answer + Sources
+```
+
+## Dagster Pipeline Architecture
+
+```
+                    ┌──────────────────────────┐
+                    │     Dagster Orchestrator   │
+                    │     (dagit on :3100)       │
+                    └────────────┬──────────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         │                       │                       │
+   ┌─────▼──────┐        ┌──────▼──────┐        ┌──────▼──────┐
+   │ Research    │        │ Data        │        │ dbt         │
+   │ Pipeline    │        │ Ingestion   │        │ Transform   │
+   │ ┌────────┐  │        │ ┌────────┐  │        │ ┌────────┐  │
+   │ │Run crew│  │        │ │Census  │  │        │ │staging │  │
+   │ │agents  │  │        │ │API     │  │        │ │models  │  │
+   │ ├────────┤  │        │ ├────────┤  │        │ ├────────┤  │
+   │ │Store   │  │        │ │BLS API │  │        │ │intermed│  │
+   │ │vectors │  │        │ ├────────┤  │        │ │models  │  │
+   │ ├────────┤  │        │ │State   │  │        │ ├────────┤  │
+   │ │Land in │  │        │ │legis.  │  │        │ │mart    │  │
+   │ │Snowflake│ │        │ └───┬────┘  │        │ │models  │  │
+   │ └────────┘  │        │     │       │        │ ├────────┤  │
+   └─────────────┘        │  Snowflake  │        │ │metrics │  │
+                          │  Raw Layer  │        │ │& tests │  │
+                          └─────────────┘        │ └────────┘  │
+                                                 └─────────────┘
+                          Sensor: on new raw data → trigger dbt run
 ```
 
 ## HITL Checkpoint Model
@@ -232,11 +340,44 @@ Within a methodology stage, between individual agent executions:
 - After analyst → before writer
 - After writer → before editor
 
+### Pipeline Checkpoints (Dagster-Level)
+
+- After data ingestion completes → before dbt transformation
+- After dbt model builds → before exposing to NL query engine
+- Implemented as Dagster run status sensors with WebSocket notification
+
 ### User Actions at Checkpoints
 
 - **Approve** — continue execution
 - **Reject with feedback** — re-run the preceding stage/task with feedback injected into the prompt
 - **Edit output** — modify the agent's output directly, then continue
+
+## dbt Project Structure
+
+```
+dbt_project/
+├── dbt_project.yml
+├── profiles.yml           (Snowflake connection)
+├── models/
+│   ├── staging/
+│   │   ├── stg_research_jobs.sql
+│   │   ├── stg_scraped_content.sql
+│   │   ├── stg_census_demographics.sql
+│   │   ├── stg_bls_employment.sql
+│   │   └── stg_state_legislation.sql
+│   ├── intermediate/
+│   │   ├── int_research_with_sources.sql
+│   │   └── int_demographic_profiles.sql
+│   └── marts/
+│       ├── mart_nil_policy_analysis.sql
+│       ├── mart_research_effectiveness.sql
+│       └── mart_geographic_equity_indicators.sql
+├── tests/
+│   └── generic/
+├── macros/
+└── seeds/
+    └── state_fips_codes.csv
+```
 
 ## Key Design Decisions
 
@@ -244,5 +385,9 @@ Within a methodology stage, between individual agent executions:
 2. **Mississippi NIL drives priorities** — features are built and validated against a concrete scenario
 3. **Existing quick-research preserved** — current functionality remains accessible while methodology mode is added alongside
 4. **Local-first LLM** — all NL processing uses Ollama/Mistral; no external LLM API dependencies
-5. **Unified data layer** — vector store, structured DB, and public APIs queried through a single interface
+5. **Unified data layer** — vector store, Snowflake marts, operational DB, and public APIs queried through a single interface
 6. **HITL is configurable** — checkpoints can be enabled/disabled per run; not mandatory for every execution
+7. **Dagster as the single orchestration plane** — all data pipelines (research, ingestion, transformation) are Dagster assets with lineage, scheduling, and observability
+8. **dbt for all transformations** — raw data is transformed in Snowflake via dbt with tests, documentation, and metrics; no ad-hoc SQL
+9. **Medallion-style data architecture** — raw → staging → intermediate → mart layers in Snowflake, matching modern data platform patterns
+10. **Supabase for operations, Snowflake for analytics** — Supabase (PostgreSQL + pgvector) owns real-time operational state and vector search; Snowflake owns analytical workloads and public dataset storage. Dagster syncs completed data from Supabase → Snowflake. The app never writes to Snowflake directly.
