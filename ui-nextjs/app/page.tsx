@@ -8,6 +8,8 @@ import ErrorCard from '@/components/ErrorCard';
 import LiveLogs from '@/components/LiveLogs';
 import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
+import QueryBar from '@/components/QueryBar';
+import QueryResults from '@/components/QueryResults';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 import EvaluationsPanel from '@/components/EvaluationsPanel';
@@ -20,6 +22,9 @@ export default function Home() {
   const [progress, setProgress] = useState<string>('');
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [queryResult, setQueryResult] = useState<any>(null);
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
@@ -206,6 +211,29 @@ export default function Home() {
 
             <main className="space-y-6">
               <ResearchForm onSubmit={handleSubmit} disabled={!!jobId} />
+
+              {/* Query Research Data */}
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold text-white">Query Research Data</h2>
+                <QueryBar
+                  onResult={setQueryResult}
+                  onLoading={setQueryLoading}
+                  onError={setQueryError}
+                />
+                {queryLoading && (
+                  <p className="text-gray-400">Searching research data...</p>
+                )}
+                {queryError && (
+                  <p className="text-red-400">{queryError}</p>
+                )}
+                {queryResult && (
+                  <QueryResults
+                    answer={queryResult.answer}
+                    sources={queryResult.sources}
+                    query={queryResult.query}
+                  />
+                )}
+              </div>
 
               {jobId && (
                 <>
