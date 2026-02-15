@@ -7,21 +7,36 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.infra.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
+from d4bl.infra.vector_store import get_vector_store
+from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
 from d4bl.app.schemas import (
     EvaluationResultItem,
     JobHistoryResponse,
     JobStatus,
+    QueryRequest,
+    QueryResponse,
+    QuerySourceItem,
     ResearchRequest,
     ResearchResponse,
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
+
+
+_query_engine = None
+
+
+def get_query_engine() -> QueryEngine:
+    global _query_engine
+    if _query_engine is None:
+        _query_engine = QueryEngine()
+    return _query_engine
 
 app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
@@ -36,6 +51,33 @@ async def startup_event():
     except Exception as e:
         print(f"⚠ Warning: Database initialization failed: {e}")
         print("  The application will continue but jobs won't be persisted.")
+    
+    # Check Langfuse availability early and unset OTLP endpoint if not available
+    # This prevents OpenTelemetry from trying to export traces when Langfuse is down
+    try:
+        from d4bl.observability.langfuse import check_langfuse_service_available
+        import os
+        from d4bl.settings import get_settings
+        
+        settings = get_settings()
+        langfuse_otel_host = settings.langfuse_otel_host or settings.langfuse_host
+        
+        # Adjust for Docker
+        if os.path.exists("/.dockerenv"):
+            if "localhost" in langfuse_otel_host:
+                langfuse_otel_host = langfuse_otel_host.replace("localhost", "langfuse-web")
+            if ":3002" in langfuse_otel_host:
+                langfuse_otel_host = langfuse_otel_host.replace(":3002", ":3000")
+        
+        if not check_langfuse_service_available(langfuse_otel_host):
+            print("⚠️ Langfuse service not available. Unsetting OTLP endpoint to prevent export errors.")
+            os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
+            os.environ.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
+        else:
+            print("✓ Langfuse service is available")
+    except Exception as e:
+        print(f"⚠️ Could not check Langfuse availability: {e}")
+        # Continue anyway - let individual components handle it
 
 
 @app.on_event("shutdown")
@@ -293,6 +335,136 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@app.post("/api/vector/search")
+async def search_similar_content(
+    query: str = Body(..., embed=True, description="Text query to search for"),
+    job_id: Optional[str] = Body(None, embed=True, description="Optional job ID to filter results"),
+    limit: int = Body(10, embed=True, ge=1, le=50, description="Maximum number of results"),
+    similarity_threshold: float = Body(0.7, embed=True, ge=0.0, le=1.0, description="Minimum cosine similarity score"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Search for similar scraped content using vector similarity.
+    
+    Request body:
+    - query (required): Text query to search for
+    - job_id (optional): Job ID to filter results to a specific research job
+    - limit (optional, default: 10): Maximum number of results (1-50)
+    - similarity_threshold (optional, default: 0.7): Minimum cosine similarity score (0-1)
+    """
+    try:
+        if not query or not query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        job_uuid = None
+        if job_id:
+            try:
+                job_uuid = UUID(job_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid job ID format")
+        
+        vector_store = get_vector_store()
+        results = await vector_store.search_similar(
+            db=db,
+            query_text=query,
+            job_id=job_uuid,
+            limit=limit,
+            similarity_threshold=similarity_threshold,
+        )
+        
+        return {
+            "query": query,
+            "job_id": job_id,
+            "results": results,
+            "count": len(results),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error searching vector database: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error searching vector database: {str(e)}")
+
+
+@app.get("/api/vector/job/{job_id}")
+async def get_scraped_content_by_job(
+    job_id: str,
+    limit: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all scraped content stored in vector database for a specific job.
+    
+    Args:
+        job_id: Research job ID
+        limit: Optional limit on number of results
+    """
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+    
+    try:
+        vector_store = get_vector_store()
+        results = await vector_store.get_by_job_id(
+            db=db,
+            job_id=job_uuid,
+            limit=limit,
+        )
+        
+        return {
+            "job_id": job_id,
+            "results": results,
+            "count": len(results),
+        }
+    except Exception as e:
+        print(f"Error fetching scraped content: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching scraped content: {str(e)}")
+
+
+@app.post("/api/query", response_model=QueryResponse)
+async def natural_language_query(
+    request: QueryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Query research data using natural language.
+
+    Searches both the vector store (scraped content) and structured
+    database (research jobs) and returns a synthesized answer with
+    source citations.
+    """
+    try:
+        engine = get_query_engine()
+        result = await engine.query(
+            db=db,
+            question=request.question,
+            job_id=request.job_id,
+            limit=request.limit,
+        )
+        return QueryResponse(
+            answer=result.answer,
+            sources=[
+                QuerySourceItem(
+                    url=s.url,
+                    title=s.title,
+                    snippet=s.snippet,
+                    source_type=s.source_type,
+                    relevance_score=s.relevance_score,
+                )
+                for s in result.sources
+            ],
+            query=result.query,
+        )
+    except Exception as e:
+        print(f"Error in NL query: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
 if __name__ == "__main__":

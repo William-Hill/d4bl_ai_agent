@@ -55,3 +55,26 @@ class EvaluationResultItem(BaseModel):
     context_text: Optional[str] = None
     created_at: Optional[str] = None
 
+
+# --- NL Query models ---
+
+
+class QueryRequest(BaseModel):
+    question: str
+    job_id: Optional[str] = None
+    limit: int = 10
+
+
+class QuerySourceItem(BaseModel):
+    url: str
+    title: str
+    snippet: str
+    source_type: str
+    relevance_score: float
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: List[QuerySourceItem]
+    query: str
+
