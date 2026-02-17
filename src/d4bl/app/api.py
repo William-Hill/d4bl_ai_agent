@@ -30,6 +30,7 @@ from d4bl.app.websocket_manager import get_job_logs, register_connection, remove
 
 
 _query_engine = None
+_background_tasks: set = set()
 
 
 def get_query_engine() -> QueryEngine:
@@ -125,12 +126,15 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         job_id = str(job.job_id)
         
         # Start the research job in the background (WebSocket will connect separately)
-        asyncio.create_task(run_research_job(
-            job_id, 
-            request.query, 
+        # Store the task reference to prevent GC from cancelling it prematurely
+        task = asyncio.create_task(run_research_job(
+            job_id,
+            request.query,
             request.summary_format,
-            request.selected_agents
+            request.selected_agents,
         ))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
         
         return ResearchResponse(
             job_id=job_id,
@@ -141,12 +145,10 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Catch any other errors during job creation
-        error_msg = f"Error creating research job: {str(e)}"
-        print(f"ERROR in create_research: {error_msg}")
+        print(f"ERROR in create_research: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_msg)
+        raise HTTPException(status_code=500, detail="Error creating research job")
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
@@ -209,7 +211,7 @@ async def get_job_history(
         )
     except Exception as e:
         print(f"Error fetching job history: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching job history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching job history")
 
 
 @app.get("/api/evaluations", response_model=List[EvaluationResultItem])
@@ -386,7 +388,7 @@ async def search_similar_content(
         print(f"Error searching vector database: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error searching vector database: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error searching vector database")
 
 
 @app.get("/api/vector/job/{job_id}")
@@ -424,7 +426,7 @@ async def get_scraped_content_by_job(
         print(f"Error fetching scraped content: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error fetching scraped content: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching scraped content")
 
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -467,7 +469,7 @@ async def natural_language_query(
         print(f"Error in NL query: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Query failed")
 
 
 if __name__ == "__main__":

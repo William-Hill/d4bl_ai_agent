@@ -78,8 +78,13 @@ class ResultFusion:
                 )
             )
 
-        # Add structured results
+        # Add structured results (deduplicated by job_id)
+        seen_job_ids: set[str] = set()
         for sr in structured_results:
+            job_key = str(sr.job_id)
+            if job_key in seen_job_ids:
+                continue
+            seen_job_ids.add(job_key)
             sources.append(
                 SourceReference(
                     url=f"job://{sr.job_id}",
