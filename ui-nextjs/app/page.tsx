@@ -10,6 +10,7 @@ import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import QueryBar from '@/components/QueryBar';
 import QueryResults from '@/components/QueryResults';
+import { QueryResponse } from '@/lib/types';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 import EvaluationsPanel from '@/components/EvaluationsPanel';
@@ -22,7 +23,7 @@ export default function Home() {
   const [progress, setProgress] = useState<string>('');
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
-  const [queryResult, setQueryResult] = useState<any>(null);
+  const [queryResult, setQueryResult] = useState<QueryResponse | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
 

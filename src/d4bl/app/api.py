@@ -438,11 +438,14 @@ async def natural_language_query(
     database (research jobs) and returns a synthesized answer with
     source citations.
     """
+    if not request.question or not request.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+
     try:
         engine = get_query_engine()
         result = await engine.query(
             db=db,
-            question=request.question,
+            question=request.question.strip(),
             job_id=request.job_id,
             limit=request.limit,
         )

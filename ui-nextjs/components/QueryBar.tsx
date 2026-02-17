@@ -1,20 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-interface QuerySource {
-  url: string;
-  title: string;
-  snippet: string;
-  source_type: string;
-  relevance_score: number;
-}
-
-interface QueryResponse {
-  answer: string;
-  sources: QuerySource[];
-  query: string;
-}
+import { QueryResponse } from "@/lib/types";
 
 interface QueryBarProps {
   onResult: (result: QueryResponse) => void;

@@ -1,12 +1,6 @@
 "use client";
 
-interface QuerySource {
-  url: string;
-  title: string;
-  snippet: string;
-  source_type: string;
-  relevance_score: number;
-}
+import { QuerySource } from "@/lib/types";
 
 interface QueryResultsProps {
   answer: string;
@@ -33,9 +27,9 @@ export default function QueryResults({ answer, sources, query }: QueryResultsPro
             Sources ({sources.length})
           </h3>
           <ul className="space-y-2">
-            {sources.map((source, i) => (
+            {sources.map((source) => (
               <li
-                key={i}
+                key={`${source.source_type}:${source.url}`}
                 className="bg-gray-800 rounded p-3 text-sm"
               >
                 <div className="flex items-center gap-2 mb-1">

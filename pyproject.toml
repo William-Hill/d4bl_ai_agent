@@ -19,6 +19,13 @@ replay = "d4bl.main:replay"
 test = "d4bl.main:test"
 run_with_trigger = "d4bl.main:run_with_trigger"
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -62,7 +62,8 @@ class QueryParser:
         """Use Ollama/Mistral to parse the query."""
         prompt = PARSE_PROMPT.format(query=query)
 
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
                 f"{self.ollama_base_url}/api/generate",
                 json={
