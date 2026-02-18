@@ -10,7 +10,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from sqlalchemy import text
-from d4bl import database as db
+from d4bl.infra import database as db
 
 
 async def add_job_id_column():

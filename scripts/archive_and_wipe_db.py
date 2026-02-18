@@ -24,8 +24,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from sqlalchemy import text, select
-from d4bl import database as db
-from d4bl.database import ResearchJob, EvaluationResult
+from d4bl.infra import database as db
+from d4bl.infra.database import ResearchJob, EvaluationResult
 
 
 async def export_data_to_csv():
