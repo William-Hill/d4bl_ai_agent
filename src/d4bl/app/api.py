@@ -14,8 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.infra.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
-import d4bl.infra.database as _db
+from d4bl.infra.database import (
+    async_session_maker,
+    close_db,
+    create_tables,
+    get_db,
+    init_db,
+    EvaluationResult,
+    ResearchJob,
+)
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
@@ -30,6 +37,7 @@ from d4bl.app.schemas import (
     ResearchResponse,
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
+from d4bl.settings import get_settings
 
 
 _query_engine = None
@@ -58,7 +66,6 @@ async def lifespan(app: FastAPI):
 
     try:
         from d4bl.observability.langfuse import check_langfuse_service_available
-        from d4bl.settings import get_settings
         settings = get_settings()
         langfuse_otel_host = settings.langfuse_otel_host or settings.langfuse_host
 
@@ -88,7 +95,7 @@ app = FastAPI(title="D4BL AI Agent API", version="1.0.0", lifespan=lifespan)
 # CORS middleware for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=list(get_settings().cors_allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -270,7 +277,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         # Try to get from database first
         try:
             job_uuid = UUID(job_id)
-            async with _db.async_session_maker() as db:
+            async with async_session_maker() as db:
                 result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
                 result_obj = await db.execute(result_query)
                 job = result_obj.scalar_one_or_none()
