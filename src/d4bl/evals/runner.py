@@ -9,7 +9,8 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from d4bl.infra.database import ResearchJob, init_db, get_db
+import d4bl.infra.database as _db
+from d4bl.infra.database import ResearchJob, init_db
 from d4bl.services.langfuse.runner import run_comprehensive_evaluation
 
 logger = logging.getLogger(__name__)
@@ -35,54 +36,53 @@ async def run_evals_and_log(
     """
     init_db()
 
-    async for db in get_db():
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _evaluate_job(job: ResearchJob) -> None:
+        async with sem:
+            result_dict = job.to_dict()
+            research_output = str(result_dict.get("result") or "")
+            if not research_output:
+                logger.warning("Job %s has no result, skipping.", job.job_id)
+                return
+
+            logger.info(
+                "Running evaluations for job %s: %s...",
+                job.job_id,
+                job.query[:60],
+            )
+            # run_comprehensive_evaluation is synchronous — run it in a
+            # thread pool so it doesn't block the event loop.
+            await asyncio.to_thread(
+                run_comprehensive_evaluation,
+                query=job.query,
+                research_output=research_output,
+                sources=[],
+                trace_id=str(job.job_id),
+            )
+
+    async with _db.async_session_maker() as db:
         query = select(ResearchJob).where(ResearchJob.status == "completed")
 
         if selected_job_ids:
             query = query.where(ResearchJob.job_id.in_(selected_job_ids))
 
-        if max_rows:
+        if max_rows is not None:
             query = query.limit(max_rows)
 
         result = await db.execute(query)
         jobs = result.scalars().all()
 
-        if not jobs:
-            logger.info("No completed research jobs found to evaluate.")
-            return
+    if not jobs:
+        logger.info("No completed research jobs found to evaluate.")
+        return
 
-        logger.info("Evaluating %d research job(s)...", len(jobs))
+    logger.info("Evaluating %d research job(s)...", len(jobs))
 
-        sem = asyncio.Semaphore(concurrency)
-
-        async def _evaluate_job(job: ResearchJob) -> None:
-            async with sem:
-                result_dict = job.to_dict()
-                research_output = str(result_dict.get("result") or "")
-                if not research_output:
-                    logger.warning("Job %s has no result, skipping.", job.job_id)
-                    return
-
-                logger.info(
-                    "Running evaluations for job %s: %s...",
-                    job.job_id,
-                    job.query[:60],
-                )
-                # run_comprehensive_evaluation is synchronous — run it in a
-                # thread pool so it doesn't block the event loop.
-                await asyncio.to_thread(
-                    run_comprehensive_evaluation,
-                    query=job.query,
-                    research_output=research_output,
-                    sources=[],
-                    trace_id=str(job.job_id),
-                )
-
-        results = await asyncio.gather(
-            *[_evaluate_job(j) for j in jobs], return_exceptions=True
-        )
-        for job, outcome in zip(jobs, results):
-            if isinstance(outcome, BaseException):
-                logger.error("Evaluation failed for job %s: %s", job.job_id, outcome)
-        logger.info("Evaluation run complete.")
-        break
+    results = await asyncio.gather(
+        *[_evaluate_job(j) for j in jobs], return_exceptions=True
+    )
+    for job, outcome in zip(jobs, results, strict=True):
+        if isinstance(outcome, BaseException):
+            logger.error("Evaluation failed for job %s: %s", job.job_id, outcome)
+    logger.info("Evaluation run complete.")
