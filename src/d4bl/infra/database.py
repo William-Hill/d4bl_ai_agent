@@ -104,7 +104,7 @@ def get_database_url() -> str:
             db_host = "postgres"
             print(f"⚠ Warning: Detected Docker environment, using 'postgres' as hostname instead of '{original_host}'")
         else:
-            print(f"⚠ Warning: Using 'localhost' as database host. In Docker, this should be 'postgres' or 'host.docker.internal'")
+            print("⚠ Warning: Using 'localhost' as database host. In Docker, this should be 'postgres' or 'host.docker.internal'")
     
     # Ensure we're using the correct database name (not the username)
     if not db_name or db_name == db_user:

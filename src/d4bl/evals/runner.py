@@ -68,13 +68,21 @@ async def run_evals_and_log(
                     job.job_id,
                     job.query[:60],
                 )
-                run_comprehensive_evaluation(
+                # run_comprehensive_evaluation is synchronous — run it in a
+                # thread pool so it doesn't block the event loop.
+                await asyncio.to_thread(
+                    run_comprehensive_evaluation,
                     query=job.query,
                     research_output=research_output,
                     sources=[],
                     trace_id=str(job.job_id),
                 )
 
-        await asyncio.gather(*[_evaluate_job(j) for j in jobs])
+        results = await asyncio.gather(
+            *[_evaluate_job(j) for j in jobs], return_exceptions=True
+        )
+        for job, outcome in zip(jobs, results):
+            if isinstance(outcome, BaseException):
+                logger.error("Evaluation failed for job %s: %s", job.job_id, outcome)
         logger.info("Evaluation run complete.")
         break

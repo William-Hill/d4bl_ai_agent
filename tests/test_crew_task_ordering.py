@@ -1,12 +1,12 @@
 """Tests that selected agent task ordering is deterministic and sequential."""
+import sys
+
+sys.path.insert(0, 'src')
+from d4bl.agents.crew import D4Bl
 
 
 def _get_ordered_task_names(selected_agents: list) -> list:
     """Return the task names that would run for the given selected agents, in order."""
-    import sys
-    sys.path.insert(0, 'src')
-    from d4bl.agents.crew import D4Bl
-
     selected_task_names = {
         D4Bl.AGENT_TASK_MAP[name]
         for name in selected_agents

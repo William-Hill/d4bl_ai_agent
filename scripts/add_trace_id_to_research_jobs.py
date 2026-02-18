@@ -10,7 +10,7 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from d4bl.infra import database as db  # noqa: E402
+from d4bl.infra import database as db
 
 
 async def add_trace_id_column():
