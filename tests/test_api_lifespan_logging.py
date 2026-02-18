@@ -39,3 +39,10 @@ def test_exception_chaining_in_500_handlers():
         stripped = line.strip()
         if "raise HTTPException(status_code=500" in stripped:
             assert "from e" in stripped, f"Missing 'from e' on: {stripped}"
+
+
+def test_websocket_uses_session_maker_not_get_db_generator():
+    """WebSocket handler must use async_session_maker directly, not async-for-get_db."""
+    from d4bl.app import api
+    source = inspect.getsource(api.websocket_endpoint)
+    assert "async for db in get_db()" not in source

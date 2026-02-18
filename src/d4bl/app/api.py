@@ -15,6 +15,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.infra.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
+import d4bl.infra.database as _db
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
@@ -269,11 +270,11 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         # Try to get from database first
         try:
             job_uuid = UUID(job_id)
-            async for db in get_db():
+            async with _db.async_session_maker() as db:
                 result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
                 result_obj = await db.execute(result_query)
                 job = result_obj.scalar_one_or_none()
-                
+
                 if job:
                     job_dict = job.to_dict()
                     if job.status == "completed":
@@ -298,10 +299,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                             "progress": job_dict.get("progress"),
                             "logs": job_dict.get("logs") or get_job_logs(job_id)
                         })
-                break
         except Exception as db_error:
-            logger.warning("Error fetching job from DB: %s", db_error)
-            # Fallback to in-memory logs if available
+            logger.warning("Error fetching job from DB in WebSocket: %s", db_error)
             fallback_logs = get_job_logs(job_id)
             if fallback_logs:
                 await websocket.send_json({
