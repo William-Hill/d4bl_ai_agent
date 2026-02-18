@@ -2,7 +2,9 @@
 FastAPI backend for D4BL AI Agent UI
 """
 import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -32,6 +34,8 @@ from d4bl.app.websocket_manager import get_job_logs, register_connection, remove
 _query_engine = None
 _background_tasks: set = set()
 
+logger = logging.getLogger(__name__)
+
 
 def get_query_engine() -> QueryEngine:
     global _query_engine
@@ -39,52 +43,45 @@ def get_query_engine() -> QueryEngine:
         _query_engine = QueryEngine()
     return _query_engine
 
-app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on application startup"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application startup and shutdown."""
     try:
         init_db()
         await create_tables()
-        print("✓ Database initialized successfully")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"⚠ Warning: Database initialization failed: {e}")
-        print("  The application will continue but jobs won't be persisted.")
-    
-    # Check Langfuse availability early and unset OTLP endpoint if not available
-    # This prevents OpenTelemetry from trying to export traces when Langfuse is down
+        logger.warning("Database initialization failed: %s", e)
+        logger.warning("The application will continue but jobs won't be persisted.")
+
     try:
         from d4bl.observability.langfuse import check_langfuse_service_available
-        import os
         from d4bl.settings import get_settings
-        
         settings = get_settings()
         langfuse_otel_host = settings.langfuse_otel_host or settings.langfuse_host
-        
-        # Adjust for Docker
+
         if os.path.exists("/.dockerenv"):
             if "localhost" in langfuse_otel_host:
                 langfuse_otel_host = langfuse_otel_host.replace("localhost", "langfuse-web")
             if ":3002" in langfuse_otel_host:
                 langfuse_otel_host = langfuse_otel_host.replace(":3002", ":3000")
-        
+
         if not check_langfuse_service_available(langfuse_otel_host):
-            print("⚠️ Langfuse service not available. Unsetting OTLP endpoint to prevent export errors.")
+            logger.warning("Langfuse service not available. Unsetting OTLP endpoint.")
             os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
             os.environ.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
         else:
-            print("✓ Langfuse service is available")
+            logger.info("Langfuse service is available")
     except Exception as e:
-        print(f"⚠️ Could not check Langfuse availability: {e}")
-        # Continue anyway - let individual components handle it
+        logger.warning("Could not check Langfuse availability: %s", e)
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database connections on shutdown"""
     await close_db()
+
+
+app = FastAPI(title="D4BL AI Agent API", version="1.0.0", lifespan=lifespan)
 
 
 # CORS middleware for local development
@@ -145,10 +142,8 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        print(f"ERROR in create_research: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Error creating research job")
+        logger.exception("Error in create_research")
+        raise HTTPException(status_code=500, detail="Error creating research job") from e
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
@@ -210,8 +205,8 @@ async def get_job_history(
             page_size=page_size
         )
     except Exception as e:
-        print(f"Error fetching job history: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching job history")
+        logger.exception("Error fetching job history")
+        raise HTTPException(status_code=500, detail="Error fetching job history") from e
 
 
 @app.get("/api/evaluations", response_model=List[EvaluationResultItem])
@@ -305,7 +300,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                         })
                 break
         except Exception as db_error:
-            print(f"Error fetching job from database: {db_error}")
+            logger.warning("Error fetching job from DB: %s", db_error)
             # Fallback to in-memory logs if available
             fallback_logs = get_job_logs(job_id)
             if fallback_logs:
@@ -328,7 +323,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.exception("WebSocket error")
     finally:
         remove_connection(job_id)
 
@@ -385,10 +380,8 @@ async def search_similar_content(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error searching vector database: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Error searching vector database")
+        logger.exception("Error searching vector database")
+        raise HTTPException(status_code=500, detail="Error searching vector database") from e
 
 
 @app.get("/api/vector/job/{job_id}")
@@ -423,10 +416,8 @@ async def get_scraped_content_by_job(
             "count": len(results),
         }
     except Exception as e:
-        print(f"Error fetching scraped content: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Error fetching scraped content")
+        logger.exception("Error fetching scraped content")
+        raise HTTPException(status_code=500, detail="Error fetching scraped content") from e
 
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -466,10 +457,8 @@ async def natural_language_query(
             query=result.query,
         )
     except Exception as e:
-        print(f"Error in NL query: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Query failed")
+        logger.exception("Error in NL query")
+        raise HTTPException(status_code=500, detail="Query failed") from e
 
 
 if __name__ == "__main__":
