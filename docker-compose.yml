@@ -1,0 +1,337 @@
+services:
+  d4bl-api:
+    build: .
+    container_name: d4bl-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      # Use host.docker.internal to access Ollama running on the host machine
+      # On Linux, you may need to use the host's IP address instead
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # Database configuration
+      # Supabase defaults: host.docker.internal:54322, postgres/postgres, d4bl_db
+      # Ensure `supabase start` is running on the host (or point these to your remote Supabase)
+      - POSTGRES_HOST=${POSTGRES_HOST:-host.docker.internal}
+      - POSTGRES_PORT=${POSTGRES_PORT:-54322}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      # Langfuse tracing
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-pk-lf-dev}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-sk-lf-dev}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
+      - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-http://langfuse-web:3000}
+      - LANGFUSE_OTEL_HOST=${LANGFUSE_OTEL_HOST:-http://langfuse-web:3000}
+      # OpenTelemetry OTLP endpoint for OpenInference instrumentation
+      # Must be set before any OpenTelemetry imports
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://langfuse-web:3000/api/public/otel/v1/traces}
+      # Crawling provider: firecrawl (self-hosted) or crawl4ai (self-hosted)
+      # Firecrawl: Self-hosted at http://firecrawl-api:3002 (internal Docker network)
+      #           For external access, use http://localhost:3003
+      #           Include docker-compose.firecrawl.yml to enable Firecrawl services
+      # Crawl4AI: Requires URLs - use Serper API to convert search queries to URLs
+      #           Note: Crawl4AI listens on port 11235 internally, 3100 is the external port mapping
+      #           Include docker-compose.crawl.yml to enable Crawl4AI service
+      - CRAWL_PROVIDER=${CRAWL_PROVIDER:-firecrawl}
+      - FIRECRAWL_BASE_URL=${FIRECRAWL_BASE_URL:-http://firecrawl-api:3002}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - CRAWL4AI_BASE_URL=${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
+      # Serper API for converting search queries to URLs (required for Crawl4AI search support)
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - SERP_API_KEY=${SERP_API_KEY:-}  # Alternative name
+      # Embedder configuration for CrewAI memory
+      - EMBEDDINGS_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - EMBEDDINGS_OLLAMA_MODEL_NAME=mxbai-embed-large
+      # Client-side request throttling (for documentation - actual throttling happens on Ollama server)
+      # Configure Ollama server-side queue via environment variables when starting Ollama:
+      # - OLLAMA_MAX_QUEUE: Max queued requests (default: 512)
+      # - OLLAMA_NUM_PARALLEL: Max parallel requests per model (default: auto)
+      # - OLLAMA_MAX_LOADED_MODELS: Max models loaded concurrently (default: 3x GPUs or 3)
+      # Phoenix by Arize AI configuration for observability
+      # Phoenix runs as a Docker service, accessible via service name "phoenix"
+      - PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-d4bl-crewai}
+      # When Phoenix authentication is enabled, the client libraries and OTEL exporters
+      # use PHOENIX_API_KEY / PHOENIX_ENDPOINT for auth and routing.
+      # After you create a System API key in the Phoenix UI, set PHOENIX_API_KEY in
+      # your .env file so this service can continue sending traces.
+      - PHOENIX_ENDPOINT=${PHOENIX_ENDPOINT:-http://phoenix:6006}
+      - PHOENIX_API_KEY=${PHOENIX_API_KEY:-}
+    env_file:
+      - .env
+    volumes:
+      - ./output:/app/output
+      - ./.env:/app/.env:ro
+    depends_on:
+      - langfuse-web
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+      - crawl4ai
+    extra_hosts:
+      # Add host.docker.internal for Linux compatibility
+      - "host.docker.internal:host-gateway"
+
+  d4bl-frontend:
+    build:
+      context: ./ui-nextjs
+      dockerfile: Dockerfile
+      args:
+        # Pass NEXT_PUBLIC_API_URL at build time so it's embedded in the client bundle
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: d4bl-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # For client-side connections (browser), use the exposed port
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # For server-side rendering in Docker, use the internal service name
+      - API_INTERNAL_URL=http://d4bl-api:8000
+    depends_on:
+      - d4bl-api
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+
+  # Ollama service removed - using Ollama running on the host machine
+  # Make sure Ollama is running on your host: ollama serve
+  # And pull the Mistral model: ollama pull mistral
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    restart: always
+    networks:
+      - d4bl-network
+    depends_on: &langfuse-depends-on
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:3030:3030
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres} # CHANGEME
+      SALT: ${SALT:-mysalt} # CHANGEME
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000} # CHANGEME: generate via `openssl rand -hex 32`
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-true}
+      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse} # CHANGEME
+      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      LANGFUSE_USE_AZURE_BLOB: ${LANGFUSE_USE_AZURE_BLOB:-false}
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY:-miniosecret} # CHANGEME
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: ${LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT:-http://minio:9000}
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: ${LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE:-true}
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: ${LANGFUSE_S3_EVENT_UPLOAD_PREFIX:-events/}
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_MEDIA_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY:-miniosecret} # CHANGEME
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT:-http://localhost:9090}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: ${LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE:-true}
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: ${LANGFUSE_S3_MEDIA_UPLOAD_PREFIX:-media/}
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: ${LANGFUSE_S3_BATCH_EXPORT_ENABLED:-false}
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: ${LANGFUSE_S3_BATCH_EXPORT_BUCKET:-langfuse}
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: ${LANGFUSE_S3_BATCH_EXPORT_PREFIX:-exports/}
+      LANGFUSE_S3_BATCH_EXPORT_REGION: ${LANGFUSE_S3_BATCH_EXPORT_REGION:-auto}
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: ${LANGFUSE_S3_BATCH_EXPORT_ENDPOINT:-http://minio:9000}
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: ${LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT:-http://localhost:9090}
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID:-minio}
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY:-miniosecret} # CHANGEME
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: ${LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE:-true}
+      LANGFUSE_INGESTION_QUEUE_DELAY_MS: ${LANGFUSE_INGESTION_QUEUE_DELAY_MS:-}
+      LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: ${LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS:-}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_AUTH: ${REDIS_AUTH:-myredissecret} # CHANGEME
+      REDIS_TLS_ENABLED: ${REDIS_TLS_ENABLED:-false}
+      REDIS_TLS_CA: ${REDIS_TLS_CA:-/certs/ca.crt}
+      REDIS_TLS_CERT: ${REDIS_TLS_CERT:-/certs/redis.crt}
+      REDIS_TLS_KEY: ${REDIS_TLS_KEY:-/certs/redis.key}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    restart: always
+    networks:
+      - d4bl-network
+    depends_on: *langfuse-depends-on
+    ports:
+      - 3002:3000
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret} # CHANGEME
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server
+    restart: always
+    networks:
+      - d4bl-network
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse} # CHANGEME
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      - 127.0.0.1:8123:8123
+      - 127.0.0.1:9000:9000
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  minio:
+    image: cgr.dev/chainguard/minio
+    restart: always
+    networks:
+      - d4bl-network
+    entrypoint: sh
+    # create the 'langfuse' bucket before starting the service
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret} # CHANGEME
+    ports:
+      - 9090:9000
+      - 127.0.0.1:9091:9001
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  redis:
+    image: docker.io/redis:7
+    restart: always
+    networks:
+      - d4bl-network
+    # CHANGEME: row below to secure redis password
+    command: >
+      --requirepass ${REDIS_AUTH:-myredissecret}
+      --maxmemory-policy noeviction
+    ports:
+      - 127.0.0.1:6380:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: crawl4ai
+    restart: unless-stopped
+    networks:
+      - crawl4ai
+    environment:
+      - CRAWL4AI_API_KEY=${CRAWL4AI_API_KEY:-}
+    ports:
+      - "3100:11235"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:11235/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Firecrawl services moved to docker-compose.firecrawl.yml
+  # Include it with: docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up
+
+  # nuq-postgres:
+  #   # Use Firecrawl's custom nuq-postgres build which includes the required schema and migrations
+  #   build: firecrawl-db/nuq-postgres
+  #   container_name: nuq-postgres
+  #   restart: unless-stopped
+  #   networks:
+  #     - d4bl-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}"]
+  #     interval: 3s
+  #     timeout: 3s
+  #     retries: 10
+  #   environment:
+  #     POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}
+  #     POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}
+  #     POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-${POSTGRES_DB:-postgres}}
+  #     TZ: UTC
+  #     PGTZ: UTC
+  #   ports:
+  #     - 127.0.0.1:5434:5432  # Different port to avoid conflict with main postgres (5432) and other services
+  #   volumes:
+  #     - firecrawl_postgres_data:/var/lib/postgresql/data
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #       compress: "true"
+
+  postgres:
+    image: docker.io/postgres:${POSTGRES_VERSION:-17}
+    restart: always
+    networks:
+      - d4bl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres} # CHANGEME
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  langfuse_postgres_data:
+    driver: local
+  # firecrawl_postgres_data moved to docker-compose.firecrawl.yml
+  langfuse_clickhouse_data:
+    driver: local
+  langfuse_clickhouse_logs:
+    driver: local
+  langfuse_minio_data:
+    driver: local
+
+networks:
+  d4bl-network:
+    driver: bridge
+
+  crawl4ai:
+    driver: bridge

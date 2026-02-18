@@ -1,9 +1,24 @@
 venv/
+.venv/
 .env
-__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 reports/
 archived_reports/
 archived_search_results/
 error_logs/
 research_analysis/
 search_results/
+output/
+.DS_Store
+*.egg-info/
+dist/
+build/
+uv.lock
+# Evaluation output files
+eval_results*.csv
+*.csv
+!requirements.txt

@@ -1,0 +1,35 @@
+<yandex>
+  <!-- Single-node cluster definition for Langfuse migrations -->
+  <remote_servers>
+    <default>
+      <shard>
+        <replica>
+          <host>langfuse-clickhouse</host>
+          <port>9000</port>
+        </replica>
+      </shard>
+    </default>
+  </remote_servers>
+
+  <!-- Enable built-in ClickHouse Keeper for replicated tables -->
+  <keeper_server>
+    <tcp_port>9181</tcp_port>
+    <server_id>1</server_id>
+    <raft_configuration>
+      <server>
+        <id>1</id>
+        <hostname>langfuse-clickhouse</hostname>
+        <port>9181</port>
+      </server>
+    </raft_configuration>
+  </keeper_server>
+
+  <!-- Macros used by replicated tables -->
+  <macros>
+    <shard>1</shard>
+    <replica>1</replica>
+  </macros>
+</yandex>
+
+
+

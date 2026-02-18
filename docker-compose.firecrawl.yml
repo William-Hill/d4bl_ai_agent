@@ -1,0 +1,198 @@
+services:
+  # Separate Redis instance for Firecrawl (no password, matching Firecrawl's setup)
+  firecrawl-redis:
+    image: redis:alpine
+    container_name: firecrawl-redis
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+    command: redis-server --bind 0.0.0.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  # Firecrawl self-hosted services
+  # Note: Firecrawl images don't have ARM64 builds, so we use platform emulation
+  firecrawl-playwright:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    platform: linux/amd64
+    container_name: firecrawl-playwright
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+    environment:
+      PORT: 3000
+      PROXY_SERVER: ${PROXY_SERVER:-}
+      PROXY_USERNAME: ${PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-}
+      BLOCK_MEDIA: ${BLOCK_MEDIA:-false}
+      MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-2}
+      # Timeout settings (in milliseconds) - lower values skip paywalled content faster
+      # Aggressive timeouts to prevent infinite retry loops
+      PAGE_TIMEOUT: ${FIRECRAWL_PAGE_TIMEOUT:-10000}
+      NAVIGATION_TIMEOUT: ${FIRECRAWL_NAVIGATION_TIMEOUT:-10000}
+    cpus: 2.0
+    mem_limit: 4G
+    memswap_limit: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=1g
+
+  firecrawl-api:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    platform: linux/amd64
+    container_name: firecrawl-api
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+    environment:
+      HOST: "0.0.0.0"
+      PORT: ${FIRECRAWL_INTERNAL_PORT:-3002}
+      EXTRACT_WORKER_PORT: ${FIRECRAWL_EXTRACT_WORKER_PORT:-3004}
+      WORKER_PORT: ${FIRECRAWL_WORKER_PORT:-3005}
+      REDIS_URL: ${FIRECRAWL_REDIS_URL:-redis://firecrawl-redis:6379}
+      REDIS_RATE_LIMIT_URL: ${FIRECRAWL_REDIS_URL:-redis://firecrawl-redis:6379}
+      PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://firecrawl-playwright:3000/scrape}
+      POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}
+      POSTGRES_PASSWORD: "${FIRECRAWL_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}"
+      POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-${POSTGRES_DB:-postgres}}
+      POSTGRES_HOST: ${FIRECRAWL_POSTGRES_HOST:-nuq-postgres}
+      POSTGRES_PORT: ${FIRECRAWL_POSTGRES_PORT:-5432}
+      USE_DB_AUTHENTICATION: ${FIRECRAWL_USE_DB_AUTHENTICATION:-false}
+      NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-1}
+      CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-2}
+      MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-1}
+      BROWSER_POOL_SIZE: ${FIRECRAWL_BROWSER_POOL_SIZE:-1}
+      # Worker retry configuration - stop retrying after engines fail
+      WORKER_MAX_RETRIES: ${FIRECRAWL_WORKER_MAX_RETRIES:-0}
+      WORKER_RETRY_DELAY: ${FIRECRAWL_WORKER_RETRY_DELAY:-0}
+      # Stop waterfall after all engines fail
+      STOP_ON_ALL_ENGINES_FAIL: ${FIRECRAWL_STOP_ON_ALL_ENGINES_FAIL:-true}
+      NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      MODEL_NAME: ${MODEL_NAME:-}
+      MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-}
+      TEST_API_KEY: ${FIRECRAWL_API_KEY:-}
+      SUPABASE_ANON_TOKEN: ${SUPABASE_ANON_TOKEN:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_TOKEN: ${SUPABASE_SERVICE_TOKEN:-}
+      SELF_HOSTED_WEBHOOK_URL: ${SELF_HOSTED_WEBHOOK_URL:-}
+      LOGGING_LEVEL: ${FIRECRAWL_LOGGING_LEVEL:-info}
+      PROXY_SERVER: ${PROXY_SERVER:-}
+      PROXY_USERNAME: ${PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-}
+      SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT:-}
+      SEARXNG_ENGINES: ${SEARXNG_ENGINES:-}
+      SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES:-}
+      # Scrape timeout settings (in milliseconds) - lower values skip paywalled content faster
+      # These aggressive timeouts help prevent infinite retry loops when engines fail
+      SCRAPE_TIMEOUT: ${FIRECRAWL_SCRAPE_TIMEOUT:-10000}
+      SCRAPE_TIMEOUT_MAX: ${FIRECRAWL_SCRAPE_TIMEOUT_MAX:-15000}
+      # Max retries for failed scrapes - prevent infinite loops
+      MAX_RETRIES: ${FIRECRAWL_MAX_RETRIES:-0}
+      # Stop retrying after engines fail - prevent waterfall loops
+      STOP_ON_ENGINE_FAILURE: ${FIRECRAWL_STOP_ON_ENGINE_FAILURE:-true}
+      # Max engine attempts before giving up (0 = fail immediately after engines fail)
+      MAX_ENGINE_ATTEMPTS: ${FIRECRAWL_MAX_ENGINE_ATTEMPTS:-0}
+      ENV: local
+    ports:
+      - "${FIRECRAWL_PORT:-3003}:${FIRECRAWL_INTERNAL_PORT:-3002}"
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      nuq-postgres:
+        condition: service_healthy
+    cpus: 4.0
+    mem_limit: 12G
+    memswap_limit: 12G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: firecrawl-rabbitmq
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+    command: rabbitmq-server
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  nuq-postgres:
+    build:
+      context: ./firecrawl-db/nuq-postgres
+    container_name: nuq-postgres
+    restart: unless-stopped
+    networks:
+      - d4bl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER:-${POSTGRES_USER:-postgres}}
+      POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}
+      POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-${POSTGRES_DB:-postgres}}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - 127.0.0.1:5434:5432
+    volumes:
+      - firecrawl_postgres_data:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+volumes:
+  firecrawl_postgres_data:
+    driver: local
+
+networks:
+  d4bl-network:
+    driver: bridge
+
