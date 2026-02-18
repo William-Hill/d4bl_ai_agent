@@ -95,15 +95,22 @@ def get_database_url() -> str:
     db_name = os.getenv("POSTGRES_DB", "postgres")
     
     # CRITICAL: In Docker, we MUST use 'postgres' as the hostname (Docker service name)
-    # If POSTGRES_HOST is not set or is 'localhost', we're likely in Docker and should use 'postgres'
-    # Check if we're in a Docker container by looking for common indicators
-    if db_host == "localhost" or db_host == "127.0.0.1":
+    # OR use 'host.docker.internal' to reach services on the host machine (like Supabase)
+    # Only override if host is localhost/127.0.0.1 AND we're running inside Docker
+    if db_host in ("localhost", "127.0.0.1"):
         # Check if we're in Docker (common indicators)
         if os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER"):
+            original_host = db_host
             db_host = "postgres"
-            print(f"⚠ Warning: Detected Docker environment, using 'postgres' as hostname instead of '{db_host}'")
+            print(
+                f"⚠ Warning: Detected Docker environment, "
+                f"using 'postgres' as hostname instead of '{original_host}'"
+            )
         else:
-            print(f"⚠ Warning: Using 'localhost' as database host. In Docker, this should be 'postgres'")
+            print(
+                "⚠ Warning: Using 'localhost' as database host. "
+                "In Docker, this should be 'postgres' or 'host.docker.internal'"
+            )
     
     # Ensure we're using the correct database name (not the username)
     if not db_name or db_name == db_user:

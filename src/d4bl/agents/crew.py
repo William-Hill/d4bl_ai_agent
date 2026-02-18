@@ -61,6 +61,17 @@ class D4Bl():
         "editor": "editor_task",
         "data_visualization_agent": "data_visualization_task",
     }
+
+    TASK_ORDER = [
+        "research_task",
+        "analysis_task",
+        "writing_task",
+        "fact_checker_task",
+        "citation_task",
+        "bias_detection_task",
+        "editor_task",
+        "data_visualization_task",
+    ]
     
     def __init__(self):
         """Initialize crew with optional agent selection"""
@@ -307,13 +318,13 @@ class D4Bl():
                 if agent_name in agent_methods
             ]
             
-            # Filter tasks based on selected agents
-            selected_tasks = {
+            # Build selected task names as a set for O(1) lookup
+            selected_task_names = {
                 self.AGENT_TASK_MAP[agent_name]
                 for agent_name in self.selected_agents
                 if agent_name in self.AGENT_TASK_MAP
             }
-            
+
             # Get task method names
             task_methods = {
                 'research_task': self.research_task,
@@ -325,11 +336,12 @@ class D4Bl():
                 'editor_task': self.editor_task,
                 'data_visualization_task': self.data_visualization_task,
             }
-            
+
+            # Iterate TASK_ORDER to preserve deterministic sequential order
             tasks_to_use = [
                 task_methods[task_name]()
-                for task_name in selected_tasks
-                if task_name in task_methods
+                for task_name in self.TASK_ORDER
+                if task_name in selected_task_names and task_name in task_methods
             ]
             
             logger.info(
