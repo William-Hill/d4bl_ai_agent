@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from d4bl.database import init_db, async_session_maker, ResearchJob, get_database_url
+from d4bl.infra.database import init_db, async_session_maker, ResearchJob, get_database_url
 from sqlalchemy import select, text
 
 
@@ -90,5 +90,7 @@ async def test_connection():
 if __name__ == "__main__":
     success = asyncio.run(test_connection())
     sys.exit(0 if success else 1)
+
+
 
 
