@@ -60,7 +60,9 @@ class QueryParser:
 
     async def _parse_with_llm(self, query: str) -> ParsedQuery:
         """Use Ollama/Mistral to parse the query."""
-        prompt = PARSE_PROMPT.format(query=query)
+        # Use replace() instead of format() so curly braces in user input
+        # (e.g. "What is {NIL}?") don't raise KeyError.
+        prompt = PARSE_PROMPT.replace("{query}", query)
 
         timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -82,12 +84,25 @@ class QueryParser:
         raw_text = data.get("response", "").strip()
         parsed = json.loads(raw_text)
 
+        # Guard against hallucinated field types (e.g. "entities": "Mississippi")
+        entities = parsed.get("entities", [])
+        if not isinstance(entities, list):
+            entities = []
+
+        search_queries = parsed.get("search_queries", [query])
+        if not isinstance(search_queries, list) or not search_queries:
+            search_queries = [query]
+
+        data_sources = parsed.get("data_sources", ["vector", "structured"])
+        if not isinstance(data_sources, list) or not data_sources:
+            data_sources = ["vector", "structured"]
+
         return ParsedQuery(
             original_query=query,
             intent=parsed.get("intent", "information_retrieval"),
-            entities=parsed.get("entities", []),
-            search_queries=parsed.get("search_queries", [query]),
-            data_sources=parsed.get("data_sources", ["vector", "structured"]),
+            entities=entities,
+            search_queries=search_queries,
+            data_sources=data_sources,
         )
 
     def _fallback_parse(self, query: str) -> ParsedQuery:
