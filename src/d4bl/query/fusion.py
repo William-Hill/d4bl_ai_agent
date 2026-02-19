@@ -51,6 +51,20 @@ class ResultFusion:
         self.ollama_base_url = (
             ollama_base_url or settings.ollama_base_url
         ).rstrip("/")
+        self._session: aiohttp.ClientSession | None = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Return a persistent ClientSession, creating it if necessary."""
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=60)
+            self._session = aiohttp.ClientSession(timeout=timeout)
+        return self._session
+
+    async def close(self) -> None:
+        """Close and release the underlying HTTP session."""
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+        self._session = None
 
     def merge_and_rank(
         self,
@@ -132,22 +146,21 @@ class ResultFusion:
             query=query, sources_text=sources_text
         )
 
-        timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.ollama_base_url}/api/generate",
-                json={
-                    "model": "mistral",
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.3},
-                },
-            ) as response:
-                if response.status != 200:
-                    raise RuntimeError(
-                        f"Ollama returned status {response.status}"
-                    )
-                data = await response.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{self.ollama_base_url}/api/generate",
+            json={
+                "model": "mistral",
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.3},
+            },
+        ) as response:
+            if response.status != 200:
+                raise RuntimeError(
+                    f"Ollama returned status {response.status}"
+                )
+            data = await response.json()
 
         return data.get("response", "").strip()
 

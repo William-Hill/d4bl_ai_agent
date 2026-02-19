@@ -86,6 +86,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Shutdown: release HTTP sessions before closing the DB connection
+    if _query_engine is not None:
+        await _query_engine.close()
     await close_db()
 
 
