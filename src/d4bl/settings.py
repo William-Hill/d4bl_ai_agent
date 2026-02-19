@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,11 @@ class Settings:
     otlp_endpoint: str = os.getenv(
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         f"{os.getenv('LANGFUSE_OTEL_HOST', os.getenv('LANGFUSE_HOST', 'http://localhost:3002'))}/api/public/otel/v1/traces",
+    )
+
+    # CORS
+    cors_allowed_origins: tuple[str, ...] = field(
+        default_factory=lambda: tuple(o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(","))
     )
 
 
