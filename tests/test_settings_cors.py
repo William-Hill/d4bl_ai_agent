@@ -30,3 +30,12 @@ def test_settings_cors_reads_from_env(monkeypatch):
     assert "http://localhost:3000" in s.cors_allowed_origins
     assert "http://example.com" in s.cors_allowed_origins
     assert len(s.cors_allowed_origins) == 2
+
+
+def test_settings_cors_strips_whitespace(monkeypatch):
+    """Origins with spaces around commas must be stripped."""
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", " http://localhost:3000 , http://example.com ")
+    from d4bl.settings import Settings
+    s = Settings()
+    assert "http://localhost:3000" in s.cors_allowed_origins
+    assert "http://example.com" in s.cors_allowed_origins
