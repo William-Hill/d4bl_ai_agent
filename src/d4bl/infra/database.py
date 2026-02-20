@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Text, Column, String, DateTime, Float
+from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -83,6 +83,46 @@ class EvaluationResult(Base):
             "context_text": self.context_text,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class CensusIndicator(Base):
+    """Race-disaggregated Census ACS indicators by geography."""
+    __tablename__ = "census_indicators"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    fips_code = Column(String(5), nullable=False, index=True)
+    geography_type = Column(String(10), nullable=False)   # state | county | tract
+    geography_name = Column(Text, nullable=False)
+    state_fips = Column(String(2), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    race = Column(String(50), nullable=False)
+    metric = Column(String(100), nullable=False)
+    value = Column(Float, nullable=False)
+    margin_of_error = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = {"comment": "Census ACS 5-year estimates, race-disaggregated"}
+
+
+class PolicyBill(Base):
+    """State legislation tracked via OpenStates."""
+    __tablename__ = "policy_bills"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    state = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=False)
+    bill_id = Column(String(50), nullable=False)
+    bill_number = Column(String(20), nullable=False)
+    title = Column(Text, nullable=False)
+    summary = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, index=True)
+    topic_tags = Column(JSON, nullable=True)
+    session = Column(String(20), nullable=False, index=True)
+    introduced_date = Column(Date, nullable=True)
+    last_action_date = Column(Date, nullable=True)
+    url = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 # Database connection setup
