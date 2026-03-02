@@ -83,6 +83,8 @@ class QueryResponse(BaseModel):
 
 
 class IndicatorItem(BaseModel):
+    """Single Census ACS indicator observation for a geography/race/year."""
+
     fips_code: str
     geography_name: str
     state_fips: str
@@ -95,6 +97,8 @@ class IndicatorItem(BaseModel):
 
 
 class PolicyBillItem(BaseModel):
+    """Legislative bill summary from OpenStates with status and topic tags."""
+
     state: str
     state_name: str
     bill_number: str
@@ -108,6 +112,8 @@ class PolicyBillItem(BaseModel):
 
 
 class StateSummaryItem(BaseModel):
+    """Per-state metadata: available metrics, bill count, and latest year."""
+
     state_fips: str
     state_name: str
     available_metrics: List[str]

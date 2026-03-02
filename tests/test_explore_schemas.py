@@ -29,7 +29,16 @@ class TestIndicatorItem:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            IndicatorItem(fips_code="28", geography_name="MS")  # type: ignore[call-arg]
+            IndicatorItem(
+                fips_code="28",
+                geography_name="Mississippi",
+                state_fips="28",
+                geography_type="state",
+                year=2022,
+                race="black",
+                value=43.2,
+                margin_of_error=None,
+            )  # type: ignore[call-arg]
 
 
 class TestPolicyBillItem:

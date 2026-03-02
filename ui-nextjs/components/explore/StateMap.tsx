@@ -54,11 +54,14 @@ export default function StateMap({ indicators, selectedStateFips, onSelectState 
                   <Geography
                     key={geo.rsmKey}
                     geography={geo}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select ${geo.properties.name}`}
                     fill={value !== undefined ? colorScale(value) : '#333'}
                     stroke={isSelected ? '#00ff32' : '#404040'}
                     strokeWidth={isSelected ? 2 : 0.5}
                     style={{
-                      default: { outline: 'none', cursor: 'pointer' },
+                      default: { cursor: 'pointer' },
                       hover: { fill: '#00cc28', outline: 'none', cursor: 'pointer' },
                       pressed: { outline: 'none' },
                     }}
@@ -69,6 +72,12 @@ export default function StateMap({ indicators, selectedStateFips, onSelectState 
                     }}
                     onMouseLeave={() => setTooltip(null)}
                     onClick={() => onSelectState(fips, geo.properties.name)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectState(fips, geo.properties.name);
+                      }
+                    }}
                   />
                 );
               })

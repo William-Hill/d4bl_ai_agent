@@ -131,7 +131,7 @@ Computed via two aggregating SQL queries joined in Python. Used to color the cho
 
 ### Layout
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │  NAV: D4BL  |  Research  |  Explore Data  (active)      │
 ├─────────────────────────────────────────────────────────┤

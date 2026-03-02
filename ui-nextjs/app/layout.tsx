@@ -16,7 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "D4BL AI Agent - Research Tool | Data for Black Lives",
   description:
-    "Data for Black Lives Research & Analysis Tool - Using data to create concrete and measurable change in the lives of Black people",
+    "Data for Black Lives Research & Analysis Tool"
+    + " - Using data to create concrete and measurable"
+    + " change in the lives of Black people",
   icons: {
     icon: [
       { url: "/favicon.png", type: "image/png", sizes: "128x128" },

@@ -223,6 +223,8 @@ async def ingest_state(
                         topic_tags=bill.get("subject", []),
                         session=sess,
                         url=url,
+                        introduced_date=bill.get("createdAt"),
+                        last_action_date=bill.get("updatedAt"),
                     )
                     .on_conflict_do_update(
                         index_elements=["state", "bill_id", "session"],
@@ -234,6 +236,8 @@ async def ingest_state(
                             "status": map_status(bill.get("statusText")),
                             "topic_tags": bill.get("subject", []),
                             "url": url,
+                            "introduced_date": bill.get("createdAt"),
+                            "last_action_date": bill.get("updatedAt"),
                         },
                     )
                 )
