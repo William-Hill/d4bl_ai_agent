@@ -28,6 +28,69 @@ All research queries and results are now persisted in a PostgreSQL database, all
 | `updated_at` | TIMESTAMP | Last update time |
 | `completed_at` | TIMESTAMP | When the job completed (null if not completed) |
 
+### `evaluation_results` Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `span_id` | VARCHAR(64) | Trace span identifier |
+| `trace_id` | VARCHAR(64) | Trace identifier |
+| `job_id` | UUID | Foreign key to `research_jobs.job_id` |
+| `eval_name` | VARCHAR(100) | Evaluation type (e.g., `hallucination`, `bias`) |
+| `label` | VARCHAR(100) | Evaluation label/category |
+| `score` | FLOAT | Numeric evaluation score |
+| `explanation` | TEXT | Detailed evaluation explanation |
+| `input_text` | TEXT | Input text that was evaluated |
+| `output_text` | TEXT | Output text that was evaluated |
+| `context_text` | TEXT | Context/source text used for evaluation |
+| `created_at` | TIMESTAMP | When the evaluation was created |
+
+**Indexes**: `span_id`, `trace_id`, `job_id`, `eval_name`, `created_at` (individual B-tree indexes on each)
+**Nullable**: `trace_id`, `job_id`, `label`, `score`, `explanation`, `input_text`, `output_text`, `context_text`
+**Not null**: `span_id`, `eval_name`, `created_at`
+
+### `census_indicators` Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `fips_code` | VARCHAR(5) | FIPS geographic code |
+| `geography_type` | VARCHAR(10) | `state` or `county` |
+| `geography_name` | TEXT | Human-readable place name |
+| `state_fips` | VARCHAR(2) | Two-digit state FIPS code |
+| `year` | INTEGER | Data year |
+| `race` | VARCHAR(50) | Race/ethnicity category |
+| `metric` | VARCHAR(100) | Indicator metric name |
+| `value` | FLOAT | Metric value |
+| `margin_of_error` | FLOAT | ACS margin of error (nullable) |
+| `created_at` | TIMESTAMP | When the record was ingested |
+
+**Unique constraint**: `(fips_code, year, race, metric)`
+**Composite index**: `(state_fips, geography_type, metric, race, year)`
+
+### `policy_bills` Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `state` | VARCHAR(2) | Two-letter state code |
+| `state_name` | VARCHAR(50) | Full state name |
+| `bill_id` | VARCHAR(50) | OpenStates bill identifier |
+| `bill_number` | VARCHAR(20) | Bill number (e.g., `AB-1234`) |
+| `title` | TEXT | Bill title |
+| `summary` | TEXT | Bill summary |
+| `status` | VARCHAR(20) | Current status |
+| `topic_tags` | JSON | Array of topic tags |
+| `session` | VARCHAR(20) | Legislative session |
+| `introduced_date` | DATE | Date bill was introduced |
+| `last_action_date` | DATE | Date of most recent action |
+| `url` | TEXT | OpenStates URL |
+| `created_at` | TIMESTAMP | When the record was ingested |
+| `updated_at` | TIMESTAMP | Last update time |
+
+**Unique constraint**: `(state, bill_id, session)`
+**Composite index**: `(state, status, session)`
+
 ## Configuration
 
 ### Environment Variables
@@ -91,7 +154,7 @@ Returns paginated job history with optional status filtering.
 
 ### Automatic Initialization
 
-The database tables are automatically created when the API starts (via the `startup` event).
+The database tables are automatically created when the API starts (via the `lifespan` context manager).
 
 ### Manual Initialization
 

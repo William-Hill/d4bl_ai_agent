@@ -302,6 +302,234 @@ curl http://localhost:8000/api/jobs/{job_id}
 curl http://localhost:8000/api/health
 ```
 
+### Get Job History
+
+Get paginated job history with optional status filtering.
+
+**Endpoint**: `GET /api/jobs`
+
+**Query Parameters**:
+- `page` (integer, optional): Page number. Default: `1`
+- `page_size` (integer, optional): Results per page. Default: `20`
+- `status` (string, optional): Filter by status (`pending`, `running`, `completed`, `error`)
+
+**Response** (200 OK):
+```json
+{
+  "jobs": [
+    {
+      "job_id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "completed",
+      "query": "How does algorithmic bias affect criminal justice?",
+      "summary_format": "detailed",
+      "created_at": "2026-01-15T10:30:00Z",
+      "result": { ... }
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+### Natural Language Query
+
+Query research data using natural language. Searches both the vector store (scraped content) and structured database (research jobs) and returns a synthesized answer with source citations.
+
+**Endpoint**: `POST /api/query`
+
+**Request Body**:
+```json
+{
+  "question": "What are NIL policies?",
+  "job_id": null,
+  "limit": 10
+}
+```
+
+**Parameters**:
+- `question` (string, required): Natural language question
+- `job_id` (string, optional): Scope search to a specific research job
+- `limit` (integer, optional): Max results per data source. Default: `10`
+
+**Response** (200 OK):
+```json
+{
+  "answer": "NIL policies refer to...",
+  "sources": [
+    {
+      "url": "https://example.com/article",
+      "title": "NIL Policy Overview",
+      "snippet": "Relevant excerpt...",
+      "source_type": "vector",
+      "relevance_score": 0.92
+    }
+  ],
+  "query": "What are NIL policies?"
+}
+```
+
+### Vector Search
+
+Search for similar scraped content using vector similarity.
+
+**Endpoint**: `POST /api/vector/search`
+
+**Request Body**:
+```json
+{
+  "query": "algorithmic bias in policing",
+  "job_id": null,
+  "limit": 10,
+  "similarity_threshold": 0.7
+}
+```
+
+**Parameters**:
+- `query` (string, required): Text query to search for
+- `job_id` (string, optional): Filter results to a specific research job
+- `limit` (integer, optional): Max results (1–50). Default: `10`
+- `similarity_threshold` (float, optional): Minimum cosine similarity (0–1). Default: `0.7`
+
+**Response** (200 OK):
+```json
+{
+  "query": "algorithmic bias in policing",
+  "job_id": null,
+  "results": [ ... ],
+  "count": 5
+}
+```
+
+### Get Scraped Content by Job
+
+Get all scraped content stored in the vector database for a specific job.
+
+**Endpoint**: `GET /api/vector/job/{job_id}`
+
+**Path Parameters**:
+- `job_id` (string, required): Research job ID
+
+**Query Parameters**:
+- `limit` (integer, optional): Max number of results
+
+**Response** (200 OK):
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "results": [ ... ],
+  "count": 12
+}
+```
+
+### Get Evaluations
+
+Return recent evaluation results for display in the UI.
+
+**Endpoint**: `GET /api/evaluations`
+
+**Query Parameters**:
+- `job_id` (string, optional): Filter by research job ID
+- `trace_id` (string, optional): Filter by trace ID
+- `span_id` (string, optional): Filter by span ID
+- `eval_name` (string, optional): Filter by evaluation name
+- `limit` (integer, optional): Max results (1–500). Default: `100`
+
+**Response** (200 OK):
+```json
+[
+  {
+    "id": "uuid",
+    "span_id": "span-123",
+    "trace_id": "trace-456",
+    "job_id": "550e8400-e29b-41d4-a716-446655440000",
+    "eval_name": "hallucination",
+    "label": "no_hallucination",
+    "score": 0.95,
+    "explanation": "Output is grounded in sources...",
+    "created_at": "2026-01-15T10:30:00Z"
+  }
+]
+```
+
+### Explore Data — Indicators
+
+Get Census ACS indicator data with filtering.
+
+**Endpoint**: `GET /api/explore/indicators`
+
+**Query Parameters**:
+- `metric` (string, required): Indicator metric name (e.g., `"median_income"`)
+- `race` (string, optional): Race/ethnicity filter
+- `year` (integer, optional): Year filter
+- `state` (string, optional): State FIPS code filter
+
+**Response** (200 OK):
+```json
+[
+  {
+    "fips_code": "01001",
+    "geography_name": "Autauga County, AL",
+    "state_fips": "01",
+    "geography_type": "county",
+    "year": 2022,
+    "race": "total",
+    "metric": "median_income",
+    "value": 58450.0,
+    "margin_of_error": 3200.0
+  }
+]
+```
+
+### Explore Data — Policies
+
+Get OpenStates legislative bill data with filtering.
+
+**Endpoint**: `GET /api/explore/policies`
+
+**Query Parameters**:
+- `state` (string, optional): Two-letter state code
+- `status` (string, optional): Bill status filter
+- `topic` (string, optional): Topic tag filter
+- `limit` (integer, optional): Max results. Default: `50`
+
+**Response** (200 OK):
+```json
+[
+  {
+    "state": "CA",
+    "state_name": "California",
+    "bill_number": "AB-1234",
+    "title": "Data Privacy Act",
+    "summary": "Requires algorithmic impact assessments...",
+    "status": "introduced",
+    "topic_tags": ["data_privacy", "algorithmic_accountability"],
+    "introduced_date": "2026-01-10",
+    "last_action_date": "2026-02-15",
+    "url": "https://openstates.org/ca/bills/..."
+  }
+]
+```
+
+### Explore Data — State Summary
+
+Get per-state metadata: available metrics, bill count, and latest data year.
+
+**Endpoint**: `GET /api/explore/states`
+
+**Response** (200 OK):
+```json
+[
+  {
+    "state_fips": "01",
+    "state_name": "Alabama",
+    "available_metrics": ["median_income", "poverty_rate"],
+    "bill_count": 15,
+    "latest_year": 2022
+  }
+]
+```
+
 ## Rate Limiting
 
 Currently, no rate limiting is implemented. For production, implement rate limiting to prevent abuse.

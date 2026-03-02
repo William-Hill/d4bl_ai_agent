@@ -17,26 +17,31 @@ graph TB
     
     subgraph "AI Layer"
         CrewAI[CrewAI Framework]
-        Researcher[Researcher Agent]
-        Analyst[Data Analyst Agent]
-        Writer[Writer Agent]
+        Agents[8 Agents<br/>Researcher · Analyst · Writer<br/>Fact Checker · Citation · Bias Detection<br/>Editor · Data Visualization]
+        QueryEngine[NL Query Engine<br/>Parser → Search → Fusion]
     end
-    
+
+    subgraph "Data Layer"
+        Postgres[(PostgreSQL<br/>Jobs · Evaluations<br/>Census · Bills)]
+        Supabase[(Supabase pgvector<br/>Embeddings)]
+    end
+
     subgraph "External Services"
         Ollama[Ollama LLM<br/>localhost:11434]
         Firecrawl[Firecrawl API<br/>Web Research]
     end
-    
+
     Browser -->|HTTP/WebSocket| Frontend
     Frontend <-->|REST API<br/>WebSocket| Backend
     Backend --> CrewAI
-    CrewAI --> Researcher
-    CrewAI --> Analyst
-    CrewAI --> Writer
-    Researcher -->|LLM Calls| Ollama
-    Analyst -->|LLM Calls| Ollama
-    Writer -->|LLM Calls| Ollama
-    Researcher -->|Web Search| Firecrawl
+    Backend --> QueryEngine
+    CrewAI --> Agents
+    Agents -->|LLM Calls| Ollama
+    Agents -->|Web Search| Firecrawl
+    QueryEngine -->|Vector Search| Supabase
+    QueryEngine -->|Structured Search| Postgres
+    Backend -->|Read/Write| Postgres
+    Backend -->|Read/Write| Supabase
     
     style Frontend fill:#00ff32,stroke:#fff,color:#000
     style Backend fill:#333,stroke:#00ff32,color:#fff
@@ -58,32 +63,51 @@ graph TB
 
 **Key Components**:
 - `app/page.tsx`: Main page with research form and results display
+- `app/explore/page.tsx`: Interactive data explorer (Census ACS + legislative bills)
 - `components/ResearchForm.tsx`: Query input form
 - `components/ProgressCard.tsx`: Progress indicator
 - `components/LiveLogs.tsx`: Real-time agent output display
 - `components/ResultsCard.tsx`: Formatted results display
+- `components/QueryBar.tsx`: Natural language query input
+- `components/QueryResults.tsx`: Query answer + source citations
+- `components/EvaluationsPanel.tsx`: LLM evaluation results display
+- `components/explore/StateMap.tsx`: Interactive US choropleth map
+- `components/explore/RacialGapChart.tsx`: Disparity bar chart
+- `components/explore/PolicyTable.tsx`: Legislative bills table
+- `components/explore/MetricFilterPanel.tsx`: Metric/race/year filters
 - `hooks/useWebSocket.ts`: WebSocket connection management
 - `lib/api.ts`: API client for backend communication
 
 **Features**:
 - Real-time progress updates via WebSocket
 - Live agent output streaming
+- Explore Data dashboard with map, charts, and policy tables
+- Natural language querying with source citations
 - Responsive design with D4BL branding
 - Error handling and status indicators
 
 ### Backend (FastAPI)
 
-**Location**: `src/d4bl/api.py`
+**Location**: `src/d4bl/app/api.py`
 
 **Technology Stack**:
-- FastAPI for REST API and WebSocket support
+- FastAPI for REST API and WebSocket support (lifespan context manager)
 - Uvicorn ASGI server
 - CrewAI for agent orchestration
+- SQLAlchemy async with asyncpg
 - Python 3.10-3.13
 
 **Key Endpoints**:
 - `POST /api/research`: Create research job
 - `GET /api/jobs/{job_id}`: Get job status
+- `GET /api/jobs`: Paginated job history
+- `POST /api/query`: Natural language query with synthesized answer
+- `POST /api/vector/search`: Vector similarity search
+- `GET /api/vector/job/{job_id}`: Scraped content by job
+- `GET /api/explore/indicators`: Census ACS indicator data
+- `GET /api/explore/policies`: Legislative bill data
+- `GET /api/explore/states`: Per-state metadata summary
+- `GET /api/evaluations`: LLM evaluation results
 - `WebSocket /ws/{job_id}`: Real-time updates
 - `GET /api/health`: Health check
 - `GET /docs`: OpenAPI documentation
@@ -92,52 +116,56 @@ graph TB
 - Asynchronous job processing
 - WebSocket-based real-time communication
 - Live output streaming from agents
-- Error handling and recovery
+- Structured logging throughout
+- Exception chaining on all 500 handlers
 
 ### AI Agents (CrewAI)
 
-**Location**: `src/d4bl/crew.py`
+**Location**: `src/d4bl/agents/crew.py`
 
 **Agent Architecture**:
 
 ```mermaid
 graph LR
     Input[Research Query] --> Researcher
-    Researcher -->|Research Data| Analyst
-    Analyst -->|Analysis| Writer
-    Writer -->|Report| Output[Markdown Report]
-    
-    Researcher -.->|Uses| Firecrawl[Firecrawl Tool]
+    Researcher --> Analyst
+    Analyst --> Writer
+    Writer --> FactChecker[Fact Checker]
+    FactChecker --> Citation
+    Citation --> BiasDetection[Bias Detection]
+    BiasDetection --> Editor
+    Editor --> DataViz[Data Visualization]
+    DataViz --> Output[Final Report]
+
+    Researcher -.->|Uses| CrawlTool[Firecrawl / Crawl4AI]
     Researcher -.->|Uses| Ollama[Ollama LLM]
-    Analyst -.->|Uses| Ollama
-    Writer -.->|Uses| Ollama
-    
+
     style Researcher fill:#00ff32,stroke:#fff,color:#000
     style Analyst fill:#00ff32,stroke:#fff,color:#000
     style Writer fill:#00ff32,stroke:#fff,color:#000
+    style FactChecker fill:#00ff32,stroke:#fff,color:#000
+    style Citation fill:#00ff32,stroke:#fff,color:#000
+    style BiasDetection fill:#00ff32,stroke:#fff,color:#000
+    style Editor fill:#00ff32,stroke:#fff,color:#000
+    style DataViz fill:#00ff32,stroke:#fff,color:#000
 ```
 
-**Agents**:
+**Agents** (sequential execution order):
 
-1. **Researcher Agent**
-   - Role: Conducts web research on the query topic
-   - Tools: FirecrawlSearchTool for web scraping
-   - Output: Research findings and sources
-
-2. **Data Analyst Agent**
-   - Role: Analyzes research data and extracts insights
-   - Tools: None (uses LLM for analysis)
-   - Output: Key points, themes, and recommendations
-
-3. **Writer Agent**
-   - Role: Creates formatted reports and summaries
-   - Tools: None (uses LLM for writing)
-   - Output: Markdown report saved to `output/report.md`
+1. **Researcher** — Conducts web research using Firecrawl or Crawl4AI
+2. **Data Analyst** — Analyzes research data and extracts insights
+3. **Writer** — Creates formatted reports (`output/report.md`)
+4. **Fact Checker** — Verifies facts and accuracy of research
+5. **Citation Agent** — Manages citations and source attribution
+6. **Bias Detection Agent** — Identifies potential biases in research/analysis
+7. **Editor** — Edits and refines the final report (`output/report_edited.md`)
+8. **Data Visualization Agent** — Creates charts and visualizations
 
 **Process Flow**:
-- Sequential execution (one agent after another)
-- Each agent receives output from previous agent
-- Final output is a comprehensive research report
+- Sequential execution (`Process.sequential`)
+- Each agent receives output from the previous agent
+- Memory enabled with Ollama embeddings (`mxbai-embed-large`)
+- Supports optional agent selection via `selected_agents` parameter
 
 ## Data Flow
 
