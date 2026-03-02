@@ -30,6 +30,13 @@ class QueryEngine:
         self.structured_searcher = StructuredSearcher()
         self.fusion = ResultFusion(ollama_base_url=ollama_base_url)
 
+    async def close(self) -> None:
+        """Release HTTP sessions held by parser and fusion."""
+        try:
+            await self.parser.close()
+        finally:
+            await self.fusion.close()
+
     async def query(
         self,
         db: AsyncSession,
