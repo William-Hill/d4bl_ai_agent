@@ -34,7 +34,9 @@ class Settings:
 
     # CORS
     cors_allowed_origins: tuple[str, ...] = field(
-        default_factory=lambda: tuple(o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(","))
+        default_factory=lambda: tuple(
+            o for o in (t.strip() for t in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")) if o
+        )
     )
 
 

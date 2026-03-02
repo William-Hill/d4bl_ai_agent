@@ -280,6 +280,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         # Try to get from database first
         try:
             job_uuid = UUID(job_id)
+            if async_session_maker is None:
+                init_db()
             async with async_session_maker() as db:
                 result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
                 result_obj = await db.execute(result_query)

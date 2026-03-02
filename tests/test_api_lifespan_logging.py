@@ -14,7 +14,9 @@ sys.path.insert(0, "src")
 def test_app_uses_lifespan_not_on_event():
     """app should use lifespan= param, not deprecated @app.on_event."""
     from d4bl.app import api
-    assert api.app.router.lifespan_context is not None
+    # Verify no deprecated on_event handlers are registered
+    assert not api.app.router.on_startup, "on_event startup handler found"
+    assert not api.app.router.on_shutdown, "on_event shutdown handler found"
 
 
 def test_api_has_module_level_logger():
@@ -33,12 +35,17 @@ def test_no_traceback_print_exc_in_api():
 
 def test_exception_chaining_in_500_handlers():
     """All HTTPException(500) raises in api.py must use 'raise ... from e'."""
+    import re
     from d4bl.app import api
     source = inspect.getsource(api)
-    for line in source.splitlines():
-        stripped = line.strip()
-        if "raise HTTPException(status_code=500" in stripped:
-            assert "from e" in stripped, f"Missing 'from e' on: {stripped}"
+    pattern = re.compile(
+        r'raise HTTPException\(status_code=500.*?\)(?:\s*from\s+\w+)?',
+        re.DOTALL,
+    )
+    for match in pattern.finditer(source):
+        assert " from " in match.group(), (
+            f"Missing 'from e' on:\n{match.group()}"
+        )
 
 
 def test_websocket_uses_session_maker_not_get_db_generator():

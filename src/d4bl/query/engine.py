@@ -32,8 +32,10 @@ class QueryEngine:
 
     async def close(self) -> None:
         """Release HTTP sessions held by parser and fusion."""
-        await self.parser.close()
-        await self.fusion.close()
+        try:
+            await self.parser.close()
+        finally:
+            await self.fusion.close()
 
     async def query(
         self,
