@@ -40,8 +40,18 @@ async def run_evals_and_log(
 
     async def _evaluate_job(job: ResearchJob) -> None:
         async with sem:
-            result_dict = job.to_dict()
-            research_output = str(result_dict.get("result") or "")
+            raw_result = job.result
+            if isinstance(raw_result, dict):
+                candidate = (
+                    raw_result.get("raw_output")
+                    or raw_result.get("answer")
+                    or raw_result.get("text")
+                    or raw_result.get("output")
+                    or ""
+                )
+                research_output = str(candidate).strip()
+            else:
+                research_output = str(raw_result or "").strip()
             if not research_output:
                 logger.warning("Job %s has no result, skipping.", job.job_id)
                 return
@@ -51,6 +61,7 @@ async def run_evals_and_log(
                 job.job_id,
                 job.query[:60],
             )
+            trace_id = job.trace_id or str(job.job_id)
             # run_comprehensive_evaluation is synchronous — run it in a
             # thread pool so it doesn't block the event loop.
             await asyncio.to_thread(
@@ -58,7 +69,7 @@ async def run_evals_and_log(
                 query=job.query,
                 research_output=research_output,
                 sources=[],
-                trace_id=str(job.job_id),
+                trace_id=trace_id,
             )
 
     async with _db.async_session_maker() as db:
