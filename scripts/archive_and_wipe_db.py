@@ -24,8 +24,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from sqlalchemy import text, select
-from d4bl import database as db
-from d4bl.database import ResearchJob, EvaluationResult
+from d4bl.infra import database as db
+from d4bl.infra.database import ResearchJob, EvaluationResult
 
 
 async def export_data_to_csv():
@@ -179,8 +179,10 @@ async def main(no_archive=False, skip_confirm=False):
         print("1. Run a new research job through the frontend")
         print("2. Run evaluations: docker compose exec d4bl-api python /app/scripts/run_evals.py")
         print("3. Check that evaluations are linked to the job in the frontend")
+        return True
     else:
         print("\n❌ Database wipe failed. Check errors above.")
+        return False
 
 
 if __name__ == "__main__":

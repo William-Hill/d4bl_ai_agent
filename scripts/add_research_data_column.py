@@ -18,7 +18,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from sqlalchemy import text
-from d4bl.database import init_db
+from d4bl.infra.database import init_db
 
 
 async def add_research_data_column():
@@ -30,7 +30,7 @@ async def add_research_data_column():
         init_db()
         
         # Import engine AFTER init_db() to ensure it's properly initialized
-        from d4bl.database import engine
+        from d4bl.infra.database import engine
         
         # Verify engine is initialized
         if engine is None:

@@ -78,3 +78,45 @@ class QueryResponse(BaseModel):
     sources: List[QuerySourceItem]
     query: str
 
+
+# --- Explore Data models ---
+
+
+class IndicatorItem(BaseModel):
+    """Single Census ACS indicator observation for a geography/race/year."""
+
+    fips_code: str
+    geography_name: str
+    state_fips: str
+    geography_type: str
+    year: int
+    race: str
+    metric: str
+    value: float
+    margin_of_error: Optional[float] = None
+
+
+class PolicyBillItem(BaseModel):
+    """Legislative bill summary from OpenStates with status and topic tags."""
+
+    state: str
+    state_name: str
+    bill_number: str
+    title: str
+    summary: Optional[str] = None
+    status: str
+    topic_tags: Optional[List[str]] = None
+    introduced_date: Optional[str] = None
+    last_action_date: Optional[str] = None
+    url: Optional[str] = None
+
+
+class StateSummaryItem(BaseModel):
+    """Per-state metadata: available metrics, bill count, and latest year."""
+
+    state_fips: str
+    state_name: str
+    available_metrics: List[str]
+    bill_count: int
+    latest_year: Optional[int] = None
+

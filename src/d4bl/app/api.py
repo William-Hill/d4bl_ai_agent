@@ -9,22 +9,35 @@ from uuid import UUID
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import desc, func, select
+from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+import traceback
 
-from d4bl.infra.database import close_db, create_tables, get_db, init_db, EvaluationResult, ResearchJob
+from d4bl.infra.database import (
+    CensusIndicator,
+    EvaluationResult,
+    PolicyBill,
+    ResearchJob,
+    close_db,
+    create_tables,
+    get_db,
+    init_db,
+)
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
 from d4bl.app.schemas import (
     EvaluationResultItem,
+    IndicatorItem,
     JobHistoryResponse,
     JobStatus,
+    PolicyBillItem,
     QueryRequest,
     QueryResponse,
     QuerySourceItem,
     ResearchRequest,
     ResearchResponse,
+    StateSummaryItem,
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 
@@ -470,6 +483,153 @@ async def natural_language_query(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Query failed")
+
+
+@app.get("/api/explore/indicators", response_model=List[IndicatorItem])
+async def get_indicators(
+    state_fips: Optional[str] = None,
+    geography_type: str = "state",
+    metric: Optional[str] = None,
+    race: Optional[str] = None,
+    year: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get Census ACS indicators, optionally filtered."""
+    try:
+        query = select(CensusIndicator)
+        if state_fips is not None:
+            query = query.where(CensusIndicator.state_fips == state_fips)
+        if geography_type:
+            query = query.where(CensusIndicator.geography_type == geography_type)
+        if metric is not None:
+            query = query.where(CensusIndicator.metric == metric)
+        if race is not None:
+            query = query.where(CensusIndicator.race == race)
+        if year is not None:
+            query = query.where(CensusIndicator.year == year)
+        result = await db.execute(query)
+        rows = result.scalars().all()
+        return [
+            IndicatorItem(
+                fips_code=r.fips_code,
+                geography_name=r.geography_name,
+                state_fips=r.state_fips,
+                geography_type=r.geography_type,
+                year=r.year,
+                race=r.race,
+                metric=r.metric,
+                value=r.value,
+                margin_of_error=r.margin_of_error,
+            )
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"Error fetching indicators: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Error fetching indicators") from e
+
+
+@app.get("/api/explore/policies", response_model=List[PolicyBillItem])
+async def get_policies(
+    state: Optional[str] = None,
+    status: Optional[str] = None,
+    topic: Optional[str] = None,
+    session: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get policy bills, optionally filtered."""
+    try:
+        query = select(PolicyBill)
+        if state is not None:
+            query = query.where(PolicyBill.state == state)
+        if status is not None:
+            query = query.where(PolicyBill.status == status)
+        if session is not None:
+            query = query.where(PolicyBill.session == session)
+        if topic is not None:
+            # JSON array containment: cast topic_tags to text and use LIKE
+            query = query.where(
+                PolicyBill.topic_tags.cast(String).contains(topic)
+            )
+        result = await db.execute(query)
+        rows = result.scalars().all()
+        return [
+            PolicyBillItem(
+                state=r.state,
+                state_name=r.state_name,
+                bill_number=r.bill_number,
+                title=r.title,
+                summary=r.summary,
+                status=r.status,
+                topic_tags=r.topic_tags,
+                introduced_date=str(r.introduced_date) if r.introduced_date else None,
+                last_action_date=str(r.last_action_date) if r.last_action_date else None,
+                url=r.url,
+            )
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"Error fetching policies: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Error fetching policies") from e
+
+
+@app.get("/api/explore/states", response_model=List[StateSummaryItem])
+async def get_states_summary(db: AsyncSession = Depends(get_db)):
+    """Summarize available data per state for choropleth coloring."""
+    try:
+        # Aggregate metrics available per state
+        metrics_query = text(
+            """
+            SELECT
+                state_fips,
+                geography_name AS state_name,
+                STRING_AGG(DISTINCT metric, ',') AS metrics,
+                MAX(year) AS latest_year
+            FROM census_indicators
+            WHERE geography_type = 'state'
+            GROUP BY state_fips, geography_name
+            ORDER BY state_fips
+        """
+        )
+        metrics_result = await db.execute(metrics_query)
+        metrics_rows = metrics_result.mappings().all()
+
+        # Aggregate bill count per state
+        bills_query = text(
+            """
+            SELECT state_name, COUNT(*) AS bill_count
+            FROM policy_bills
+            GROUP BY state_name
+        """
+        )
+        bills_result = await db.execute(bills_query)
+        bills_rows = bills_result.mappings().all()
+
+        # Build lookup: state_name -> bill_count
+        bill_counts_by_name: dict = {}
+        for row in bills_rows:
+            bill_counts_by_name[row["state_name"]] = row["bill_count"]
+
+        summary: List[StateSummaryItem] = []
+        for row in metrics_rows:
+            metrics_list = row["metrics"].split(",") if row["metrics"] else []
+            bill_count = bill_counts_by_name.get(row["state_name"], 0)
+            summary.append(
+                StateSummaryItem(
+                    state_fips=row["state_fips"],
+                    state_name=row["state_name"],
+                    available_metrics=metrics_list,
+                    bill_count=bill_count,
+                    latest_year=row["latest_year"],
+                )
+            )
+
+        return summary
+    except Exception as e:
+        print(f"Error fetching state summary: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Error fetching state summary") from e
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import logging
 # Import error handling utilities
 from d4bl.services.error_handling import retry_with_backoff, safe_execute, ErrorRecoveryStrategy
 from d4bl.settings import get_settings
-from d4bl.tools import Crawl4AISearchTool, FirecrawlSearchWrapper
+from d4bl.agents.tools import Crawl4AISearchTool, FirecrawlSearchWrapper
 from d4bl.llm import get_ollama_llm, reset_ollama_llm
 from d4bl.observability import get_langfuse_client
 

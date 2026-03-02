@@ -16,14 +16,14 @@ from sqlalchemy import text
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from d4bl.database import init_db  # noqa: E402
+from d4bl.infra.database import init_db
 
 
 async def create_evaluation_results_table():
     print("🔧 Ensuring evaluation_results table exists...")
     try:
         init_db()
-        from d4bl.database import engine  # noqa: E402
+        from d4bl.infra.database import engine
 
         if engine is None:
             print("❌ Database engine not initialized. Check connection settings.")

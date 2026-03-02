@@ -11,7 +11,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from d4bl.database import init_db, async_session_maker, ResearchJob, get_database_url
+import d4bl.infra.database as _db
+from d4bl.infra.database import init_db, ResearchJob, get_database_url
 from sqlalchemy import select, text
 
 
@@ -51,7 +52,7 @@ async def test_connection():
         init_db()
         print("\n🔄 Testing database connection...")
         
-        async with async_session_maker() as db:
+        async with _db.async_session_maker() as db:
             # Get current database name
             result = await db.execute(text("SELECT current_database(), current_user, inet_server_addr(), inet_server_port();"))
             row = result.fetchone()
@@ -90,5 +91,7 @@ async def test_connection():
 if __name__ == "__main__":
     success = asyncio.run(test_connection())
     sys.exit(0 if success else 1)
+
+
 
 

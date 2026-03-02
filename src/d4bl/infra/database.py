@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Text, Column, String, DateTime, Float
+from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date, Index, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -85,6 +85,82 @@ class EvaluationResult(Base):
         }
 
 
+class CensusIndicator(Base):
+    """Race-disaggregated Census ACS indicators by geography."""
+    __tablename__ = "census_indicators"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    fips_code = Column(String(5), nullable=False, index=True)
+    geography_type = Column(String(10), nullable=False)   # state | county | tract
+    geography_name = Column(Text, nullable=False)
+    state_fips = Column(String(2), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    race = Column(String(50), nullable=False)
+    metric = Column(String(100), nullable=False)
+    value = Column(Float, nullable=False)
+    margin_of_error = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        # Composite index to support common query filters
+        Index(
+            "ix_census_indicator_state_geo_metric_race_year",
+            "state_fips",
+            "geography_type",
+            "metric",
+            "race",
+            "year",
+        ),
+        # Ensure idempotent upserts on core identity
+        UniqueConstraint(
+            "fips_code",
+            "year",
+            "race",
+            "metric",
+            name="uq_census_indicator_key",
+        ),
+        {"comment": "Census ACS 5-year estimates, race-disaggregated"},
+    )
+
+
+class PolicyBill(Base):
+    """State legislation tracked via OpenStates."""
+    __tablename__ = "policy_bills"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    state = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=False)
+    bill_id = Column(String(50), nullable=False)
+    bill_number = Column(String(20), nullable=False)
+    title = Column(Text, nullable=False)
+    summary = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, index=True)
+    topic_tags = Column(JSON, nullable=True)
+    session = Column(String(20), nullable=False, index=True)
+    introduced_date = Column(Date, nullable=True)
+    last_action_date = Column(Date, nullable=True)
+    url = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        # Support common filters for policy tracker views
+        Index(
+            "ix_policy_bill_state_status_session",
+            "state",
+            "status",
+            "session",
+        ),
+        # Idempotent upserts per state/session/bill id
+        UniqueConstraint(
+            "state",
+            "bill_id",
+            "session",
+            name="uq_policy_bill_key",
+        ),
+    )
+
+
 # Database connection setup
 def get_database_url() -> str:
     """Get database URL from environment variables"""
@@ -95,15 +171,22 @@ def get_database_url() -> str:
     db_name = os.getenv("POSTGRES_DB", "postgres")
     
     # CRITICAL: In Docker, we MUST use 'postgres' as the hostname (Docker service name)
-    # If POSTGRES_HOST is not set or is 'localhost', we're likely in Docker and should use 'postgres'
-    # Check if we're in a Docker container by looking for common indicators
-    if db_host == "localhost" or db_host == "127.0.0.1":
+    # OR use 'host.docker.internal' to reach services on the host machine (like Supabase)
+    # Only override if host is localhost/127.0.0.1 AND we're running inside Docker
+    if db_host in ("localhost", "127.0.0.1"):
         # Check if we're in Docker (common indicators)
         if os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER"):
+            original_host = db_host
             db_host = "postgres"
-            print(f"⚠ Warning: Detected Docker environment, using 'postgres' as hostname instead of '{db_host}'")
+            print(
+                f"⚠ Warning: Detected Docker environment, "
+                f"using 'postgres' as hostname instead of '{original_host}'"
+            )
         else:
-            print(f"⚠ Warning: Using 'localhost' as database host. In Docker, this should be 'postgres'")
+            print(
+                "⚠ Warning: Using 'localhost' as database host. "
+                "In Docker, this should be 'postgres' or 'host.docker.internal'"
+            )
     
     # Ensure we're using the correct database name (not the username)
     if not db_name or db_name == db_user:
