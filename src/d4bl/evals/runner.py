@@ -42,13 +42,16 @@ async def run_evals_and_log(
         async with sem:
             raw_result = job.result
             if isinstance(raw_result, dict):
-                research_output = (
+                candidate = (
                     raw_result.get("raw_output")
                     or raw_result.get("answer")
+                    or raw_result.get("text")
+                    or raw_result.get("output")
                     or ""
                 )
+                research_output = str(candidate).strip()
             else:
-                research_output = str(raw_result or "")
+                research_output = str(raw_result or "").strip()
             if not research_output:
                 logger.warning("Job %s has no result, skipping.", job.job_id)
                 return
