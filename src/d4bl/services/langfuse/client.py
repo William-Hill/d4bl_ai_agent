@@ -3,7 +3,11 @@ from __future__ import annotations
 import os
 import logging
 from typing import Optional
-from langfuse import Langfuse  # type: ignore
+
+try:  # Optional dependency: degrade gracefully when Langfuse is not installed
+    from langfuse import Langfuse  # type: ignore
+except ImportError:  # pragma: no cover - handled at runtime
+    Langfuse = None  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 _langfuse_client: Optional[Langfuse] = None
@@ -16,6 +20,9 @@ def get_langfuse_eval_client() -> Optional[Langfuse]:
         return _langfuse_client
 
     try:
+        if Langfuse is None:
+            logger.warning("Langfuse SDK not installed. Evaluations will be disabled.")
+            return None
         langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
         langfuse_host = os.getenv("LANGFUSE_HOST", "http://localhost:3002")

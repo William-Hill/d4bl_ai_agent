@@ -1,0 +1,38 @@
+# CodeRabbit configuration
+# https://docs.coderabbit.ai/getting-started/yaml-configuration
+
+language: en-US
+
+reviews:
+  profile: assertive
+  auto_review:
+    enabled: true
+    drafts: false
+  auto_incremental_review: true
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  path_instructions:
+    - path: "src/d4bl/**/*.py"
+      instructions: |
+        Python backend. Enforce PEP 8, type hints, 100 char max line length.
+        Check for SQL injection, proper async/await usage with SQLAlchemy,
+        and that Pydantic models validate inputs correctly.
+    - path: "ui-nextjs/**/*.tsx"
+      instructions: |
+        Next.js App Router frontend with React 19 and Tailwind CSS 4.
+        Ensure components use functional style with hooks. Check for
+        proper TypeScript strict mode compliance and accessibility.
+    - path: "tests/**/*.py"
+      instructions: |
+        pytest test files. Verify tests are isolated, use proper fixtures,
+        and cover both happy-path and error cases.
+    - path: "scripts/**/*.py"
+      instructions: |
+        Standalone CLI scripts. Check for proper argparse usage,
+        error handling, and that --dry-run flags work correctly.
+
+chat:
+  auto_reply: true
+
+early_access: true

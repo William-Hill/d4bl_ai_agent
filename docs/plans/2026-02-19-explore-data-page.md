@@ -643,10 +643,10 @@ class TestStatesEndpoint:
             "latest_year": 2022,
         }
 
-        # bill count result: (state, count)
+        # bill count result: (state_name, bill_count) — API groups by state_name
         mock_bills_row = MagicMock()
         mock_bills_row._mapping = {
-            "state": "MS",
+            "state_name": "Mississippi",
             "bill_count": 7,
         }
 
@@ -672,6 +672,10 @@ class TestStatesEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
+            assert len(data) == 1
+            assert data[0]["state_fips"] == "28"
+            assert data[0]["state_name"] == "Mississippi"
+            assert data[0]["bill_count"] == 7
         finally:
             app.dependency_overrides.clear()
 ```
@@ -712,32 +716,30 @@ async def get_states_summary(db: AsyncSession = Depends(get_db)):
         metrics_result = await db.execute(metrics_query)
         metrics_rows = metrics_result.mappings().all()
 
-        # Aggregate bill count per state
+        # Aggregate bill count per state (by state_name to join with census)
         bills_query = text("""
-            SELECT state, COUNT(*) AS bill_count
+            SELECT state_name, COUNT(*) AS bill_count
             FROM policy_bills
-            GROUP BY state
+            GROUP BY state_name
         """)
         bills_result = await db.execute(bills_query)
         bills_rows = bills_result.mappings().all()
 
-        # Build lookup: state_abbrev -> bill_count
-        # Note: census uses FIPS, policy_bills uses 2-letter abbrev.
-        # We store state_name in census_indicators and state_name in policy_bills
-        # so we join by state_name. For simplicity, build a name->count map.
+        # Build lookup: state_name -> bill_count (join with census state_name)
         bill_counts_by_name: dict = {}
         for row in bills_rows:
-            bill_counts_by_name[row["state"]] = row["bill_count"]
+            bill_counts_by_name[row["state_name"]] = row["bill_count"]
 
         summary = []
         for row in metrics_rows:
             metrics_list = row["metrics"].split(",") if row["metrics"] else []
+            bill_count = bill_counts_by_name.get(row["state_name"], 0)
             summary.append(
                 StateSummaryItem(
                     state_fips=row["state_fips"],
                     state_name=row["state_name"],
                     available_metrics=metrics_list,
-                    bill_count=0,  # bill counts joined separately in frontend if needed
+                    bill_count=bill_count,
                     latest_year=row["latest_year"],
                 )
             )

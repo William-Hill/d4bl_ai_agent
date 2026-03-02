@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date
+from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date, Index, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -101,7 +101,26 @@ class CensusIndicator(Base):
     margin_of_error = Column(Float, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    __table_args__ = {"comment": "Census ACS 5-year estimates, race-disaggregated"}
+    __table_args__ = (
+        # Composite index to support common query filters
+        Index(
+            "ix_census_indicator_state_geo_metric_race_year",
+            "state_fips",
+            "geography_type",
+            "metric",
+            "race",
+            "year",
+        ),
+        # Ensure idempotent upserts on core identity
+        UniqueConstraint(
+            "fips_code",
+            "year",
+            "race",
+            "metric",
+            name="uq_census_indicator_key",
+        ),
+        {"comment": "Census ACS 5-year estimates, race-disaggregated"},
+    )
 
 
 class PolicyBill(Base):
@@ -123,6 +142,23 @@ class PolicyBill(Base):
     url = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        # Support common filters for policy tracker views
+        Index(
+            "ix_policy_bill_state_status_session",
+            "state",
+            "status",
+            "session",
+        ),
+        # Idempotent upserts per state/session/bill id
+        UniqueConstraint(
+            "state",
+            "bill_id",
+            "session",
+            name="uq_policy_bill_key",
+        ),
+    )
 
 
 # Database connection setup
