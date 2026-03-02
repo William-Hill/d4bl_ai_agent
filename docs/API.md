@@ -322,7 +322,7 @@ Get paginated job history with optional status filtering.
       "status": "completed",
       "query": "How does algorithmic bias affect criminal justice?",
       "summary_format": "detailed",
-      "created_at": "2026-01-15T10:30:00",
+      "created_at": "2026-01-15T10:30:00Z",
       "result": { ... }
     }
   ],
@@ -447,7 +447,7 @@ Return recent evaluation results for display in the UI.
     "label": "no_hallucination",
     "score": 0.95,
     "explanation": "Output is grounded in sources...",
-    "created_at": "2026-01-15T10:30:00"
+    "created_at": "2026-01-15T10:30:00Z"
   }
 ]
 ```

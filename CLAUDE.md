@@ -114,7 +114,7 @@ FIRECRAWL_API_KEY=...
 FIRECRAWL_BASE_URL=http://firecrawl-api:3002
 CRAWL4AI_BASE_URL=http://crawl4ai:11235
 LANGFUSE_HOST=http://localhost:3002
-CORS_ALLOWED_ORIGINS=*              # Comma-separated allowed origins
+CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres
 ```
 

@@ -45,6 +45,10 @@ All research queries and results are now persisted in a PostgreSQL database, all
 | `context_text` | TEXT | Context/source text used for evaluation |
 | `created_at` | TIMESTAMP | When the evaluation was created |
 
+**Indexes**: `span_id`, `trace_id`, `job_id`, `eval_name`, `created_at` (individual B-tree indexes on each)
+**Nullable**: `trace_id`, `job_id`, `label`, `score`, `explanation`, `input_text`, `output_text`, `context_text`
+**Not null**: `span_id`, `eval_name`, `created_at`
+
 ### `census_indicators` Table
 
 | Column | Type | Description |
