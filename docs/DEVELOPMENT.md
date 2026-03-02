@@ -25,7 +25,7 @@ source .venv/bin/activate  # macOS/Linux
 .venv\Scripts\activate     # Windows
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ### 2. Frontend Dependencies
@@ -75,12 +75,35 @@ Frontend will be available at http://localhost:3000
 ```
 d4bl_ai_agent/
 ├── src/d4bl/
-│   ├── api.py            # FastAPI backend
-│   ├── crew.py           # CrewAI agents
+│   ├── app/              # FastAPI application
+│   │   ├── api.py        #   REST/WebSocket endpoints, lifespan manager
+│   │   ├── schemas.py    #   Pydantic request/response models
+│   │   └── websocket_manager.py
+│   ├── agents/           # CrewAI agent definitions
+│   │   ├── crew.py       #   8 agents + tasks
+│   │   └── tools/        #   Crawl tools (Firecrawl, Crawl4AI)
+│   ├── infra/            # Database & vector store
+│   │   ├── database.py   #   SQLAlchemy models (ResearchJob, EvaluationResult, CensusIndicator, PolicyBill)
+│   │   └── vector_store.py
+│   ├── query/            # NL query engine
+│   │   ├── engine.py     #   Orchestrator
+│   │   ├── parser.py     #   Intent extraction via LLM
+│   │   ├── structured.py #   Database search
+│   │   └── fusion.py     #   Result merging + synthesis
+│   ├── evals/            # Evaluation runner
+│   │   └── runner.py     #   Batch LLM evaluations
+│   ├── services/         # Business logic
+│   │   ├── research_runner.py
+│   │   ├── error_handling.py
+│   │   └── langfuse/     #   Evaluators (hallucination, bias, relevance, etc.)
+│   ├── observability/    # Tracing (Langfuse, OpenTelemetry)
+│   ├── llm/              # LLM config (Ollama via LiteLLM)
+│   ├── settings.py       # Centralized environment configuration
 │   └── main.py           # CLI entry point
+├── scripts/              # Database init, ingestion, eval scripts
 ├── ui-nextjs/            # Next.js frontend
-│   ├── app/              # App Router pages
-│   ├── components/       # React components
+│   ├── app/              # App Router pages (research, explore)
+│   ├── components/       # React components (+ explore/ subdirectory)
 │   ├── hooks/            # Custom hooks
 │   └── lib/              # Utilities
 ├── output/               # Generated reports
@@ -132,8 +155,9 @@ d4bl_ai_agent/
 # Run with debug logging
 python run_ui.py
 
-# Check logs in terminal
-# Use print() statements or logging module
+# Check structured logs in terminal
+# Use logging module (logger = logging.getLogger(__name__))
+# Do NOT use print() or traceback.print_exc()
 ```
 
 ### Frontend Debugging
@@ -156,7 +180,7 @@ ws.onerror = (e) => console.error('WS Error:', e);
 
 ### Adding a New API Endpoint
 
-1. Edit `src/d4bl/api.py`
+1. Edit `src/d4bl/app/api.py`
 2. Add route handler:
    ```python
    @app.get("/api/new-endpoint")
@@ -173,7 +197,7 @@ ws.onerror = (e) => console.error('WS Error:', e);
 
 ### Modifying Agent Behavior
 
-1. Edit `src/d4bl/crew.py`
+1. Edit `src/d4bl/agents/crew.py`
 2. Modify agent configurations
 3. Restart backend to apply changes
 
@@ -181,8 +205,8 @@ ws.onerror = (e) => console.error('WS Error:', e);
 
 **Python:**
 ```bash
-pip install --upgrade package-name
-pip freeze > requirements.txt
+# Dependencies are managed in pyproject.toml
+pip install -e ".[dev]"
 ```
 
 **Node.js:**
@@ -231,7 +255,7 @@ curl -X POST http://localhost:8000/api/research \
 ### WebSocket connection fails
 
 - Verify backend is running
-- Check CORS settings in `api.py`
+- Check CORS settings in `src/d4bl/app/api.py` (configured via `CORS_ALLOWED_ORIGINS` env var)
 - Check browser console for errors
 - Verify WebSocket URL format
 
@@ -249,7 +273,7 @@ curl -X POST http://localhost:8000/api/research \
 ```bash
 # No build step needed for Python
 # Just ensure dependencies are installed
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Frontend

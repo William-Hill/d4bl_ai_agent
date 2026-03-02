@@ -50,13 +50,16 @@ npm run build    # Production build
 npm run lint     # ESLint
 ```
 
-### Database Scripts
+### Database & Ingestion Scripts
 
 ```bash
 python scripts/init_db.py                    # Initialize database
 python scripts/test_db_connection.py         # Test DB connection
 python scripts/test_supabase_connection.py   # Test vector store
 python scripts/run_vector_migration.py       # Run migrations
+python scripts/ingest_census_acs.py          # Ingest Census ACS indicator data
+python scripts/ingest_openstates.py          # Ingest OpenStates legislative bills
+python scripts/run_evals.py                  # Run LLM evaluations on completed jobs
 ```
 
 ## Architecture
@@ -80,10 +83,12 @@ User Browser → Next.js Frontend (3000)
 
 ### Key Modules
 
-- **`src/d4bl/app/`** - FastAPI application: `api.py` (REST/WebSocket endpoints), `schemas.py` (Pydantic models), `websocket_manager.py` (connection state)
+- **`src/d4bl/app/`** - FastAPI application: `api.py` (REST/WebSocket endpoints, lifespan manager), `schemas.py` (Pydantic models), `websocket_manager.py` (connection state)
 - **`src/d4bl/agents/`** - CrewAI agents: `crew.py` (8 agent definitions), `tools/crawl_tools/` (modular crawl providers)
-- **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models), `vector_store.py` (Supabase)
-- **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluations)
+- **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`), `vector_store.py` (Supabase pgvector)
+- **`src/d4bl/query/`** - NL query engine: `parser.py` (intent extraction), `structured.py` (DB search), `fusion.py` (result merging + LLM synthesis), `engine.py` (orchestrator)
+- **`src/d4bl/evals/`** - Evaluation runner: `runner.py` (batch LLM evaluations on completed research jobs)
+- **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluators: hallucination, bias, relevance, quality)
 - **`src/d4bl/llm/`** - LLM config: `ollama.py` (lazy-loaded singleton via LiteLLM)
 - **`src/d4bl/observability/`** - Tracing: `langfuse.py` (CrewAI instrumentation, OpenTelemetry)
 - **`src/d4bl/settings.py`** - Centralized environment configuration via `@dataclass(frozen=True)`
@@ -91,7 +96,10 @@ User Browser → Next.js Frontend (3000)
 ### Frontend (`ui-nextjs/`)
 
 - Next.js App Router with React 19
-- Components: `ResearchForm`, `ProgressCard`, `ResultsCard`, `ErrorCard`, `LiveLogs`, `JobHistory`
+- Pages: `app/page.tsx` (research), `app/explore/page.tsx` (data explorer)
+- Research components: `ResearchForm`, `ProgressCard`, `ResultsCard`, `ErrorCard`, `LiveLogs`, `JobHistory`
+- Explore components: `explore/StateMap`, `explore/RacialGapChart`, `explore/PolicyTable`, `explore/MetricFilterPanel`
+- Query components: `QueryBar`, `QueryResults`, `EvaluationsPanel`
 - Custom hooks: `useWebSocket` for real-time updates
 - Tailwind CSS 4 for styling
 
@@ -106,6 +114,7 @@ FIRECRAWL_API_KEY=...
 FIRECRAWL_BASE_URL=http://firecrawl-api:3002
 CRAWL4AI_BASE_URL=http://crawl4ai:11235
 LANGFUSE_HOST=http://localhost:3002
+CORS_ALLOWED_ORIGINS=*              # Comma-separated allowed origins
 POSTGRES_HOST=localhost|postgres
 ```
 
