@@ -47,9 +47,13 @@ class D4Bl():
         "data_visualization_task",
     ]
 
-    assert set(AGENT_TASK_MAP.values()) == set(TASK_ORDER), (
-        "AGENT_TASK_MAP and TASK_ORDER are out of sync"
-    )
+    _mapped_tasks = list(AGENT_TASK_MAP.values())
+    if len(_mapped_tasks) != len(set(_mapped_tasks)):
+        raise RuntimeError("Duplicate task names in AGENT_TASK_MAP")
+    if len(TASK_ORDER) != len(set(TASK_ORDER)):
+        raise RuntimeError("Duplicate task names in TASK_ORDER")
+    if _mapped_tasks != TASK_ORDER:
+        raise RuntimeError("AGENT_TASK_MAP values must exactly match TASK_ORDER")
 
     def __init__(self):
         """Initialize crew with optional agent selection"""
@@ -90,7 +94,7 @@ class D4Bl():
                 base_url=settings.crawl4ai_base_url,
                 api_key=settings.crawl4ai_api_key,
             )
-        elif settings.firecrawl_base_url:
+        elif provider == "firecrawl" and settings.firecrawl_base_url:
             logger.info(
                 "Using Firecrawl (self-hosted) at: %s",
                 settings.firecrawl_base_url,
@@ -103,7 +107,7 @@ class D4Bl():
                     max_results=5,
                 )
             )
-        else:
+        elif provider == "firecrawl":
             if not settings.firecrawl_api_key:
                 raise ValueError(
                     "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai "
@@ -117,6 +121,11 @@ class D4Bl():
                 )
             )
             logger.info("Using Firecrawl (cloud) provider")
+        else:
+            raise ValueError(
+                "Unsupported CRAWL_PROVIDER: '%s'. "
+                "Expected 'crawl4ai' or 'firecrawl'." % provider
+            )
 
         return Agent(
             config=self.agents_config['researcher'],
