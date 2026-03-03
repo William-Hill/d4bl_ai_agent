@@ -8,7 +8,6 @@ from d4bl.services.langfuse.client import get_langfuse_eval_client
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
-eval_logger.setLevel(logging.INFO)
 
 
 def evaluate_source_relevance(

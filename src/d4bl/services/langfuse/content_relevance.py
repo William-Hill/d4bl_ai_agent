@@ -14,7 +14,6 @@ from d4bl.services.langfuse.prompts import content_relevance_prompt
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
-eval_logger.setLevel(logging.INFO)
 
 
 def evaluate_content_relevance(

@@ -14,7 +14,6 @@ from d4bl.services.langfuse.report_relevance import evaluate_report_relevance
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
-eval_logger.setLevel(logging.INFO)
 
 
 def run_comprehensive_evaluation(

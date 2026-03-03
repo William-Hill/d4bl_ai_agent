@@ -11,7 +11,6 @@ from d4bl.services.langfuse.parsers import parse_bias_score
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
-eval_logger.setLevel(logging.INFO)
 
 
 def evaluate_bias_detection(
