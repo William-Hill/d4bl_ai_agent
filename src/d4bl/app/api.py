@@ -79,6 +79,7 @@ def _log_task_exception(task: asyncio.Task) -> None:
 
 @lru_cache(maxsize=1)
 def get_query_engine() -> QueryEngine:
+    """Return a cached QueryEngine singleton for NL query processing."""
     return QueryEngine()
 
 
@@ -482,7 +483,7 @@ async def get_indicators(
             query = query.where(CensusIndicator.race == race)
         if year is not None:
             query = query.where(CensusIndicator.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()
         return [
@@ -527,7 +528,7 @@ async def get_policies(
             query = query.where(
                 PolicyBill.topic_tags.cast(String).contains(topic)
             )
-        query = query.limit(min(limit, 5000))
+        query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()
         return [

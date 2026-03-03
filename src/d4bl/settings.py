@@ -38,8 +38,10 @@ class Settings:
     # CORS
     cors_allowed_origins: tuple[str, ...] = field(
         default_factory=lambda: tuple(
-            o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
-        )
+            origin for origin in
+            (o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(","))
+            if origin
+        ) or ("*",)
     )
 
 

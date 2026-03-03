@@ -62,6 +62,7 @@ def remove_log_queue(job_id: str) -> None:
 def set_job_logs(job_id: str, logs: List[str]) -> None:
     """Persist captured logs for later retrieval (bounded to MAX_JOB_LOGS)."""
     job_logs[job_id] = logs
+    job_logs.move_to_end(job_id)
     while len(job_logs) > MAX_JOB_LOGS:
         job_logs.popitem(last=False)
 
