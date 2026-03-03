@@ -1,15 +1,22 @@
 """
 Pydantic schemas shared by the FastAPI application.
 """
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ResearchRequest(BaseModel):
     query: str
-    summary_format: str = "detailed"  # brief, detailed, comprehensive
+    summary_format: Literal["brief", "detailed", "comprehensive"] = "detailed"
     selected_agents: Optional[List[str]] = None  # List of agent names to run (e.g., ["researcher", "writer"])
+
+    @field_validator("query")
+    @classmethod
+    def query_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Query cannot be empty")
+        return v
 
 
 class ResearchResponse(BaseModel):
@@ -63,6 +70,13 @@ class QueryRequest(BaseModel):
     question: str
     job_id: Optional[str] = None
     limit: int = 10
+
+    @field_validator("question")
+    @classmethod
+    def question_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Question cannot be empty")
+        return v
 
 
 class QuerySourceItem(BaseModel):

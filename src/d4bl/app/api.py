@@ -2,17 +2,20 @@
 FastAPI backend for D4BL AI Agent UI
 """
 import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import List, Optional
+from functools import lru_cache
+from typing import AsyncGenerator, List, Optional
 from uuid import UUID
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-import traceback
 
+from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
     CensusIndicator,
     EvaluationResult,
@@ -26,6 +29,7 @@ from d4bl.infra.database import (
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
+from d4bl.settings import get_settings
 from d4bl.app.schemas import (
     EvaluationResultItem,
     IndicatorItem,
@@ -41,69 +45,91 @@ from d4bl.app.schemas import (
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 
+logger = logging.getLogger(__name__)
 
-_query_engine = None
+
+def parse_job_uuid(job_id: str) -> UUID:
+    """Parse a string job ID into a UUID, raising HTTP 400 on failure."""
+    try:
+        return UUID(job_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+
+
+async def fetch_research_job(db: AsyncSession, job_uuid: UUID) -> ResearchJob:
+    """Load a ResearchJob by UUID, raising HTTP 404 if not found."""
+    result = await db.execute(
+        select(ResearchJob).where(ResearchJob.job_id == job_uuid)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 _background_tasks: set = set()
 
 
+def _log_task_exception(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from background tasks."""
+    _background_tasks.discard(task)
+    if not task.cancelled() and task.exception():
+        logger.error("Background task failed: %s", task.exception(), exc_info=task.exception())
+
+
+@lru_cache(maxsize=1)
 def get_query_engine() -> QueryEngine:
-    global _query_engine
-    if _query_engine is None:
-        _query_engine = QueryEngine()
-    return _query_engine
+    """Return a cached QueryEngine singleton for NL query processing."""
+    return QueryEngine()
 
-app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on application startup"""
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan: startup and shutdown logic."""
+    # --- Startup ---
     try:
         init_db()
         await create_tables()
-        print("✓ Database initialized successfully")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"⚠ Warning: Database initialization failed: {e}")
-        print("  The application will continue but jobs won't be persisted.")
-    
+        logger.warning("Database initialization failed: %s", e)
+        logger.warning("The application will continue but jobs won't be persisted.")
+
     # Check Langfuse availability early and unset OTLP endpoint if not available
-    # This prevents OpenTelemetry from trying to export traces when Langfuse is down
     try:
         from d4bl.observability.langfuse import check_langfuse_service_available
-        import os
-        from d4bl.settings import get_settings
-        
+
         settings = get_settings()
         langfuse_otel_host = settings.langfuse_otel_host or settings.langfuse_host
-        
-        # Adjust for Docker
+
         if os.path.exists("/.dockerenv"):
             if "localhost" in langfuse_otel_host:
                 langfuse_otel_host = langfuse_otel_host.replace("localhost", "langfuse-web")
             if ":3002" in langfuse_otel_host:
                 langfuse_otel_host = langfuse_otel_host.replace(":3002", ":3000")
-        
+
         if not check_langfuse_service_available(langfuse_otel_host):
-            print("⚠️ Langfuse service not available. Unsetting OTLP endpoint to prevent export errors.")
+            logger.warning("Langfuse service not available. Unsetting OTLP endpoint.")
             os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
             os.environ.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
         else:
-            print("✓ Langfuse service is available")
+            logger.info("Langfuse service is available")
     except Exception as e:
-        print(f"⚠️ Could not check Langfuse availability: {e}")
-        # Continue anyway - let individual components handle it
+        logger.warning("Could not check Langfuse availability: %s", e)
 
+    yield  # --- App runs here ---
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database connections on shutdown"""
+    # --- Shutdown ---
     await close_db()
 
 
-# CORS middleware for local development
+_settings = get_settings()
+
+app = FastAPI(title="D4BL AI Agent API", version="1.0.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=list(_settings.cors_allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -119,12 +145,6 @@ async def read_root():
 async def create_research(request: ResearchRequest, db: AsyncSession = Depends(get_db)):
     """Create a new research job"""
     try:
-        if not request.query or not request.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        if request.summary_format not in ["brief", "detailed", "comprehensive"]:
-            raise HTTPException(status_code=400, detail="Invalid summary_format. Must be: brief, detailed, or comprehensive")
-        
         # Create job in database
         job = ResearchJob(
             query=request.query,
@@ -147,7 +167,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             request.selected_agents,
         ))
         _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        task.add_done_callback(_log_task_exception)
         
         return ResearchResponse(
             job_id=job_id,
@@ -158,27 +178,15 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        print(f"ERROR in create_research: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Error in create_research: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error creating research job")
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
 async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
     """Get the status of a research job"""
-    try:
-        job_uuid = UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
-    result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
-    result_obj = await db.execute(result_query)
-    job = result_obj.scalar_one_or_none()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
+    job_uuid = parse_job_uuid(job_id)
+    job = await fetch_research_job(db, job_uuid)
     return JobStatus(**job.to_dict())
 
 
@@ -191,20 +199,19 @@ async def get_job_history(
 ):
     """Get paginated job history"""
     try:
-        # Build query
+        # Build shared filters
+        filters = []
+        if status:
+            filters.append(ResearchJob.status == status)
+
         query = select(ResearchJob)
-        
-        # Filter by status if provided
-        if status:
-            query = query.where(ResearchJob.status == status)
-        
-        # Order by created_at descending (newest first)
-        query = query.order_by(desc(ResearchJob.created_at))
-        
-        # Get total count
         count_query = select(func.count(ResearchJob.job_id))
-        if status:
-            count_query = count_query.where(ResearchJob.status == status)
+        for f in filters:
+            query = query.where(f)
+            count_query = count_query.where(f)
+
+        query = query.order_by(desc(ResearchJob.created_at))
+
         count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
         
@@ -223,7 +230,7 @@ async def get_job_history(
             page_size=page_size
         )
     except Exception as e:
-        print(f"Error fetching job history: {e}")
+        logger.error("Error fetching job history: %s", e)
         raise HTTPException(status_code=500, detail="Error fetching job history")
 
 
@@ -257,23 +264,7 @@ async def get_evaluations(
 
     result = await db.execute(query)
     rows = result.scalars().all()
-    return [
-        EvaluationResultItem(
-            id=str(row.id),
-            span_id=row.span_id,
-            trace_id=row.trace_id,
-            job_id=str(row.job_id) if row.job_id else None,
-            eval_name=row.eval_name,
-            label=row.label,
-            score=row.score,
-            explanation=row.explanation,
-            input_text=row.input_text,
-            output_text=row.output_text,
-            context_text=row.context_text,
-            created_at=row.created_at.isoformat() if row.created_at else None,
-        )
-        for row in rows
-    ]
+    return [EvaluationResultItem(**row.to_dict()) for row in rows]
 
 
 @app.websocket("/ws/{job_id}")
@@ -287,11 +278,13 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         # Try to get from database first
         try:
             job_uuid = UUID(job_id)
-            async for db in get_db():
+            if _db_mod.async_session_maker is None:
+                init_db()
+            async with _db_mod.async_session_maker() as db:
                 result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
                 result_obj = await db.execute(result_query)
                 job = result_obj.scalar_one_or_none()
-                
+
                 if job:
                     job_dict = job.to_dict()
                     if job.status == "completed":
@@ -316,9 +309,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                             "progress": job_dict.get("progress"),
                             "logs": job_dict.get("logs") or get_job_logs(job_id)
                         })
-                break
         except Exception as db_error:
-            print(f"Error fetching job from database: {db_error}")
+            logger.error("Error fetching job from database: %s", db_error)
             # Fallback to in-memory logs if available
             fallback_logs = get_job_logs(job_id)
             if fallback_logs:
@@ -341,7 +333,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error("WebSocket error: %s", e)
     finally:
         remove_connection(job_id)
 
@@ -373,12 +365,7 @@ async def search_similar_content(
         if not query or not query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        job_uuid = None
-        if job_id:
-            try:
-                job_uuid = UUID(job_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid job ID format")
+        job_uuid = parse_job_uuid(job_id) if job_id else None
         
         vector_store = get_vector_store()
         results = await vector_store.search_similar(
@@ -398,9 +385,7 @@ async def search_similar_content(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error searching vector database: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Error searching vector database: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error searching vector database")
 
 
@@ -417,11 +402,8 @@ async def get_scraped_content_by_job(
         job_id: Research job ID
         limit: Optional limit on number of results
     """
-    try:
-        job_uuid = UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
+    job_uuid = parse_job_uuid(job_id)
+
     try:
         vector_store = get_vector_store()
         results = await vector_store.get_by_job_id(
@@ -436,9 +418,7 @@ async def get_scraped_content_by_job(
             "count": len(results),
         }
     except Exception as e:
-        print(f"Error fetching scraped content: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Error fetching scraped content: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching scraped content")
 
 
@@ -453,9 +433,6 @@ async def natural_language_query(
     database (research jobs) and returns a synthesized answer with
     source citations.
     """
-    if not request.question or not request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
-
     try:
         engine = get_query_engine()
         result = await engine.query(
@@ -479,9 +456,7 @@ async def natural_language_query(
             query=result.query,
         )
     except Exception as e:
-        print(f"Error in NL query: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Error in NL query: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Query failed")
 
 
@@ -492,6 +467,7 @@ async def get_indicators(
     metric: Optional[str] = None,
     race: Optional[str] = None,
     year: Optional[int] = None,
+    limit: int = 1000,
     db: AsyncSession = Depends(get_db),
 ):
     """Get Census ACS indicators, optionally filtered."""
@@ -507,6 +483,7 @@ async def get_indicators(
             query = query.where(CensusIndicator.race == race)
         if year is not None:
             query = query.where(CensusIndicator.year == year)
+        query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()
         return [
@@ -524,8 +501,7 @@ async def get_indicators(
             for r in rows
         ]
     except Exception as e:
-        print(f"Error fetching indicators: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching indicators: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching indicators") from e
 
 
@@ -535,6 +511,7 @@ async def get_policies(
     status: Optional[str] = None,
     topic: Optional[str] = None,
     session: Optional[str] = None,
+    limit: int = 1000,
     db: AsyncSession = Depends(get_db),
 ):
     """Get policy bills, optionally filtered."""
@@ -551,6 +528,7 @@ async def get_policies(
             query = query.where(
                 PolicyBill.topic_tags.cast(String).contains(topic)
             )
+        query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()
         return [
@@ -569,8 +547,7 @@ async def get_policies(
             for r in rows
         ]
     except Exception as e:
-        print(f"Error fetching policies: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching policies: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching policies") from e
 
 
@@ -627,8 +604,7 @@ async def get_states_summary(db: AsyncSession = Depends(get_db)):
 
         return summary
     except Exception as e:
-        print(f"Error fetching state summary: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching state summary: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching state summary") from e
 
 
