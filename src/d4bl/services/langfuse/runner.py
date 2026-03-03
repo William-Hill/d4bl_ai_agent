@@ -149,14 +149,27 @@ def run_comprehensive_evaluation(
             logger.error("Failed to run %s evaluation: %s", name, e, exc_info=True)
             return name, {"error": str(e), "status": EvalStatus.FAILED}
 
+    eval_timeout_s = 120
     with ThreadPoolExecutor(max_workers=len(eval_specs)) as executor:
         futures = {
             executor.submit(_run_eval, name, func, kwargs): name
             for name, func, kwargs in eval_specs
         }
-        for future in as_completed(futures):
-            name, result = future.result()
-            results["evaluations"][name] = result
+        try:
+            for future in as_completed(futures, timeout=eval_timeout_s):
+                name, result = future.result()
+                results["evaluations"][name] = result
+        except TimeoutError:
+            logger.error(
+                "Evaluation batch timed out after %ss", eval_timeout_s,
+            )
+            for future, name in futures.items():
+                if not future.done():
+                    future.cancel()
+                    results["evaluations"][name] = {
+                        "error": "evaluation_timeout",
+                        "status": EvalStatus.FAILED,
+                    }
 
     # --- Flush Langfuse once at the end (finding 3.6) ---
     if langfuse:

@@ -10,6 +10,8 @@ from d4bl.services.langfuse.llm_runner import call_llm_text
 
 
 class EvalStatus(str, Enum):
+    """Lifecycle status values returned by Langfuse evaluation helpers."""
+
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"

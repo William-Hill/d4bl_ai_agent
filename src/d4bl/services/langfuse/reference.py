@@ -23,11 +23,23 @@ def evaluate_reference(
     langfuse: Any = None,
 ) -> Dict[str, Any]:
     if not query or not query.strip():
-        return {"error": "Query cannot be empty", "status": EvalStatus.FAILED, "error_type": "validation"}
+        return {
+            "error": "Query cannot be empty",
+            "status": EvalStatus.FAILED,
+            "error_type": "validation",
+        }
     if not answer or not answer.strip():
-        return {"error": "Answer cannot be empty", "status": EvalStatus.FAILED, "error_type": "validation"}
+        return {
+            "error": "Answer cannot be empty",
+            "status": EvalStatus.FAILED,
+            "error_type": "validation",
+        }
     if not context or not context.strip():
-        return {"error": "Context cannot be empty", "status": EvalStatus.FAILED, "error_type": "validation"}
+        return {
+            "error": "Context cannot be empty",
+            "status": EvalStatus.FAILED,
+            "error_type": "validation",
+        }
 
     def _parse(text: str) -> tuple[float, str]:
         score, explanation = parse_label_score(text, MAPPING, default_score=3.0)

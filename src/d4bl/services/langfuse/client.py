@@ -4,6 +4,8 @@ import os
 import logging
 from typing import Optional
 
+from d4bl.settings import get_settings
+
 try:  # Optional dependency: degrade gracefully when Langfuse is not installed
     from langfuse import Langfuse  # type: ignore
 except ImportError:  # pragma: no cover - handled at runtime
@@ -36,7 +38,6 @@ def get_langfuse_eval_client() -> Optional[Langfuse]:
             return None
 
         # Adjust host for Docker
-        from d4bl.settings import get_settings
         if get_settings().is_docker and "localhost" in langfuse_host:
             original_host = langfuse_host
             langfuse_host = langfuse_host.replace("localhost", "langfuse-web")

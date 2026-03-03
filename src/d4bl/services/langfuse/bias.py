@@ -15,9 +15,17 @@ def evaluate_bias_detection(
     langfuse: Any = None,
 ) -> Dict[str, Any]:
     if not research_output or not research_output.strip():
-        return {"error": "Research output cannot be empty", "status": EvalStatus.FAILED, "error_type": "validation"}
+        return {
+            "error": "Research output cannot be empty",
+            "status": EvalStatus.FAILED,
+            "error_type": "validation",
+        }
     if not query or not query.strip():
-        return {"error": "Query cannot be empty", "status": EvalStatus.FAILED, "error_type": "validation"}
+        return {
+            "error": "Query cannot be empty",
+            "status": EvalStatus.FAILED,
+            "error_type": "validation",
+        }
 
     return run_llm_evaluation(
         eval_name="bias_detection",
