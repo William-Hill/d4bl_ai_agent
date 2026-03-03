@@ -34,6 +34,23 @@ class VectorStore:
         self.embedder_model = embedder_model
         self.embedding_dimension = 1024  # mxbai-embed-large produces 1024-dimensional vectors
 
+    def _format_embedding(self, embedding: List[float]) -> str:
+        """Format embedding list as a pgvector-compatible string."""
+        return '[' + ','.join(str(x) for x in embedding) + ']'
+
+    @staticmethod
+    def _row_to_content_dict(row) -> Dict[str, Any]:
+        """Convert a scraped_content_vectors row (mapping) to a dict."""
+        return {
+            "id": str(row["id"]) if row["id"] else None,
+            "job_id": str(row["job_id"]) if row["job_id"] else None,
+            "url": row["url"],
+            "content": row["content"],
+            "content_type": row["content_type"],
+            "metadata": row["metadata"] if row["metadata"] else {},
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        }
+
     async def generate_embedding(self, text: str) -> List[float]:
         """
         Generate embedding vector for the given text using Ollama.
@@ -125,8 +142,7 @@ class VectorStore:
             metadata_json = json.dumps(metadata or {})
 
             # Insert into database
-            # pgvector expects the embedding as a string in format: '[0.1, 0.2, ...]'
-            embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
+            embedding_str = self._format_embedding(embedding)
             
             query = text("""
                 INSERT INTO scraped_content_vectors
@@ -217,8 +233,7 @@ class VectorStore:
             # Generate embedding for query
             query_embedding = await self.generate_embedding(query_text)
             
-            # Format embedding for pgvector
-            query_embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
+            query_embedding_str = self._format_embedding(query_embedding)
 
             # Build query
             if job_id:
@@ -267,21 +282,12 @@ class VectorStore:
                 }
 
             result = await db.execute(query, params)
-            rows = result.fetchall()
 
-            # Convert to list of dicts
             results = []
-            for row in rows:
-                results.append({
-                    "id": str(row[0]),
-                    "job_id": str(row[1]) if row[1] else None,
-                    "url": row[2],
-                    "content": row[3],
-                    "content_type": row[4],
-                    "metadata": row[5] if row[5] else {},
-                    "created_at": row[6].isoformat() if row[6] else None,
-                    "similarity": float(row[7]),
-                })
+            for row in result.mappings():
+                d = self._row_to_content_dict(row)
+                d["similarity"] = float(row["similarity"])
+                results.append(d)
 
             logger.info("Found %s similar results for query", len(results))
             return results
@@ -328,21 +334,7 @@ class VectorStore:
                 params["limit"] = limit
 
             result = await db.execute(query, params)
-            rows = result.fetchall()
-
-            results = []
-            for row in rows:
-                results.append({
-                    "id": str(row[0]),
-                    "job_id": str(row[1]) if row[1] else None,
-                    "url": row[2],
-                    "content": row[3],
-                    "content_type": row[4],
-                    "metadata": row[5] if row[5] else {},
-                    "created_at": row[6].isoformat() if row[6] else None,
-                })
-
-            return results
+            return [self._row_to_content_dict(row) for row in result.mappings()]
 
         except Exception as e:
             logger.error("Failed to get content by job_id: %s", e, exc_info=True)

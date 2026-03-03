@@ -107,7 +107,7 @@ class TestVectorStore:
         )
 
         mock_result = MagicMock()
-        mock_result.fetchall.return_value = []
+        mock_result.mappings.return_value = []
         mock_db_session.execute = AsyncMock(return_value=mock_result)
 
         await self.store.search_similar(
@@ -144,6 +144,63 @@ class TestVectorStore:
 
         assert count == 2
         assert self.store.generate_embedding.call_count == 2
+
+
+class TestHelpers:
+    """Tests for extracted helper methods."""
+
+    def test_format_embedding_produces_pgvector_string(self):
+        store = VectorStore(ollama_base_url="http://localhost:11434")
+        result = store._format_embedding([0.1, 0.2, 0.3])
+        assert result == "[0.1,0.2,0.3]"
+
+    def test_format_embedding_empty_list(self):
+        store = VectorStore(ollama_base_url="http://localhost:11434")
+        result = store._format_embedding([])
+        assert result == "[]"
+
+    def test_row_to_content_dict_converts_mapping(self):
+        """_row_to_content_dict should convert a mapping row to a dict."""
+        from datetime import datetime, timezone
+        from uuid import uuid4 as _uuid4
+
+        store = VectorStore(ollama_base_url="http://localhost:11434")
+        row_id = _uuid4()
+        job_id = _uuid4()
+        now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+        mapping = {
+            "id": row_id,
+            "job_id": job_id,
+            "url": "https://example.com",
+            "content": "test content",
+            "content_type": "html",
+            "metadata": {"key": "value"},
+            "created_at": now,
+        }
+
+        result = store._row_to_content_dict(mapping)
+        assert result["id"] == str(row_id)
+        assert result["job_id"] == str(job_id)
+        assert result["url"] == "https://example.com"
+        assert result["metadata"] == {"key": "value"}
+        assert result["created_at"] == now.isoformat()
+
+    def test_row_to_content_dict_handles_none_values(self):
+        store = VectorStore(ollama_base_url="http://localhost:11434")
+        mapping = {
+            "id": None,
+            "job_id": None,
+            "url": "https://example.com",
+            "content": "test",
+            "content_type": None,
+            "metadata": None,
+            "created_at": None,
+        }
+        result = store._row_to_content_dict(mapping)
+        assert result["job_id"] is None
+        assert result["metadata"] == {}
+        assert result["created_at"] is None
 
 
 class TestGetVectorStore:
