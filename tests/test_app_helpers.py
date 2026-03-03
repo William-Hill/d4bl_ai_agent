@@ -53,6 +53,21 @@ class TestFetchResearchJob:
         assert exc_info.value.status_code == 404
 
 
+class TestJobLogsBounded:
+    def test_old_logs_evicted_after_max_size(self):
+        from d4bl.app.websocket_manager import set_job_logs, get_job_logs, job_logs, MAX_JOB_LOGS
+
+        job_logs.clear()
+        # Fill beyond max
+        for i in range(MAX_JOB_LOGS + 5):
+            set_job_logs(f"job-{i}", [f"log-{i}"])
+
+        assert len(job_logs) <= MAX_JOB_LOGS
+        # Most recent should still be present
+        assert get_job_logs(f"job-{MAX_JOB_LOGS + 4}") == [f"log-{MAX_JOB_LOGS + 4}"]
+        job_logs.clear()
+
+
 class TestCorsSettings:
     def test_cors_origins_from_env(self, monkeypatch):
         from d4bl.settings import get_settings

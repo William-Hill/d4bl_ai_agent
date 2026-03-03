@@ -70,6 +70,13 @@ async def fetch_research_job(db: AsyncSession, job_uuid: UUID) -> ResearchJob:
 _background_tasks: set = set()
 
 
+def _log_task_exception(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from background tasks."""
+    _background_tasks.discard(task)
+    if not task.cancelled() and task.exception():
+        logger.error("Background task failed: %s", task.exception(), exc_info=task.exception())
+
+
 @lru_cache(maxsize=1)
 def get_query_engine() -> QueryEngine:
     return QueryEngine()
@@ -159,7 +166,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             request.selected_agents,
         ))
         _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        task.add_done_callback(_log_task_exception)
         
         return ResearchResponse(
             job_id=job_id,
@@ -459,6 +466,7 @@ async def get_indicators(
     metric: Optional[str] = None,
     race: Optional[str] = None,
     year: Optional[int] = None,
+    limit: int = 1000,
     db: AsyncSession = Depends(get_db),
 ):
     """Get Census ACS indicators, optionally filtered."""
@@ -474,6 +482,7 @@ async def get_indicators(
             query = query.where(CensusIndicator.race == race)
         if year is not None:
             query = query.where(CensusIndicator.year == year)
+        query = query.limit(min(limit, 5000))
         result = await db.execute(query)
         rows = result.scalars().all()
         return [
@@ -501,6 +510,7 @@ async def get_policies(
     status: Optional[str] = None,
     topic: Optional[str] = None,
     session: Optional[str] = None,
+    limit: int = 1000,
     db: AsyncSession = Depends(get_db),
 ):
     """Get policy bills, optionally filtered."""
@@ -517,6 +527,7 @@ async def get_policies(
             query = query.where(
                 PolicyBill.topic_tags.cast(String).contains(topic)
             )
+        query = query.limit(min(limit, 5000))
         result = await db.execute(query)
         rows = result.scalars().all()
         return [

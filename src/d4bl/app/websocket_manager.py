@@ -5,14 +5,17 @@ from __future__ import annotations
 
 import logging
 import queue
+from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
+MAX_JOB_LOGS = 1000
+
 active_connections: Dict[str, WebSocket] = {}
-job_logs: Dict[str, List[str]] = {}
+job_logs: OrderedDict[str, List[str]] = OrderedDict()
 log_queues: Dict[str, queue.Queue] = {}
 
 
@@ -57,8 +60,10 @@ def remove_log_queue(job_id: str) -> None:
 
 
 def set_job_logs(job_id: str, logs: List[str]) -> None:
-    """Persist captured logs for later retrieval."""
+    """Persist captured logs for later retrieval (bounded to MAX_JOB_LOGS)."""
     job_logs[job_id] = logs
+    while len(job_logs) > MAX_JOB_LOGS:
+        job_logs.popitem(last=False)
 
 
 def get_job_logs(job_id: str) -> List[str]:
