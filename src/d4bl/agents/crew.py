@@ -4,8 +4,6 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
 from typing import List, Optional
 import os
-from pathlib import Path
-from dotenv import load_dotenv
 import logging
 
 from d4bl.settings import get_settings
@@ -17,22 +15,6 @@ from d4bl.agents.tools import (
 from d4bl.llm import get_ollama_llm
 
 logger = logging.getLogger(__name__)
-
-# Load environment variables from .env if present (best-effort)
-project_root = Path(__file__).parent.parent.parent
-env_path = project_root / ".env"
-env_file_loaded = None
-if env_path.exists():
-    env_loaded = load_dotenv(env_path)
-    if env_loaded:
-        env_file_loaded = str(env_path)
-        logger.debug("Loaded .env file from: %s", env_path)
-else:
-    env_loaded = False
-
-# Print which environment variables are loaded (without showing full values)
-if env_file_loaded:
-    logger.debug("Environment variables loaded from .env")
 
 
 @CrewBase
@@ -247,8 +229,7 @@ class D4Bl():
     @crew
     def crew(self) -> Crew:
         """Creates the D4Bl crew"""
-        
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_base_url = get_settings().ollama_base_url
         embedder_model = "mxbai-embed-large"
         
         # Construct the embedder configuration

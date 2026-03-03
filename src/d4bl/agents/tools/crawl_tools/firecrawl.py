@@ -13,6 +13,7 @@ from crewai_tools import FirecrawlSearchTool
 from pydantic import BaseModel
 
 from d4bl.agents.tools.crawl_tools.utils import (
+    PROBLEMATIC_DOMAINS,
     FirecrawlSearchWrapperInput,
     filter_problematic_urls,
 )
@@ -97,8 +98,6 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
         object.__setattr__(self, "_max_results", max_results)
         object.__setattr__(self, "_timeout", timeout)
         
-        # Initialize Firecrawl client with custom base URL
-        # The firecrawl-py SDK supports base_url parameter
         try:
             client = FirecrawlApp(
                 api_key=api_key or "dummy",  # API key may be optional for self-hosted
@@ -112,32 +111,26 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
             )
             object.__setattr__(self, "_client", None)
 
+    def _page_options(self) -> dict:
+        """Build shared pageOptions for SDK and HTTP calls."""
+        return {
+            "maxResults": self._max_results,
+            "timeout": 15000,
+            "waitFor": 1000,
+            "excludeDomains": sorted(PROBLEMATIC_DOMAINS),
+            "onlyMainContent": True,
+            "formats": ["markdown"],
+        }
+
     def _run(self, query: Union[str, dict]) -> str:
         """Run search using self-hosted Firecrawl."""
         normalized_query = FirecrawlSearchWrapperInput(query=query).query
-        
-        # Try using SDK first
+
         if self._client:
             try:
                 result = self._client.search(
                     query=normalized_query,
-                    pageOptions={
-                        "maxResults": self._max_results,
-                        # Timeout settings (in milliseconds) - lower values skip paywalled content faster
-                        "timeout": 15000,  # 15 seconds - very aggressive timeout to prevent loops
-                        "waitFor": 1000,  # Wait 1 second for content to load
-                        # Exclude problematic domains from search results
-                        "excludeDomains": [
-                            "researchgate.net", "jstor.org", "sciencedirect.com",
-                            "ieee.org", "acm.org", "springer.com", "nature.com",
-                            "elsevier.com", "wiley.com", "tandfonline.com",
-                            "sagepub.com", "oup.com", "cambridge.org",
-                            "academia.edu", "semanticscholar.org"
-                        ],
-                        # Skip PDF engine for HTML pages - prevents unnecessary PDF attempts
-                        "onlyMainContent": True,  # Focus on main content, skip PDF parsing
-                        "formats": ["markdown"],  # Only extract these formats, skip PDF
-                    },
+                    pageOptions=self._page_options(),
                 )
                 # Filter out problematic URLs from results
                 filtered_result = filter_problematic_urls(result)
@@ -159,23 +152,7 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
             
             payload = {
                 "query": query,
-                "pageOptions": {
-                    "maxResults": self._max_results,
-                    # Timeout settings (in milliseconds) - lower values skip paywalled content faster
-                    "timeout": 15000,  # 15 seconds - very aggressive timeout to prevent loops
-                    "waitFor": 1000,  # Wait 1 second for content to load
-                    # Exclude problematic domains from search results
-                    "excludeDomains": [
-                        "researchgate.net", "jstor.org", "sciencedirect.com",
-                        "ieee.org", "acm.org", "springer.com", "nature.com",
-                        "elsevier.com", "wiley.com", "tandfonline.com",
-                        "sagepub.com", "oup.com", "cambridge.org",
-                        "academia.edu", "semanticscholar.org"
-                    ],
-                    # Skip PDF engine for HTML pages - prevents unnecessary PDF attempts
-                    "onlyMainContent": True,  # Focus on main content, skip PDF parsing
-                    "formats": ["markdown"],  # Only extract these formats, skip PDF
-                },
+                "pageOptions": self._page_options(),
             }
             
             response = requests.post(

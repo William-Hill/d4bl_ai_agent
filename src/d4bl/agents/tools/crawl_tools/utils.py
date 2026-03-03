@@ -9,6 +9,14 @@ from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
+PROBLEMATIC_DOMAINS: frozenset[str] = frozenset({
+    'jstor.org', 'sciencedirect.com', 'ieee.org', 'acm.org',
+    'springer.com', 'nature.com', 'elsevier.com', 'wiley.com',
+    'tandfonline.com', 'sagepub.com', 'oup.com', 'cambridge.org',
+    'pubmed.ncbi.nlm.nih.gov', 'arxiv.org/pdf', 'researchgate.net',
+    'academia.edu', 'semanticscholar.org',
+})
+
 
 class FirecrawlSearchWrapperInput(BaseModel):
     """Input schema for Firecrawl Search Wrapper tool."""
@@ -50,16 +58,7 @@ def filter_problematic_urls(result: dict) -> dict:
     """
     if not isinstance(result, dict):
         return result
-    
-    # Known problematic domains (paywalled, require auth, etc.)
-    problematic_domains = {
-        'jstor.org', 'sciencedirect.com', 'ieee.org', 'acm.org',
-        'springer.com', 'nature.com', 'elsevier.com', 'wiley.com',
-        'tandfonline.com', 'sagepub.com', 'oup.com', 'cambridge.org',
-        'pubmed.ncbi.nlm.nih.gov', 'arxiv.org/pdf', 'researchgate.net',
-        'academia.edu', 'semanticscholar.org'
-    }
-    
+
     # Filter data array if present
     if 'data' in result and isinstance(result['data'], list):
         original_count = len(result['data'])
@@ -68,7 +67,7 @@ def filter_problematic_urls(result: dict) -> dict:
             if isinstance(item, dict):
                 url = item.get('url', '') or item.get('link', '') or item.get('source', '')
                 # Skip if URL is from problematic domain
-                if url and any(domain in url.lower() for domain in problematic_domains):
+                if url and any(domain in url.lower() for domain in PROBLEMATIC_DOMAINS):
                     logger.info(f"Skipping paywalled/problematic URL: {url}")
                     continue
                 # Skip if there's an error or timeout
