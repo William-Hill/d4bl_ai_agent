@@ -4,6 +4,7 @@ FastAPI backend for D4BL AI Agent UI
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
 from typing import List, Optional
@@ -14,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
     CensusIndicator,
     EvaluationResult,
@@ -27,6 +29,7 @@ from d4bl.infra.database import (
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
+from d4bl.settings import get_settings
 from d4bl.app.schemas import (
     EvaluationResultItem,
     IndicatorItem,
@@ -71,12 +74,11 @@ _background_tasks: set = set()
 def get_query_engine() -> QueryEngine:
     return QueryEngine()
 
-app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on application startup"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown logic."""
+    # --- Startup ---
     try:
         init_db()
         await create_tables()
@@ -84,44 +86,42 @@ async def startup_event():
     except Exception as e:
         logger.warning("Database initialization failed: %s", e)
         logger.warning("The application will continue but jobs won't be persisted.")
-    
+
     # Check Langfuse availability early and unset OTLP endpoint if not available
-    # This prevents OpenTelemetry from trying to export traces when Langfuse is down
     try:
         from d4bl.observability.langfuse import check_langfuse_service_available
-        from d4bl.settings import get_settings
-        
+
         settings = get_settings()
         langfuse_otel_host = settings.langfuse_otel_host or settings.langfuse_host
-        
-        # Adjust for Docker
+
         if os.path.exists("/.dockerenv"):
             if "localhost" in langfuse_otel_host:
                 langfuse_otel_host = langfuse_otel_host.replace("localhost", "langfuse-web")
             if ":3002" in langfuse_otel_host:
                 langfuse_otel_host = langfuse_otel_host.replace(":3002", ":3000")
-        
+
         if not check_langfuse_service_available(langfuse_otel_host):
-            logger.warning("Langfuse service not available. Unsetting OTLP endpoint to prevent export errors.")
+            logger.warning("Langfuse service not available. Unsetting OTLP endpoint.")
             os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
             os.environ.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
         else:
             logger.info("Langfuse service is available")
     except Exception as e:
         logger.warning("Could not check Langfuse availability: %s", e)
-        # Continue anyway - let individual components handle it
 
+    yield  # --- App runs here ---
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database connections on shutdown"""
+    # --- Shutdown ---
     await close_db()
 
 
-# CORS middleware for local development
+_settings = get_settings()
+
+app = FastAPI(title="D4BL AI Agent API", version="1.0.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=list(_settings.cors_allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -270,11 +270,13 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         # Try to get from database first
         try:
             job_uuid = UUID(job_id)
-            async for db in get_db():
+            if _db_mod.async_session_maker is None:
+                init_db()
+            async with _db_mod.async_session_maker() as db:
                 result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
                 result_obj = await db.execute(result_query)
                 job = result_obj.scalar_one_or_none()
-                
+
                 if job:
                     job_dict = job.to_dict()
                     if job.status == "completed":
@@ -299,7 +301,6 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                             "progress": job_dict.get("progress"),
                             "logs": job_dict.get("logs") or get_job_logs(job_id)
                         })
-                break
         except Exception as db_error:
             logger.error("Error fetching job from database: %s", db_error)
             # Fallback to in-memory logs if available

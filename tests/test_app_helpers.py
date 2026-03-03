@@ -51,3 +51,23 @@ class TestFetchResearchJob:
         with pytest.raises(HTTPException) as exc_info:
             await fetch_research_job(mock_db, uuid4())
         assert exc_info.value.status_code == 404
+
+
+class TestCorsSettings:
+    def test_cors_origins_from_env(self, monkeypatch):
+        from d4bl.settings import get_settings
+        get_settings.cache_clear()
+
+        monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://example.com")
+        settings = get_settings()
+        assert settings.cors_allowed_origins == ("http://localhost:3000", "http://example.com")
+        get_settings.cache_clear()
+
+    def test_cors_origins_default_star(self, monkeypatch):
+        from d4bl.settings import get_settings
+        get_settings.cache_clear()
+
+        monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+        settings = get_settings()
+        assert settings.cors_allowed_origins == ("*",)
+        get_settings.cache_clear()
