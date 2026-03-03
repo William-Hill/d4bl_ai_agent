@@ -1,5 +1,8 @@
 """Tests for app-level helper functions."""
 import pytest
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
 from fastapi import HTTPException
 
 from d4bl.app.api import parse_job_uuid
@@ -20,3 +23,31 @@ class TestParseJobUuid:
         with pytest.raises(HTTPException) as exc_info:
             parse_job_uuid("")
         assert exc_info.value.status_code == 400
+
+
+class TestFetchResearchJob:
+    @pytest.mark.asyncio
+    async def test_returns_job_when_found(self):
+        from d4bl.app.api import fetch_research_job
+
+        mock_job = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_job
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await fetch_research_job(mock_db, uuid4())
+        assert result is mock_job
+
+    @pytest.mark.asyncio
+    async def test_raises_404_when_not_found(self):
+        from d4bl.app.api import fetch_research_job
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await fetch_research_job(mock_db, uuid4())
+        assert exc_info.value.status_code == 404

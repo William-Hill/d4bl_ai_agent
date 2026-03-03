@@ -4,6 +4,7 @@ FastAPI backend for D4BL AI Agent UI
 import asyncio
 import os
 from datetime import datetime
+from functools import lru_cache
 from typing import List, Optional
 from uuid import UUID
 
@@ -50,15 +51,23 @@ def parse_job_uuid(job_id: str) -> UUID:
         raise HTTPException(status_code=400, detail="Invalid job ID format")
 
 
-_query_engine = None
+async def fetch_research_job(db: AsyncSession, job_uuid: UUID) -> ResearchJob:
+    """Load a ResearchJob by UUID, raising HTTP 404 if not found."""
+    result = await db.execute(
+        select(ResearchJob).where(ResearchJob.job_id == job_uuid)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 _background_tasks: set = set()
 
 
+@lru_cache(maxsize=1)
 def get_query_engine() -> QueryEngine:
-    global _query_engine
-    if _query_engine is None:
-        _query_engine = QueryEngine()
-    return _query_engine
+    return QueryEngine()
 
 app = FastAPI(title="D4BL AI Agent API", version="1.0.0")
 
@@ -168,14 +177,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
 async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
     """Get the status of a research job"""
     job_uuid = parse_job_uuid(job_id)
-
-    result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
-    result_obj = await db.execute(result_query)
-    job = result_obj.scalar_one_or_none()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
+    job = await fetch_research_job(db, job_uuid)
     return JobStatus(**job.to_dict())
 
 
@@ -188,20 +190,19 @@ async def get_job_history(
 ):
     """Get paginated job history"""
     try:
-        # Build query
+        # Build shared filters
+        filters = []
+        if status:
+            filters.append(ResearchJob.status == status)
+
         query = select(ResearchJob)
-        
-        # Filter by status if provided
-        if status:
-            query = query.where(ResearchJob.status == status)
-        
-        # Order by created_at descending (newest first)
-        query = query.order_by(desc(ResearchJob.created_at))
-        
-        # Get total count
         count_query = select(func.count(ResearchJob.job_id))
-        if status:
-            count_query = count_query.where(ResearchJob.status == status)
+        for f in filters:
+            query = query.where(f)
+            count_query = count_query.where(f)
+
+        query = query.order_by(desc(ResearchJob.created_at))
+
         count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
         
