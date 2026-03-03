@@ -55,7 +55,7 @@ def evaluate_content_relevance(
             content = item.get("extracted_content") or item.get("content", "")
 
             if not content or len(content.strip()) < 50:
-                relevance_scores[url] = {"score": 0.0, "reason": "insufficient_content"}
+                relevance_scores[url] = {"score": 1.0, "reason": "insufficient_content"}
                 continue
 
             content_sample = content[:2000]
