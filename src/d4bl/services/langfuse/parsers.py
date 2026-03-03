@@ -7,12 +7,12 @@ from typing import Any, Dict
 
 def keyword_relevance(query: str, text: str) -> float:
     """Score relevance of *text* to *query* via simple keyword overlap (1.0-5.0)."""
-    query_words = set(query.lower().split())
-    if not query_words:
+    significant_words = {word for word in query.lower().split() if len(word) > 3}
+    if not significant_words:
         return 3.0
     text_lower = text.lower()
-    matches = sum(1 for word in query_words if word in text_lower and len(word) > 3)
-    return max(1.0, min(5.0, (matches / len(query_words)) * 5))
+    matches = sum(1 for word in significant_words if word in text_lower)
+    return max(1.0, min(5.0, (matches / len(significant_words)) * 5))
 
 
 def parse_first_json_block(text: str) -> Dict[str, Any]:
