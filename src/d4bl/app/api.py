@@ -126,12 +126,6 @@ async def read_root():
 async def create_research(request: ResearchRequest, db: AsyncSession = Depends(get_db)):
     """Create a new research job"""
     try:
-        if not request.query or not request.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        if request.summary_format not in ["brief", "detailed", "comprehensive"]:
-            raise HTTPException(status_code=400, detail="Invalid summary_format. Must be: brief, detailed, or comprehensive")
-        
         # Create job in database
         job = ResearchJob(
             query=request.query,
@@ -430,9 +424,6 @@ async def natural_language_query(
     database (research jobs) and returns a synthesized answer with
     source citations.
     """
-    if not request.question or not request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
-
     try:
         engine = get_query_engine()
         result = await engine.query(
