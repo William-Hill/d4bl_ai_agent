@@ -3,7 +3,7 @@ Database models and connection for storing research queries and results
 """
 import os
 from datetime import datetime
-from typing import Optional
+
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date, Index, UniqueConstraint
@@ -36,7 +36,7 @@ class ResearchJob(Base):
         """Convert model to dictionary"""
         return {
             "job_id": str(self.job_id),
-             "trace_id": self.trace_id,
+            "trace_id": self.trace_id,
             "query": self.query,
             "summary_format": self.summary_format,
             "status": self.status,
@@ -196,13 +196,7 @@ def get_database_url() -> str:
     # Use asyncpg driver for async operations
     database_url = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     print(f"📊 Database URL: postgresql+asyncpg://{db_user}:***@{db_host}:{db_port}/{db_name}")
-    
-    # Final safety check: warn if using localhost in what looks like Docker
-    if (db_host == "localhost" or db_host == "127.0.0.1") and os.path.exists("/.dockerenv"):
-        print(f"⚠⚠⚠ CRITICAL WARNING: Using localhost in Docker container!")
-        print(f"   This will try to connect to host Postgres, not Docker Postgres!")
-        print(f"   Set POSTGRES_HOST=postgres in docker-compose.yml")
-    
+
     return database_url
 
 
