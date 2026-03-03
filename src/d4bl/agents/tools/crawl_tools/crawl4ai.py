@@ -27,6 +27,16 @@ from d4bl.agents.tools.crawl_tools.firecrawl import (
 
 logger = logging.getLogger(__name__)
 
+_URL_PATTERN = re.compile(
+    r"^https?://"  # http:// or https://
+    r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|"  # domain...
+    r"localhost|"  # localhost...
+    r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # ...or ip
+    r"(?::\d+)?"
+    r"(?:/?|[/?]\S+)$",
+    re.IGNORECASE,
+)
+
 
 class Crawl4AISearchTool(BaseTool):
     """Simple HTTP wrapper for a self-hosted Crawl4AI service."""
@@ -57,20 +67,7 @@ class Crawl4AISearchTool(BaseTool):
     args_schema: Type[BaseModel] = InputSchema
 
     def _run(self, query: str) -> str:
-        # Crawl4AI expects URLs, not search queries
-        # If query looks like a URL, use it directly
-        # Otherwise, use Serper API to convert search query to URLs
-        url_pattern = re.compile(
-            r"^https?://"  # http:// or https://
-            r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|"  # domain...
-            r"localhost|"  # localhost...
-            r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # ...or ip
-            r"(?::\d+)?"
-            r"(?:/?|[/?]\S+)$",
-            re.IGNORECASE,
-        )
-
-        if url_pattern.match(query.strip()):
+        if _URL_PATTERN.match(query.strip()):
             urls = [query.strip()]
         else:
             url_matches = re.findall(r"https?://[^\s]+", query)
@@ -281,6 +278,7 @@ class Crawl4AISearchTool(BaseTool):
 
     def _crawl_urls_with_retry(self, urls: List[str], query: str) -> str:
         """Crawl URLs with retry logic and error recovery."""
+        urls = list(urls)  # Don't mutate the caller's list
         endpoint = f"{self._base_url}/crawl"
         headers = {"Content-Type": "application/json"}
         if self._api_key:

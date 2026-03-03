@@ -2,45 +2,19 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-import json
-from typing import List, Optional
+from typing import Any, List, Optional
 import os
-from pathlib import Path
-from dotenv import load_dotenv
 import logging
 
-# Import error handling utilities
-from d4bl.services.error_handling import retry_with_backoff, safe_execute, ErrorRecoveryStrategy
 from d4bl.settings import get_settings
 from d4bl.agents.tools import (
     Crawl4AISearchTool,
     FirecrawlSearchWrapper,
     SelfHostedFirecrawlSearchTool,
 )
-from d4bl.llm import get_ollama_llm, reset_ollama_llm
-from d4bl.observability import get_langfuse_client
+from d4bl.llm import get_ollama_llm
 
 logger = logging.getLogger(__name__)
-
-# Serper.dev API for search query to URL conversion
-# Crawl4AI only works with URLs, so we use Serper.dev to convert search queries to URLs
-# Serper.dev uses a simple REST API (no package needed)
-
-# Load environment variables from .env if present (best-effort)
-project_root = Path(__file__).parent.parent.parent
-env_path = project_root / ".env"
-env_file_loaded = None
-if env_path.exists():
-    env_loaded = load_dotenv(env_path)
-    if env_loaded:
-        env_file_loaded = str(env_path)
-        print(f"✓ Loaded .env file from: {env_path}")
-else:
-    env_loaded = False
-
-# Print which environment variables are loaded (without showing full values)
-if env_file_loaded:
-    print("\n📋 Environment variables loaded from .env")
 
 
 @CrewBase
@@ -72,7 +46,15 @@ class D4Bl():
         "editor_task",
         "data_visualization_task",
     ]
-    
+
+    _mapped_tasks = list(AGENT_TASK_MAP.values())
+    if len(_mapped_tasks) != len(set(_mapped_tasks)):
+        raise RuntimeError("Duplicate task names in AGENT_TASK_MAP")
+    if len(TASK_ORDER) != len(set(TASK_ORDER)):
+        raise RuntimeError("Duplicate task names in TASK_ORDER")
+    if _mapped_tasks != TASK_ORDER:
+        raise RuntimeError("AGENT_TASK_MAP values must exactly match TASK_ORDER")
+
     def __init__(self):
         """Initialize crew with optional agent selection"""
         self.selected_agents: Optional[List[str]] = None
@@ -81,136 +63,106 @@ class D4Bl():
     def before_kickoff_function(self, inputs):
         """Ensure output directory exists before running the crew"""
         os.makedirs('output', exist_ok=True)
-        print(f"Starting D4BL research crew with inputs: {inputs}")
+        logger.info("Starting D4BL research crew")
         
         # Validate inputs
         if not inputs.get("query"):
             raise ValueError("Query is required for research")
         
         # Log input validation
-        logger.info(f"Research query validated: {inputs.get('query')[:100]}...")
+        logger.info("Research query validated: %.100s...", inputs.get('query'))
         return inputs
 
-    # Learn more about YAML configuration files here:
-    # Agents: https://docs.crewai.com/concepts/agents#yaml-configuration-recommended
-    # Tasks: https://docs.crewai.com/concepts/tasks#yaml-configuration-recommended
-    
-    # If you would like to add tools to your agents, you can learn more about it here:
-    # https://docs.crewai.com/concepts/agents#agent-tools
+    def _make_simple_agent(self, config_key: str, **kwargs: Any) -> Agent:
+        """Create a standard agent with common defaults."""
+        return Agent(
+            config=self.agents_config[config_key],
+            llm=get_ollama_llm(),
+            verbose=True,
+            allow_delegation=False,
+            **kwargs,
+        )
+
     @agent
     def researcher(self) -> Agent:
         settings = get_settings()
         provider = settings.crawl_provider
 
         if provider == "crawl4ai":
-            print(f"🔧 Using Crawl4AI at: {settings.crawl4ai_base_url}")
+            logger.info("Using Crawl4AI at: %s", settings.crawl4ai_base_url)
             crawl_tool = Crawl4AISearchTool(
                 base_url=settings.crawl4ai_base_url,
                 api_key=settings.crawl4ai_api_key,
             )
-            tool_wrapped = crawl_tool
-        else:
-            # Check if self-hosted Firecrawl is configured
-            if settings.firecrawl_base_url:
-                print(f"🔧 Using Firecrawl (self-hosted) at: {settings.firecrawl_base_url}")
-                firecrawl_tool = SelfHostedFirecrawlSearchTool(
+        elif provider == "firecrawl" and settings.firecrawl_base_url:
+            logger.info(
+                "Using Firecrawl (self-hosted) at: %s",
+                settings.firecrawl_base_url,
+            )
+            crawl_tool = FirecrawlSearchWrapper(
+                firecrawl_tool=SelfHostedFirecrawlSearchTool(
                     base_url=settings.firecrawl_base_url,
                     api_key=settings.firecrawl_api_key,
                     max_pages=3,
                     max_results=5,
                 )
-                tool_wrapped = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
-            else:
-                # Use cloud Firecrawl
-                if not settings.firecrawl_api_key:
-                    raise ValueError(
-                        "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai "
-                        "or set FIRECRAWL_BASE_URL for self-hosted."
-                    )
-
-                firecrawl_tool = FirecrawlSearchTool(
+            )
+        elif provider == "firecrawl":
+            if not settings.firecrawl_api_key:
+                raise ValueError(
+                    "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai "
+                    "or set FIRECRAWL_BASE_URL for self-hosted."
+                )
+            crawl_tool = FirecrawlSearchWrapper(
+                firecrawl_tool=FirecrawlSearchTool(
                     api_key=settings.firecrawl_api_key,
                     max_pages=3,
-                    max_results=5
+                    max_results=5,
                 )
-                tool_wrapped = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
-                print("🔧 Using Firecrawl (cloud) provider")
-        
+            )
+            logger.info("Using Firecrawl (cloud) provider")
+        else:
+            raise ValueError(
+                "Unsupported CRAWL_PROVIDER: '%s'. "
+                "Expected 'crawl4ai' or 'firecrawl'." % provider
+            )
+
         return Agent(
-            config=self.agents_config['researcher'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            tools=[tool_wrapped],
+            config=self.agents_config['researcher'],
+            llm=get_ollama_llm(),
+            tools=[crawl_tool],
             verbose=True,
             allow_delegation=False
         )
 
     @agent
     def data_analyst(self) -> Agent:
-        return Agent(
-            config=self.agents_config['data_analyst'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False,
-            max_retries=3
-        )
+        return self._make_simple_agent('data_analyst', max_retries=3)
 
     @agent
     def writer(self) -> Agent:
-        return Agent(
-            config=self.agents_config['writer'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('writer')
 
     @agent
     def editor(self) -> Agent:
-        return Agent(
-            config=self.agents_config['editor'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('editor')
 
     @agent
     def fact_checker(self) -> Agent:
-        return Agent(
-            config=self.agents_config['fact_checker'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('fact_checker')
 
     @agent
     def citation_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config['citation_agent'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('citation_agent')
 
     @agent
     def bias_detection_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config['bias_detection_agent'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('bias_detection_agent')
 
     @agent
     def data_visualization_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config['data_visualization_agent'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('data_visualization_agent')
 
-    # To learn more about structured task outputs,
-    # task dependencies, and task callbacks, check out the documentation:
-    # https://docs.crewai.com/concepts/tasks#overview-of-a-task
     @task
     def research_task(self) -> Task:
         return Task(
@@ -264,15 +216,7 @@ class D4Bl():
     @crew
     def crew(self) -> Crew:
         """Creates the D4Bl crew"""
-        # To learn how to add knowledge sources to your crew, check out the documentation:
-        # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
-        # Memory documentation: https://docs.crewai.com/en/concepts/memory
-
-        # Configure memory with Ollama embeddings to match LLM provider
-        # This enables short-term, long-term, and entity memory for all agents
-        # Explicitly configure embedder to use Ollama instead of default OpenAI
-        
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_base_url = get_settings().ollama_base_url
         embedder_model = "mxbai-embed-large"
         
         # Construct the embedder configuration
@@ -291,62 +235,50 @@ class D4Bl():
         tasks_to_use = self.tasks
         
         if self.selected_agents:
+            # Deduplicate while preserving order
+            selected = list(dict.fromkeys(self.selected_agents))
+
             # Validate selected agent names
             valid_agents = set(self.AGENT_TASK_MAP.keys())
-            selected_set = set(self.selected_agents)
-            invalid_agents = selected_set - valid_agents
+            invalid_agents = set(selected) - valid_agents
             if invalid_agents:
                 raise ValueError(
                     f"Invalid agent names: {invalid_agents}. "
                     f"Valid agents are: {', '.join(sorted(valid_agents))}"
                 )
             
-            # Get agent method names that match selected_agents
             agent_methods = {
-                'researcher': self.researcher,
-                'data_analyst': self.data_analyst,
-                'writer': self.writer,
-                'fact_checker': self.fact_checker,
-                'citation_agent': self.citation_agent,
-                'bias_detection_agent': self.bias_detection_agent,
-                'editor': self.editor,
-                'data_visualization_agent': self.data_visualization_agent,
+                name: getattr(self, name) for name in self.AGENT_TASK_MAP
             }
             agents_to_use = [
                 agent_methods[agent_name]()
-                for agent_name in self.selected_agents
+                for agent_name in selected
                 if agent_name in agent_methods
             ]
-            
+
             # Build selected task names as a set for O(1) lookup
             selected_task_names = {
                 self.AGENT_TASK_MAP[agent_name]
-                for agent_name in self.selected_agents
+                for agent_name in selected
                 if agent_name in self.AGENT_TASK_MAP
             }
 
-            # Get task method names
             task_methods = {
-                'research_task': self.research_task,
-                'analysis_task': self.analysis_task,
-                'writing_task': self.writing_task,
-                'fact_checker_task': self.fact_checker_task,
-                'citation_task': self.citation_task,
-                'bias_detection_task': self.bias_detection_task,
-                'editor_task': self.editor_task,
-                'data_visualization_task': self.data_visualization_task,
+                t: getattr(self, t) for t in self.AGENT_TASK_MAP.values()
             }
 
             # Iterate TASK_ORDER to preserve deterministic sequential order
             tasks_to_use = [
                 task_methods[task_name]()
                 for task_name in self.TASK_ORDER
-                if task_name in selected_task_names and task_name in task_methods
+                if task_name in selected_task_names
             ]
             
             logger.info(
-                f"Filtered to {len(agents_to_use)} agent(s) and {len(tasks_to_use)} task(s): "
-                f"{', '.join(self.selected_agents)}"
+                "Filtered to %s agent(s) and %s task(s): %s",
+                len(agents_to_use),
+                len(tasks_to_use),
+                ", ".join(selected),
             )
 
         return Crew(
@@ -355,7 +287,6 @@ class D4Bl():
             process=Process.sequential,
             verbose=True,
             memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
-            embedder=embedder_config,  # Explicitly set Ollama embedder to avoid OpenAI default
-            # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
+            embedder=embedder_config,
         )
 
