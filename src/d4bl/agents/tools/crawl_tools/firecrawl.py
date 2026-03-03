@@ -114,7 +114,7 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
         """Build shared pageOptions for SDK and HTTP calls."""
         return {
             "maxResults": self._max_results,
-            "timeout": 15000,
+            "timeout": max(int(self._timeout * 1000), 1000),
             "waitFor": 1000,
             "onlyMainContent": True,
             "formats": ["markdown"],

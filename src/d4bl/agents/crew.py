@@ -55,7 +55,7 @@ class D4Bl():
     def before_kickoff_function(self, inputs):
         """Ensure output directory exists before running the crew"""
         os.makedirs('output', exist_ok=True)
-        logger.info("Starting D4BL research crew with inputs: %s", inputs)
+        logger.info("Starting D4BL research crew")
         
         # Validate inputs
         if not inputs.get("query"):
