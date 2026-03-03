@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional
 from uuid import UUID
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -84,7 +84,7 @@ def get_query_engine() -> QueryEngine:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown logic."""
     # --- Startup ---
     try:

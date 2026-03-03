@@ -27,8 +27,8 @@ async def send_websocket_update(job_id: str, message: dict) -> None:
 
     try:
         await websocket.send_json(message)
-    except Exception as exc:  # noqa: BLE001 - best effort logging
-        logger.error("Error sending WebSocket update: %s", exc)
+    except Exception:  # noqa: BLE001 - best effort logging
+        logger.exception("Error sending WebSocket update")
         remove_connection(job_id)
 
 
