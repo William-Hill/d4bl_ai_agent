@@ -3,9 +3,19 @@ from __future__ import annotations
 
 import logging
 import time
+from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from d4bl.services.langfuse.llm_runner import call_llm_text
+
+
+class EvalStatus(str, Enum):
+    """Lifecycle status values returned by Langfuse evaluation helpers."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    PARTIAL_SUCCESS = "partial_success"
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
@@ -52,7 +62,7 @@ def run_llm_evaluation(
         logger.warning("Langfuse not available, skipping %s evaluation", eval_name)
         return {
             "error": "Langfuse not configured",
-            "status": "skipped",
+            "status": EvalStatus.SKIPPED,
             "elapsed_time": time.time() - start_time,
         }
 
@@ -93,7 +103,7 @@ def run_llm_evaluation(
         return {
             score_key: score,
             "feedback": str(feedback)[:500],
-            "status": "success",
+            "status": EvalStatus.SUCCESS,
             "elapsed_time": elapsed_time,
         }
 
@@ -101,7 +111,7 @@ def run_llm_evaluation(
         logger.error("Validation error in %s: %s", eval_name, ve, exc_info=True)
         return {
             "error": str(ve),
-            "status": "failed",
+            "status": EvalStatus.FAILED,
             "error_type": "validation",
             "elapsed_time": time.time() - start_time,
         }
@@ -112,7 +122,7 @@ def run_llm_evaluation(
         )
         return {
             "error": str(e),
-            "status": "failed",
+            "status": EvalStatus.FAILED,
             "error_type": type(e).__name__,
             "elapsed_time": elapsed_time,
         }

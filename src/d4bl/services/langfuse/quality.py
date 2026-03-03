@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.llm_runner import call_llm_text
 from d4bl.services.langfuse.prompts import quality_prompt
 from d4bl.services.langfuse.parsers import parse_first_json_block, default_quality_scores
@@ -28,7 +29,7 @@ def evaluate_research_quality(
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping research quality evaluation")
-        return {"error": "Langfuse not configured", "status": "skipped"}
+        return {"error": "Langfuse not configured", "status": EvalStatus.SKIPPED}
 
     try:
         if not query or not query.strip():
@@ -71,19 +72,19 @@ def evaluate_research_quality(
         return {
             "scores": scores,
             "trace_id": trace_id,
-            "status": "success",
+            "status": EvalStatus.SUCCESS,
             "elapsed_time": elapsed_time,
         }
 
     except ValueError as ve:
         logger.error("Validation error in research quality evaluation: %s", ve, exc_info=True)
-        return {"error": str(ve), "status": "failed", "error_type": "validation"}
+        return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error("Error in research quality evaluation (took %.2fs): %s", elapsed_time, e, exc_info=True)
         return {
             "error": str(e),
-            "status": "failed",
+            "status": EvalStatus.FAILED,
             "error_type": type(e).__name__,
             "elapsed_time": elapsed_time,
         }

@@ -4,6 +4,9 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from d4bl.services.langfuse._base import EvalStatus
+from d4bl.services.langfuse.parsers import keyword_relevance
+
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
@@ -22,22 +25,18 @@ def evaluate_source_relevance(
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping source relevance evaluation")
-        return {"error": "Langfuse not configured", "status": "skipped"}
+        return {"error": "Langfuse not configured", "status": EvalStatus.SKIPPED}
 
     try:
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
         if not sources:
-            return {"scores": {}, "average": 0.0, "status": "skipped", "reason": "no_sources"}
+            return {"scores": {}, "average": 0.0, "status": EvalStatus.SKIPPED, "reason": "no_sources"}
 
         relevance_scores: Dict[str, float] = {}
-        query_keywords = set(query.lower().split())
         for idx, source in enumerate(sources):
             try:
-                url_lower = source.lower()
-                matches = sum(1 for keyword in query_keywords if keyword in url_lower)
-                relevance = max(1.0, min(5.0, (matches / len(query_keywords)) * 5)) if query_keywords else 3.0
-                relevance_scores[source] = relevance
+                relevance_scores[source] = keyword_relevance(query, source)
             except Exception as source_error:
                 logger.warning("Error evaluating source %s (%s...): %s", idx + 1, source[:50], source_error)
                 relevance_scores[source] = 3.0
@@ -65,19 +64,19 @@ def evaluate_source_relevance(
         return {
             "scores": relevance_scores,
             "average": avg_relevance,
-            "status": "success",
+            "status": EvalStatus.SUCCESS,
             "elapsed_time": elapsed_time,
         }
 
     except ValueError as ve:
         logger.error("Validation error in source relevance: %s", ve, exc_info=True)
-        return {"error": str(ve), "status": "failed", "error_type": "validation"}
+        return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error("Error in source relevance (took %.2fs): %s", elapsed_time, e, exc_info=True)
         return {
             "error": str(e),
-            "status": "failed",
+            "status": EvalStatus.FAILED,
             "error_type": type(e).__name__,
             "elapsed_time": elapsed_time,
         }
