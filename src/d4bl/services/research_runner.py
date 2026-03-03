@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import os
 import queue
+import re
 import sys
 from datetime import datetime
 from typing import Optional, List
@@ -26,7 +28,7 @@ from d4bl.app.websocket_manager import (
     send_websocket_update,
     set_job_logs,
 )
-from d4bl.services.error_handling import safe_execute, ErrorRecoveryStrategy
+from d4bl.services.error_handling import ErrorRecoveryStrategy
 from d4bl.services.langfuse.evals import run_comprehensive_evaluation
 import logging
 
@@ -51,7 +53,6 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
         return validation_result
     
     # Extract key terms from query (simple keyword extraction)
-    import re
     query_lower = query.lower()
     # Extract meaningful words (3+ characters, not common stop words)
     stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'how', 'what', 'when', 'where', 'why', 'which', 'who'}
@@ -159,9 +160,7 @@ async def update_job_status(
         if progress is not None:
             job.progress = progress
         if result is not None:
-            # Include evaluation results in result dict
             if evaluation_results is not None:
-                result = result or {}
                 result["evaluation_results"] = evaluation_results
             job.result = result
         if research_data is not None:
@@ -270,10 +269,7 @@ async def run_research_job(
                     crew_instance.selected_agents = selected_agents
             except Exception as exc:
                 error_msg = f"Failed to initialize crew: {exc}"
-                print(f"ERROR initializing crew: {error_msg}")
-                import traceback
-
-                traceback.print_exc()
+                logger.error("Failed to initialize crew: %s", exc, exc_info=True)
                 raise Exception(error_msg) from exc
 
             original_stdout = sys.stdout
@@ -406,7 +402,6 @@ async def run_research_job(
                             if "research" in agent_name.lower() or "researcher" in agent_name.lower():
                                 # Extract source URLs from crawl tool results
                                 # The crawl tool returns JSON with source_urls or urls_crawled
-                                import json
                                 try:
                                     # Try to parse output as JSON (crawl tool returns JSON)
                                     if output.strip().startswith('{'):
@@ -515,41 +510,24 @@ async def run_research_job(
                     sources.extend(research_data_dict["source_urls"])
                     logger.info("Using %s source URLs from crawl results", len(research_data_dict["source_urls"]))
                 
-                # Also extract sources from research data text (fallback)
-                import re
-                # More comprehensive URL pattern that handles parentheses and common URL endings
+                # Also extract URLs from research text (fallback)
                 url_pattern = r'https?://[^\s\)\]\>\"\'\;]+'
-                
-                # Extract from research findings
-                for finding in research_data_dict.get("research_findings", []):
-                    content = finding.get("content", "")
-                    if content:
-                        urls = re.findall(url_pattern, content)
-                        sources.extend(urls)
-                
-                # Extract from analysis data
-                for analysis in research_data_dict.get("analysis_data", []):
-                    content = analysis.get("content", "")
-                    if content:
-                        urls = re.findall(url_pattern, content)
-                        sources.extend(urls)
-                
-                # Extract from all research content
-                if research_data_dict.get("all_research_content"):
-                    urls = re.findall(url_pattern, research_data_dict["all_research_content"])
-                    sources.extend(urls)
-                
-                # Also check raw output for URLs
-                if result_dict.get("raw_output"):
-                    urls = re.findall(url_pattern, result_dict["raw_output"])
-                    sources.extend(urls)
-                
-                # Deduplicate and clean URLs
-                sources = list(set(sources))
-                # Remove trailing punctuation that might have been captured
-                sources = [url.rstrip('.,;:!?)') for url in sources]
-                # Filter out invalid URLs (must start with http:// or https://)
-                sources = [url for url in sources if url.startswith(('http://', 'https://'))]
+
+                # Extract from all_research_content (already includes findings + analysis)
+                # and raw_output (covers anything not in research_content)
+                for text in (
+                    research_data_dict.get("all_research_content", ""),
+                    result_dict.get("raw_output", ""),
+                ):
+                    if text:
+                        sources.extend(re.findall(url_pattern, text))
+
+                # Deduplicate, clean trailing punctuation, and validate
+                sources = list({
+                    cleaned
+                    for url in sources
+                    if (cleaned := url.rstrip('.,;:!?)')).startswith(('http://', 'https://'))
+                })
                 
                 if not sources:
                     logger.warning("⚠️ No valid URLs found in research output")
@@ -560,7 +538,6 @@ async def run_research_job(
                 extracted_contents = []
                 try:
                     # Parse crawl results from research findings
-                    import json
                     for finding in research_data_dict.get("research_findings", []):
                         content = finding.get("content", "")
                         if content and content.strip().startswith('{'):
