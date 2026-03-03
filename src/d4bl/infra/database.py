@@ -2,7 +2,7 @@
 Database models and connection for storing research queries and results
 """
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from uuid import UUID, uuid4
 
@@ -12,6 +12,11 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 Base = declarative_base()
+
+
+def _utc_now() -> datetime:
+    """Return the current UTC time as a timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class ResearchJob(Base):
@@ -28,8 +33,8 @@ class ResearchJob(Base):
     research_data = Column(JSON, nullable=True)  # Store research data for use as reference in evaluations
     error = Column(Text, nullable=True)
     logs = Column(JSON, nullable=True)  # Store logs array as JSON
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
     completed_at = Column(DateTime, nullable=True)
 
     def to_dict(self):
@@ -66,7 +71,7 @@ class EvaluationResult(Base):
     input_text = Column(Text, nullable=True)
     output_text = Column(Text, nullable=True)
     context_text = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
 
     def to_dict(self):
         return {
@@ -99,7 +104,7 @@ class CensusIndicator(Base):
     metric = Column(String(100), nullable=False)
     value = Column(Float, nullable=False)
     margin_of_error = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
 
     __table_args__ = (
         # Composite index to support common query filters
@@ -140,8 +145,8 @@ class PolicyBill(Base):
     introduced_date = Column(Date, nullable=True)
     last_action_date = Column(Date, nullable=True)
     url = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
 
     __table_args__ = (
         # Support common filters for policy tracker views
