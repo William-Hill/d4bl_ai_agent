@@ -230,56 +230,34 @@ class VectorStore:
             List of matching records with similarity scores
         """
         try:
-            # Generate embedding for query
             query_embedding = await self.generate_embedding(query_text)
-            
             query_embedding_str = self._format_embedding(query_embedding)
 
-            # Build query
+            # Build query with optional job_id filter
+            where_clauses = [
+                "1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold"
+            ]
+            params: Dict[str, Any] = {
+                "query_embedding": query_embedding_str,
+                "threshold": similarity_threshold,
+                "limit": limit,
+            }
+
             if job_id:
-                query = text("""
-                    SELECT 
-                        id,
-                        job_id,
-                        url,
-                        content,
-                        content_type,
-                        metadata,
-                        created_at,
-                        1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
-                    FROM scraped_content_vectors
-                    WHERE job_id = :job_id
-                        AND 1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold
-                    ORDER BY embedding <=> CAST(:query_embedding AS vector)
-                    LIMIT :limit
-                """)
-                params = {
-                    "query_embedding": query_embedding_str,
-                    "job_id": str(job_id),
-                    "threshold": similarity_threshold,
-                    "limit": limit,
-                }
-            else:
-                query = text("""
-                    SELECT 
-                        id,
-                        job_id,
-                        url,
-                        content,
-                        content_type,
-                        metadata,
-                        created_at,
-                        1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
-                    FROM scraped_content_vectors
-                    WHERE 1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold
-                    ORDER BY embedding <=> CAST(:query_embedding AS vector)
-                    LIMIT :limit
-                """)
-                params = {
-                    "query_embedding": query_embedding_str,
-                    "threshold": similarity_threshold,
-                    "limit": limit,
-                }
+                where_clauses.append("job_id = :job_id")
+                params["job_id"] = str(job_id)
+
+            where_sql = " AND ".join(where_clauses)
+
+            query = text(f"""
+                SELECT
+                    id, job_id, url, content, content_type, metadata, created_at,
+                    1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
+                FROM scraped_content_vectors
+                WHERE {where_sql}
+                ORDER BY embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :limit
+            """)
 
             result = await db.execute(query, params)
 
@@ -314,23 +292,17 @@ class VectorStore:
             List of records
         """
         try:
-            query = text("""
-                SELECT 
-                    id,
-                    job_id,
-                    url,
-                    content,
-                    content_type,
-                    metadata,
-                    created_at
+            limit_clause = "LIMIT :limit" if limit else ""
+            query = text(f"""
+                SELECT id, job_id, url, content, content_type, metadata, created_at
                 FROM scraped_content_vectors
                 WHERE job_id = :job_id
                 ORDER BY created_at DESC
+                {limit_clause}
             """)
-            
-            params = {"job_id": str(job_id)}
+
+            params: Dict[str, Any] = {"job_id": str(job_id)}
             if limit:
-                query = text(str(query) + " LIMIT :limit")
                 params["limit"] = limit
 
             result = await db.execute(query, params)
