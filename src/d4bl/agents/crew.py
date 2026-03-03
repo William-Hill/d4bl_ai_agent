@@ -2,29 +2,21 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-import json
 from typing import List, Optional
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
 
-# Import error handling utilities
-from d4bl.services.error_handling import retry_with_backoff, safe_execute, ErrorRecoveryStrategy
 from d4bl.settings import get_settings
 from d4bl.agents.tools import (
     Crawl4AISearchTool,
     FirecrawlSearchWrapper,
     SelfHostedFirecrawlSearchTool,
 )
-from d4bl.llm import get_ollama_llm, reset_ollama_llm
-from d4bl.observability import get_langfuse_client
+from d4bl.llm import get_ollama_llm
 
 logger = logging.getLogger(__name__)
-
-# Serper.dev API for search query to URL conversion
-# Crawl4AI only works with URLs, so we use Serper.dev to convert search queries to URLs
-# Serper.dev uses a simple REST API (no package needed)
 
 # Load environment variables from .env if present (best-effort)
 project_root = Path(__file__).parent.parent.parent
@@ -34,13 +26,13 @@ if env_path.exists():
     env_loaded = load_dotenv(env_path)
     if env_loaded:
         env_file_loaded = str(env_path)
-        print(f"✓ Loaded .env file from: {env_path}")
+        logger.debug("Loaded .env file from: %s", env_path)
 else:
     env_loaded = False
 
 # Print which environment variables are loaded (without showing full values)
 if env_file_loaded:
-    print("\n📋 Environment variables loaded from .env")
+    logger.debug("Environment variables loaded from .env")
 
 
 @CrewBase
@@ -81,7 +73,7 @@ class D4Bl():
     def before_kickoff_function(self, inputs):
         """Ensure output directory exists before running the crew"""
         os.makedirs('output', exist_ok=True)
-        print(f"Starting D4BL research crew with inputs: {inputs}")
+        logger.info("Starting D4BL research crew with inputs: %s", inputs)
         
         # Validate inputs
         if not inputs.get("query"):
@@ -91,55 +83,49 @@ class D4Bl():
         logger.info(f"Research query validated: {inputs.get('query')[:100]}...")
         return inputs
 
-    # Learn more about YAML configuration files here:
-    # Agents: https://docs.crewai.com/concepts/agents#yaml-configuration-recommended
-    # Tasks: https://docs.crewai.com/concepts/tasks#yaml-configuration-recommended
-    
-    # If you would like to add tools to your agents, you can learn more about it here:
-    # https://docs.crewai.com/concepts/agents#agent-tools
     @agent
     def researcher(self) -> Agent:
         settings = get_settings()
         provider = settings.crawl_provider
 
         if provider == "crawl4ai":
-            print(f"🔧 Using Crawl4AI at: {settings.crawl4ai_base_url}")
+            logger.info("Using Crawl4AI at: %s", settings.crawl4ai_base_url)
             crawl_tool = Crawl4AISearchTool(
                 base_url=settings.crawl4ai_base_url,
                 api_key=settings.crawl4ai_api_key,
             )
-            tool_wrapped = crawl_tool
-        else:
-            # Check if self-hosted Firecrawl is configured
-            if settings.firecrawl_base_url:
-                print(f"🔧 Using Firecrawl (self-hosted) at: {settings.firecrawl_base_url}")
-                firecrawl_tool = SelfHostedFirecrawlSearchTool(
+        elif settings.firecrawl_base_url:
+            logger.info(
+                "Using Firecrawl (self-hosted) at: %s",
+                settings.firecrawl_base_url,
+            )
+            crawl_tool = FirecrawlSearchWrapper(
+                firecrawl_tool=SelfHostedFirecrawlSearchTool(
                     base_url=settings.firecrawl_base_url,
                     api_key=settings.firecrawl_api_key,
                     max_pages=3,
                     max_results=5,
                 )
-                tool_wrapped = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
-            else:
-                # Use cloud Firecrawl
-                if not settings.firecrawl_api_key:
-                    raise ValueError(
-                        "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai "
-                        "or set FIRECRAWL_BASE_URL for self-hosted."
-                    )
-
-                firecrawl_tool = FirecrawlSearchTool(
+            )
+        else:
+            if not settings.firecrawl_api_key:
+                raise ValueError(
+                    "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai "
+                    "or set FIRECRAWL_BASE_URL for self-hosted."
+                )
+            crawl_tool = FirecrawlSearchWrapper(
+                firecrawl_tool=FirecrawlSearchTool(
                     api_key=settings.firecrawl_api_key,
                     max_pages=3,
-                    max_results=5
+                    max_results=5,
                 )
-                tool_wrapped = FirecrawlSearchWrapper(firecrawl_tool=firecrawl_tool)
-                print("🔧 Using Firecrawl (cloud) provider")
-        
+            )
+            logger.info("Using Firecrawl (cloud) provider")
+
         return Agent(
-            config=self.agents_config['researcher'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            tools=[tool_wrapped],
+            config=self.agents_config['researcher'],
+            llm=get_ollama_llm(),
+            tools=[crawl_tool],
             verbose=True,
             allow_delegation=False
         )
@@ -208,9 +194,6 @@ class D4Bl():
             allow_delegation=False
         )
 
-    # To learn more about structured task outputs,
-    # task dependencies, and task callbacks, check out the documentation:
-    # https://docs.crewai.com/concepts/tasks#overview-of-a-task
     @task
     def research_task(self) -> Task:
         return Task(
@@ -264,13 +247,6 @@ class D4Bl():
     @crew
     def crew(self) -> Crew:
         """Creates the D4Bl crew"""
-        # To learn how to add knowledge sources to your crew, check out the documentation:
-        # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
-        # Memory documentation: https://docs.crewai.com/en/concepts/memory
-
-        # Configure memory with Ollama embeddings to match LLM provider
-        # This enables short-term, long-term, and entity memory for all agents
-        # Explicitly configure embedder to use Ollama instead of default OpenAI
         
         ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         embedder_model = "mxbai-embed-large"
@@ -355,7 +331,6 @@ class D4Bl():
             process=Process.sequential,
             verbose=True,
             memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
-            embedder=embedder_config,  # Explicitly set Ollama embedder to avoid OpenAI default
-            # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
+            embedder=embedder_config,
         )
 
