@@ -65,6 +65,16 @@ class D4Bl():
         logger.info(f"Research query validated: {inputs.get('query')[:100]}...")
         return inputs
 
+    def _make_simple_agent(self, config_key: str, **kwargs) -> Agent:
+        """Create a standard agent with common defaults."""
+        return Agent(
+            config=self.agents_config[config_key],
+            llm=get_ollama_llm(),
+            verbose=True,
+            allow_delegation=False,
+            **kwargs,
+        )
+
     @agent
     def researcher(self) -> Agent:
         settings = get_settings()
@@ -114,67 +124,31 @@ class D4Bl():
 
     @agent
     def data_analyst(self) -> Agent:
-        return Agent(
-            config=self.agents_config['data_analyst'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False,
-            max_retries=3
-        )
+        return self._make_simple_agent('data_analyst', max_retries=3)
 
     @agent
     def writer(self) -> Agent:
-        return Agent(
-            config=self.agents_config['writer'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('writer')
 
     @agent
     def editor(self) -> Agent:
-        return Agent(
-            config=self.agents_config['editor'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('editor')
 
     @agent
     def fact_checker(self) -> Agent:
-        return Agent(
-            config=self.agents_config['fact_checker'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('fact_checker')
 
     @agent
     def citation_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config['citation_agent'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('citation_agent')
 
     @agent
     def bias_detection_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config['bias_detection_agent'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('bias_detection_agent')
 
     @agent
     def data_visualization_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config['data_visualization_agent'], # type: ignore[index]
-            llm=get_ollama_llm(),  # Use Ollama LLM configured above
-            verbose=True,
-            allow_delegation=False
-        )
+        return self._make_simple_agent('data_visualization_agent')
 
     @task
     def research_task(self) -> Task:
@@ -258,16 +232,8 @@ class D4Bl():
                     f"Valid agents are: {', '.join(sorted(valid_agents))}"
                 )
             
-            # Get agent method names that match selected_agents
             agent_methods = {
-                'researcher': self.researcher,
-                'data_analyst': self.data_analyst,
-                'writer': self.writer,
-                'fact_checker': self.fact_checker,
-                'citation_agent': self.citation_agent,
-                'bias_detection_agent': self.bias_detection_agent,
-                'editor': self.editor,
-                'data_visualization_agent': self.data_visualization_agent,
+                name: getattr(self, name) for name in self.AGENT_TASK_MAP
             }
             agents_to_use = [
                 agent_methods[agent_name]()
@@ -282,23 +248,15 @@ class D4Bl():
                 if agent_name in self.AGENT_TASK_MAP
             }
 
-            # Get task method names
             task_methods = {
-                'research_task': self.research_task,
-                'analysis_task': self.analysis_task,
-                'writing_task': self.writing_task,
-                'fact_checker_task': self.fact_checker_task,
-                'citation_task': self.citation_task,
-                'bias_detection_task': self.bias_detection_task,
-                'editor_task': self.editor_task,
-                'data_visualization_task': self.data_visualization_task,
+                t: getattr(self, t) for t in self.AGENT_TASK_MAP.values()
             }
 
             # Iterate TASK_ORDER to preserve deterministic sequential order
             tasks_to_use = [
                 task_methods[task_name]()
                 for task_name in self.TASK_ORDER
-                if task_name in selected_task_names and task_name in task_methods
+                if task_name in selected_task_names
             ]
             
             logger.info(

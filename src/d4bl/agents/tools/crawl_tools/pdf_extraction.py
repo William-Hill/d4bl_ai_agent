@@ -13,6 +13,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+MIN_CONTENT_LENGTH = 50
+
 # Try to import PDF extraction library for fallback
 try:
     from pypdf import PdfReader
@@ -33,21 +36,20 @@ def is_valid_content(result: dict) -> bool:
     """Check if a crawl result has valid, extractable content."""
     # Check for extracted content
     extracted = result.get("extracted_content", "")
-    if extracted and len(str(extracted).strip()) > 50:
+    if extracted and len(str(extracted).strip()) > MIN_CONTENT_LENGTH:
         return True
-    
+
     # Check for cleaned HTML (must have actual content, not just structure)
     cleaned_html = result.get("cleaned_html", "")
     if cleaned_html:
-        # Remove HTML tags and check text length
-        text_content = re.sub(r'<[^>]+>', '', str(cleaned_html))
-        if len(text_content.strip()) > 50:
+        text_content = _HTML_TAG_RE.sub('', str(cleaned_html))
+        if len(text_content.strip()) > MIN_CONTENT_LENGTH:
             return True
-    
+
     # Check for raw HTML (must have substantial text content)
     html = result.get("html", "")
     if html:
-        text_content = re.sub(r'<[^>]+>', '', str(html))
+        text_content = _HTML_TAG_RE.sub('', str(html))
         # Filter out common empty HTML patterns
         empty_patterns = [
             r'^<html></html>$',
@@ -57,9 +59,9 @@ def is_valid_content(result: dict) -> bool:
         for pattern in empty_patterns:
             if re.match(pattern, str(html).strip(), re.IGNORECASE):
                 return False
-        if len(text_content.strip()) > 50:
+        if len(text_content.strip()) > MIN_CONTENT_LENGTH:
             return True
-    
+
     # PDF files might have null extracted_content but should be flagged
     url = result.get("url", "")
     if url and url.lower().endswith('.pdf'):
