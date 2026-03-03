@@ -142,7 +142,9 @@ def run_comprehensive_evaluation(
             results["evaluations"]["content_relevance"] = {"error": str(e), "status": "failed"}
     else:
         eval_logger.info("No extracted contents provided, skipping content relevance evaluation")
-        results["evaluations"]["content_relevance"] = {"status": "skipped", "reason": "no_extracted_contents"}
+        results["evaluations"]["content_relevance"] = {
+            "status": "skipped", "reason": "no_extracted_contents",
+        }
 
     if report and report.strip():
         eval_logger.info("Running report relevance evaluation...")
@@ -194,20 +196,33 @@ def run_comprehensive_evaluation(
     elapsed_time = time.time() - start_time
     results["elapsed_time"] = elapsed_time
 
+    skipped_evals = sum(
+        1 for r in results["evaluations"].values() if r.get("status") == "skipped"
+    )
     successful_evals = sum(
         1 for r in results["evaluations"].values() if r.get("status") == "success"
     )
-    total_evals = len(results["evaluations"])
+    ran_evals = len(results["evaluations"]) - skipped_evals
 
-    if successful_evals == total_evals:
+    if ran_evals == 0:
+        results["status"] = "skipped"
+        eval_logger.warning("=" * 60)
+        eval_logger.warning("All evaluations skipped in %.2fs", elapsed_time)
+        eval_logger.warning("=" * 60)
+    elif successful_evals == ran_evals:
         results["status"] = "success"
         eval_logger.info("=" * 60)
-        eval_logger.info("All %s evaluations passed in %.2fs", total_evals, elapsed_time)
+        eval_logger.info(
+            "All %s evaluations passed in %.2fs", ran_evals, elapsed_time,
+        )
         eval_logger.info("=" * 60)
     elif successful_evals > 0:
         results["status"] = "partial_success"
         eval_logger.warning("=" * 60)
-        eval_logger.warning("%s/%s evaluations passed in %.2fs", successful_evals, total_evals, elapsed_time)
+        eval_logger.warning(
+            "%s/%s evaluations passed in %.2fs",
+            successful_evals, ran_evals, elapsed_time,
+        )
         eval_logger.warning("=" * 60)
     else:
         results["status"] = "failed"

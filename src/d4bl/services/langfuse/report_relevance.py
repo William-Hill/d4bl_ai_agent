@@ -18,7 +18,7 @@ def _keyword_relevance(query: str, text: str) -> float:
     query_words = set(query.lower().split())
     text_lower = text.lower()
     matches = sum(1 for word in query_words if word in text_lower and len(word) > 3)
-    return min(5.0, (matches / len(query_words)) * 5) if query_words else 3.0
+    return max(1.0, min(5.0, (matches / len(query_words)) * 5)) if query_words else 3.0
 
 
 def evaluate_report_relevance(
@@ -53,8 +53,13 @@ def evaluate_report_relevance(
         evaluation = call_llm_text(llm, prompt, max_retries=2, retry_delay=2.0)
 
         parsed = parse_first_json_block(str(evaluation))
-        if parsed and "relevance_score" in parsed:
-            relevance_score = max(1.0, min(5.0, float(parsed["relevance_score"])))
+        try:
+            raw_score = float(parsed["relevance_score"]) if parsed and "relevance_score" in parsed else None
+        except (ValueError, TypeError):
+            raw_score = None
+
+        if raw_score is not None:
+            relevance_score = max(1.0, min(5.0, raw_score))
             explanation = parsed.get("explanation", "")
             key_points_addressed = parsed.get("key_points_addressed", [])
             missing_aspects = parsed.get("missing_aspects", [])
@@ -88,9 +93,19 @@ def evaluate_report_relevance(
         }
 
     except ValueError as ve:
-        logger.error("Validation error in report relevance evaluation: %s", ve, exc_info=True)
+        logger.error(
+            "Validation error in report relevance evaluation: %s", ve, exc_info=True,
+        )
         return {"error": str(ve), "status": "failed", "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
-        logger.error("Error in report relevance evaluation (took %.2fs): %s", elapsed_time, e, exc_info=True)
-        return {"error": str(e), "status": "failed", "error_type": type(e).__name__, "elapsed_time": elapsed_time}
+        logger.error(
+            "Error in report relevance evaluation (took %.2fs): %s",
+            elapsed_time, e, exc_info=True,
+        )
+        return {
+            "error": str(e),
+            "status": "failed",
+            "error_type": type(e).__name__,
+            "elapsed_time": elapsed_time,
+        }

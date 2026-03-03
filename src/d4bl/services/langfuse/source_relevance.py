@@ -36,7 +36,7 @@ def evaluate_source_relevance(
             try:
                 url_lower = source.lower()
                 matches = sum(1 for keyword in query_keywords if keyword in url_lower)
-                relevance = min(5.0, (matches / len(query_keywords)) * 5) if query_keywords else 3.0
+                relevance = max(1.0, min(5.0, (matches / len(query_keywords)) * 5)) if query_keywords else 3.0
                 relevance_scores[source] = relevance
             except Exception as source_error:
                 logger.warning("Error evaluating source %s (%s...): %s", idx + 1, source[:50], source_error)
@@ -75,4 +75,9 @@ def evaluate_source_relevance(
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error("Error in source relevance (took %.2fs): %s", elapsed_time, e, exc_info=True)
-        return {"error": str(e), "status": "failed", "error_type": type(e).__name__, "elapsed_time": elapsed_time}
+        return {
+            "error": str(e),
+            "status": "failed",
+            "error_type": type(e).__name__,
+            "elapsed_time": elapsed_time,
+        }

@@ -50,7 +50,11 @@ def run_llm_evaluation(
 
     if not langfuse:
         logger.warning("Langfuse not available, skipping %s evaluation", eval_name)
-        return {"error": "Langfuse not configured", "status": "skipped"}
+        return {
+            "error": "Langfuse not configured",
+            "status": "skipped",
+            "elapsed_time": time.time() - start_time,
+        }
 
     try:
         if llm is None:
@@ -95,7 +99,12 @@ def run_llm_evaluation(
 
     except ValueError as ve:
         logger.error("Validation error in %s: %s", eval_name, ve, exc_info=True)
-        return {"error": str(ve), "status": "failed", "error_type": "validation"}
+        return {
+            "error": str(ve),
+            "status": "failed",
+            "error_type": "validation",
+            "elapsed_time": time.time() - start_time,
+        }
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error(
