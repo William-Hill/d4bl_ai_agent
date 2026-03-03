@@ -13,7 +13,7 @@ PROBLEMATIC_DOMAINS: frozenset[str] = frozenset({
     'jstor.org', 'sciencedirect.com', 'ieee.org', 'acm.org',
     'springer.com', 'nature.com', 'elsevier.com', 'wiley.com',
     'tandfonline.com', 'sagepub.com', 'oup.com', 'cambridge.org',
-    'pubmed.ncbi.nlm.nih.gov', 'arxiv.org/pdf', 'researchgate.net',
+    'pubmed.ncbi.nlm.nih.gov', 'arxiv.org', 'researchgate.net',
     'academia.edu', 'semanticscholar.org',
 })
 

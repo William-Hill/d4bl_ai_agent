@@ -13,7 +13,6 @@ from crewai_tools import FirecrawlSearchTool
 from pydantic import BaseModel
 
 from d4bl.agents.tools.crawl_tools.utils import (
-    PROBLEMATIC_DOMAINS,
     FirecrawlSearchWrapperInput,
     filter_problematic_urls,
 )
@@ -117,7 +116,6 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
             "maxResults": self._max_results,
             "timeout": 15000,
             "waitFor": 1000,
-            "excludeDomains": sorted(PROBLEMATIC_DOMAINS),
             "onlyMainContent": True,
             "formats": ["markdown"],
         }

@@ -139,7 +139,7 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> Optional[dict]:
             
             extracted_text = "\n\n".join(text_content)
             
-            if not extracted_text or len(extracted_text.strip()) < 50:
+            if not extracted_text or len(extracted_text.strip()) < MIN_CONTENT_LENGTH:
                 logger.warning("PDF extraction produced minimal content (%s chars)", len(extracted_text))
                 return None
             

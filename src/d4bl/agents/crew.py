@@ -2,7 +2,7 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-from typing import List, Optional
+from typing import Any, List, Optional
 import os
 import logging
 
@@ -62,10 +62,10 @@ class D4Bl():
             raise ValueError("Query is required for research")
         
         # Log input validation
-        logger.info(f"Research query validated: {inputs.get('query')[:100]}...")
+        logger.info("Research query validated: %.100s...", inputs.get('query'))
         return inputs
 
-    def _make_simple_agent(self, config_key: str, **kwargs) -> Agent:
+    def _make_simple_agent(self, config_key: str, **kwargs: Any) -> Agent:
         """Create a standard agent with common defaults."""
         return Agent(
             config=self.agents_config[config_key],
@@ -260,8 +260,10 @@ class D4Bl():
             ]
             
             logger.info(
-                f"Filtered to {len(agents_to_use)} agent(s) and {len(tasks_to_use)} task(s): "
-                f"{', '.join(self.selected_agents)}"
+                "Filtered to %s agent(s) and %s task(s): %s",
+                len(agents_to_use),
+                len(tasks_to_use),
+                ", ".join(self.selected_agents),
             )
 
         return Crew(
