@@ -42,6 +42,14 @@ from d4bl.app.schemas import (
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 
 
+def parse_job_uuid(job_id: str) -> UUID:
+    """Parse a string job ID into a UUID, raising HTTP 400 on failure."""
+    try:
+        return UUID(job_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+
+
 _query_engine = None
 _background_tasks: set = set()
 
@@ -70,7 +78,6 @@ async def startup_event():
     # This prevents OpenTelemetry from trying to export traces when Langfuse is down
     try:
         from d4bl.observability.langfuse import check_langfuse_service_available
-        import os
         from d4bl.settings import get_settings
         
         settings = get_settings()
@@ -159,7 +166,6 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         raise
     except Exception as e:
         print(f"ERROR in create_research: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Error creating research job")
 
@@ -167,11 +173,8 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
 async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
     """Get the status of a research job"""
-    try:
-        job_uuid = UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
+    job_uuid = parse_job_uuid(job_id)
+
     result_query = select(ResearchJob).where(ResearchJob.job_id == job_uuid)
     result_obj = await db.execute(result_query)
     job = result_obj.scalar_one_or_none()
@@ -257,23 +260,7 @@ async def get_evaluations(
 
     result = await db.execute(query)
     rows = result.scalars().all()
-    return [
-        EvaluationResultItem(
-            id=str(row.id),
-            span_id=row.span_id,
-            trace_id=row.trace_id,
-            job_id=str(row.job_id) if row.job_id else None,
-            eval_name=row.eval_name,
-            label=row.label,
-            score=row.score,
-            explanation=row.explanation,
-            input_text=row.input_text,
-            output_text=row.output_text,
-            context_text=row.context_text,
-            created_at=row.created_at.isoformat() if row.created_at else None,
-        )
-        for row in rows
-    ]
+    return [EvaluationResultItem(**row.to_dict()) for row in rows]
 
 
 @app.websocket("/ws/{job_id}")
@@ -373,12 +360,7 @@ async def search_similar_content(
         if not query or not query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        job_uuid = None
-        if job_id:
-            try:
-                job_uuid = UUID(job_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid job ID format")
+        job_uuid = parse_job_uuid(job_id) if job_id else None
         
         vector_store = get_vector_store()
         results = await vector_store.search_similar(
@@ -399,7 +381,6 @@ async def search_similar_content(
         raise
     except Exception as e:
         print(f"Error searching vector database: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Error searching vector database")
 
@@ -417,11 +398,8 @@ async def get_scraped_content_by_job(
         job_id: Research job ID
         limit: Optional limit on number of results
     """
-    try:
-        job_uuid = UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
+    job_uuid = parse_job_uuid(job_id)
+
     try:
         vector_store = get_vector_store()
         results = await vector_store.get_by_job_id(
@@ -437,7 +415,6 @@ async def get_scraped_content_by_job(
         }
     except Exception as e:
         print(f"Error fetching scraped content: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Error fetching scraped content")
 
@@ -480,7 +457,6 @@ async def natural_language_query(
         )
     except Exception as e:
         print(f"Error in NL query: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Query failed")
 
