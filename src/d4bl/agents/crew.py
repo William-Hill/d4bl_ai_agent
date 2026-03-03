@@ -46,7 +46,11 @@ class D4Bl():
         "editor_task",
         "data_visualization_task",
     ]
-    
+
+    assert set(AGENT_TASK_MAP.values()) == set(TASK_ORDER), (
+        "AGENT_TASK_MAP and TASK_ORDER are out of sync"
+    )
+
     def __init__(self):
         """Initialize crew with optional agent selection"""
         self.selected_agents: Optional[List[str]] = None
@@ -222,10 +226,12 @@ class D4Bl():
         tasks_to_use = self.tasks
         
         if self.selected_agents:
+            # Deduplicate while preserving order
+            selected = list(dict.fromkeys(self.selected_agents))
+
             # Validate selected agent names
             valid_agents = set(self.AGENT_TASK_MAP.keys())
-            selected_set = set(self.selected_agents)
-            invalid_agents = selected_set - valid_agents
+            invalid_agents = set(selected) - valid_agents
             if invalid_agents:
                 raise ValueError(
                     f"Invalid agent names: {invalid_agents}. "
@@ -237,14 +243,14 @@ class D4Bl():
             }
             agents_to_use = [
                 agent_methods[agent_name]()
-                for agent_name in self.selected_agents
+                for agent_name in selected
                 if agent_name in agent_methods
             ]
-            
+
             # Build selected task names as a set for O(1) lookup
             selected_task_names = {
                 self.AGENT_TASK_MAP[agent_name]
-                for agent_name in self.selected_agents
+                for agent_name in selected
                 if agent_name in self.AGENT_TASK_MAP
             }
 
@@ -263,7 +269,7 @@ class D4Bl():
                 "Filtered to %s agent(s) and %s task(s): %s",
                 len(agents_to_use),
                 len(tasks_to_use),
-                ", ".join(self.selected_agents),
+                ", ".join(selected),
             )
 
         return Crew(
