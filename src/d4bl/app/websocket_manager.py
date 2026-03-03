@@ -3,10 +3,13 @@ Utilities for managing WebSocket connections and job log state.
 """
 from __future__ import annotations
 
+import logging
 import queue
 from typing import Dict, List, Optional
 
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 active_connections: Dict[str, WebSocket] = {}
 job_logs: Dict[str, List[str]] = {}
@@ -22,7 +25,7 @@ async def send_websocket_update(job_id: str, message: dict) -> None:
     try:
         await websocket.send_json(message)
     except Exception as exc:  # noqa: BLE001 - best effort logging
-        print(f"Error sending WebSocket update: {exc}")
+        logger.error("Error sending WebSocket update: %s", exc)
         remove_connection(job_id)
 
 

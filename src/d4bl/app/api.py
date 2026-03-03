@@ -2,6 +2,7 @@
 FastAPI backend for D4BL AI Agent UI
 """
 import asyncio
+import logging
 import os
 from datetime import datetime
 from functools import lru_cache
@@ -12,7 +13,6 @@ from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketD
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-import traceback
 
 from d4bl.infra.database import (
     CensusIndicator,
@@ -41,6 +41,8 @@ from d4bl.app.schemas import (
     StateSummaryItem,
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
+
+logger = logging.getLogger(__name__)
 
 
 def parse_job_uuid(job_id: str) -> UUID:
@@ -78,10 +80,10 @@ async def startup_event():
     try:
         init_db()
         await create_tables()
-        print("✓ Database initialized successfully")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"⚠ Warning: Database initialization failed: {e}")
-        print("  The application will continue but jobs won't be persisted.")
+        logger.warning("Database initialization failed: %s", e)
+        logger.warning("The application will continue but jobs won't be persisted.")
     
     # Check Langfuse availability early and unset OTLP endpoint if not available
     # This prevents OpenTelemetry from trying to export traces when Langfuse is down
@@ -100,13 +102,13 @@ async def startup_event():
                 langfuse_otel_host = langfuse_otel_host.replace(":3002", ":3000")
         
         if not check_langfuse_service_available(langfuse_otel_host):
-            print("⚠️ Langfuse service not available. Unsetting OTLP endpoint to prevent export errors.")
+            logger.warning("Langfuse service not available. Unsetting OTLP endpoint to prevent export errors.")
             os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
             os.environ.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
         else:
-            print("✓ Langfuse service is available")
+            logger.info("Langfuse service is available")
     except Exception as e:
-        print(f"⚠️ Could not check Langfuse availability: {e}")
+        logger.warning("Could not check Langfuse availability: %s", e)
         # Continue anyway - let individual components handle it
 
 
@@ -168,8 +170,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        print(f"ERROR in create_research: {e}")
-        traceback.print_exc()
+        logger.error("Error in create_research: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error creating research job")
 
 
@@ -221,7 +222,7 @@ async def get_job_history(
             page_size=page_size
         )
     except Exception as e:
-        print(f"Error fetching job history: {e}")
+        logger.error("Error fetching job history: %s", e)
         raise HTTPException(status_code=500, detail="Error fetching job history")
 
 
@@ -300,7 +301,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                         })
                 break
         except Exception as db_error:
-            print(f"Error fetching job from database: {db_error}")
+            logger.error("Error fetching job from database: %s", db_error)
             # Fallback to in-memory logs if available
             fallback_logs = get_job_logs(job_id)
             if fallback_logs:
@@ -323,7 +324,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error("WebSocket error: %s", e)
     finally:
         remove_connection(job_id)
 
@@ -375,8 +376,7 @@ async def search_similar_content(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error searching vector database: {e}")
-        traceback.print_exc()
+        logger.error("Error searching vector database: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error searching vector database")
 
 
@@ -409,8 +409,7 @@ async def get_scraped_content_by_job(
             "count": len(results),
         }
     except Exception as e:
-        print(f"Error fetching scraped content: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching scraped content: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching scraped content")
 
 
@@ -448,8 +447,7 @@ async def natural_language_query(
             query=result.query,
         )
     except Exception as e:
-        print(f"Error in NL query: {e}")
-        traceback.print_exc()
+        logger.error("Error in NL query: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Query failed")
 
 
@@ -492,8 +490,7 @@ async def get_indicators(
             for r in rows
         ]
     except Exception as e:
-        print(f"Error fetching indicators: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching indicators: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching indicators") from e
 
 
@@ -537,8 +534,7 @@ async def get_policies(
             for r in rows
         ]
     except Exception as e:
-        print(f"Error fetching policies: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching policies: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching policies") from e
 
 
@@ -595,8 +591,7 @@ async def get_states_summary(db: AsyncSession = Depends(get_db)):
 
         return summary
     except Exception as e:
-        print(f"Error fetching state summary: {e}")
-        traceback.print_exc()
+        logger.error("Error fetching state summary: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching state summary") from e
 
 
