@@ -5,20 +5,14 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.llm_runner import call_llm_text
 from d4bl.services.langfuse.prompts import content_relevance_prompt
-from d4bl.services.langfuse.parsers import parse_first_json_block
+from d4bl.services.langfuse.parsers import keyword_relevance, parse_first_json_block
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
-
-def _keyword_relevance(query: str, text: str) -> float:
-    """Fallback keyword-matching relevance score."""
-    query_words = set(query.lower().split())
-    text_lower = text.lower()
-    matches = sum(1 for word in query_words if word in text_lower and len(word) > 3)
-    return max(1.0, min(5.0, (matches / len(query_words)) * 5)) if query_words else 3.0
 
 
 def evaluate_content_relevance(
@@ -36,13 +30,13 @@ def evaluate_content_relevance(
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping content relevance evaluation")
-        return {"error": "Langfuse not configured", "status": "skipped"}
+        return {"error": "Langfuse not configured", "status": EvalStatus.SKIPPED}
 
     try:
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
         if not extracted_contents:
-            return {"scores": {}, "average": 0.0, "status": "skipped", "reason": "no_contents"}
+            return {"scores": {}, "average": 0.0, "status": EvalStatus.SKIPPED, "reason": "no_contents"}
 
         if llm is None:
             from d4bl.services.langfuse.llm_runner import get_eval_llm
@@ -77,7 +71,7 @@ def evaluate_content_relevance(
                     }
                 else:
                     relevance_scores[url] = {
-                        "score": _keyword_relevance(query, content_sample),
+                        "score": keyword_relevance(query, content_sample),
                         "explanation": "Fallback keyword matching (LLM parse failed)",
                     }
             except Exception as eval_error:
@@ -110,7 +104,7 @@ def evaluate_content_relevance(
         return {
             "scores": relevance_scores,
             "average": avg_relevance,
-            "status": "success",
+            "status": EvalStatus.SUCCESS,
             "elapsed_time": elapsed_time,
             "urls_evaluated": len(scores_only),
             "urls_total": len(extracted_contents),
@@ -120,7 +114,7 @@ def evaluate_content_relevance(
         logger.error(
             "Validation error in content relevance evaluation: %s", ve, exc_info=True,
         )
-        return {"error": str(ve), "status": "failed", "error_type": "validation"}
+        return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error(
@@ -129,7 +123,7 @@ def evaluate_content_relevance(
         )
         return {
             "error": str(e),
-            "status": "failed",
+            "status": EvalStatus.FAILED,
             "error_type": type(e).__name__,
             "elapsed_time": elapsed_time,
         }

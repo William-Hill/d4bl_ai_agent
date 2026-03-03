@@ -29,7 +29,7 @@ from d4bl.app.websocket_manager import (
     set_job_logs,
 )
 from d4bl.services.error_handling import ErrorRecoveryStrategy
-from d4bl.services.langfuse.evals import run_comprehensive_evaluation
+from d4bl.services.langfuse.runner import run_comprehensive_evaluation
 import logging
 
 logger = logging.getLogger(__name__)
@@ -228,22 +228,26 @@ async def run_research_job(
                 print(f"Error updating job status: {update_err}")
                 break
 
+    async def notify_progress(progress_msg: str) -> None:
+        """Update DB status and push progress via WebSocket in one call."""
+        await set_status(progress_msg)
+        await send_websocket_update(
+            job_id,
+            {
+                "type": "progress",
+                "job_id": job_id,
+                "status": "running",
+                "progress": progress_msg,
+                "trace_id": trace_id_hex,
+            },
+        )
+
     try:
         with tracer.start_as_current_span("d4bl.research_job", attributes=span_attributes) as job_span:
             span_context = job_span.get_span_context()
             trace_id_hex = format(span_context.trace_id, "032x")
 
-            await set_status("Initializing research crew...")
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "progress",
-                    "job_id": job_id,
-                    "status": "running",
-                    "progress": "Initializing research crew...",
-                    "trace_id": trace_id_hex,
-                },
-            )
+            await notify_progress("Initializing research crew...")
 
             inputs = {
                 "query": query,
@@ -251,17 +255,7 @@ async def run_research_job(
                 "current_year": str(datetime.now().year),
             }
 
-            await set_status("Starting research task...")
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "progress",
-                    "job_id": job_id,
-                    "status": "running",
-                    "progress": "Starting research task...",
-                    "trace_id": trace_id_hex,
-                },
-            )
+            await notify_progress("Starting research task...")
 
             try:
                 crew_instance = D4Bl()
@@ -347,17 +341,7 @@ async def run_research_job(
                     pass
                 remove_log_queue(job_id)
 
-            await set_status("Research completed, processing results...")
-            await send_websocket_update(
-                job_id,
-                {
-                    "type": "progress",
-                    "job_id": job_id,
-                    "status": "running",
-                    "progress": "Research completed, processing results...",
-                    "trace_id": trace_id_hex,
-                },
-            )
+            await notify_progress("Research completed, processing results...")
 
             result_dict = {
                 "raw_output": str(result.raw) if hasattr(result, "raw") else str(result),

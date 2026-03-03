@@ -35,7 +35,7 @@ def initialize_langfuse():
         )
 
         # If running in Docker, ensure BASE_URL uses service name and internal port
-        if os.path.exists("/.dockerenv"):
+        if settings.is_docker:
             if "localhost" in langfuse_base_url or ":3002" in langfuse_base_url:
                 langfuse_base_url = langfuse_host
 
@@ -46,7 +46,7 @@ def initialize_langfuse():
             os.environ["LANGFUSE_SECRET_KEY"] = langfuse_secret_key
         if not os.getenv("LANGFUSE_HOST"):
             os.environ["LANGFUSE_HOST"] = langfuse_host
-        if os.path.exists("/.dockerenv"):
+        if settings.is_docker:
             os.environ["LANGFUSE_BASE_URL"] = langfuse_base_url
         elif not os.getenv("LANGFUSE_BASE_URL"):
             os.environ["LANGFUSE_BASE_URL"] = langfuse_base_url

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import time
 import logging
-from typing import Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable, Dict, List, Optional
 
+from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.client import get_langfuse_eval_client
 from d4bl.services.langfuse.llm_runner import get_eval_llm
 from d4bl.services.langfuse.quality import evaluate_research_quality
@@ -35,9 +37,9 @@ def _score_with_default(
     """Extract a score from evaluation results, returning *None* for skipped evals."""
     result = evaluations.get(key, {})
     status = result.get("status")
-    if status == "skipped":
+    if status == EvalStatus.SKIPPED:
         return None
-    if status != "success":
+    if status != EvalStatus.SUCCESS:
         return default
 
     # Navigate dotted paths like "scores.overall"
@@ -90,75 +92,71 @@ def run_comprehensive_evaluation(
 
     context = _build_context(sources, research_output)
 
-    # --- Run evaluations ---
-    eval_specs: list[tuple[str, dict[str, Any]]] = [
-        ("quality", dict(
+    # --- Build evaluation specs (core + optional) ---
+    eval_specs: list[tuple[str, Callable[..., Dict[str, Any]], dict[str, Any]]] = [
+        ("quality", evaluate_research_quality, dict(
             query=query, research_output=research_output, sources=sources,
             trace_id=trace_id, llm=llm, langfuse=langfuse,
         )),
-        ("source_relevance", dict(
+        ("source_relevance", evaluate_source_relevance, dict(
             query=query, sources=sources, trace_id=trace_id, langfuse=langfuse,
         )),
-        ("hallucination", dict(
+        ("hallucination", evaluate_hallucination, dict(
             query=query, answer=research_output, context=context,
             trace_id=trace_id, llm=llm, langfuse=langfuse,
         )),
-        ("reference", dict(
+        ("reference", evaluate_reference, dict(
             query=query, answer=research_output, context=context,
             trace_id=trace_id, llm=llm, langfuse=langfuse,
         )),
-        ("bias", dict(
+        ("bias", evaluate_bias_detection, dict(
             research_output=research_output, query=query,
             trace_id=trace_id, llm=llm, langfuse=langfuse,
         )),
     ]
 
-    eval_funcs = {
-        "quality": evaluate_research_quality,
-        "source_relevance": evaluate_source_relevance,
-        "hallucination": evaluate_hallucination,
-        "reference": evaluate_reference,
-        "bias": evaluate_bias_detection,
-    }
-
-    for name, kwargs in eval_specs:
-        eval_logger.info("Running %s evaluation...", name)
-        try:
-            results["evaluations"][name] = eval_funcs[name](**kwargs)
-        except Exception as e:
-            logger.error("Failed to run %s evaluation: %s", name, e, exc_info=True)
-            results["evaluations"][name] = {"error": str(e), "status": "failed"}
-
-    # Optional evaluations
+    # Add optional evaluations when their preconditions are met
     if extracted_contents and len(extracted_contents) > 0:
-        eval_logger.info("Running content relevance evaluation...")
-        try:
-            results["evaluations"]["content_relevance"] = evaluate_content_relevance(
-                query=query, extracted_contents=extracted_contents,
-                trace_id=trace_id, llm=llm, langfuse=langfuse,
-            )
-        except Exception as e:
-            logger.error("Failed to run content relevance evaluation: %s", e, exc_info=True)
-            results["evaluations"]["content_relevance"] = {"error": str(e), "status": "failed"}
+        eval_specs.append(("content_relevance", evaluate_content_relevance, dict(
+            query=query, extracted_contents=extracted_contents,
+            trace_id=trace_id, llm=llm, langfuse=langfuse,
+        )))
     else:
-        eval_logger.info("No extracted contents provided, skipping content relevance evaluation")
+        eval_logger.info("No extracted contents, skipping content relevance")
         results["evaluations"]["content_relevance"] = {
-            "status": "skipped", "reason": "no_extracted_contents",
+            "status": EvalStatus.SKIPPED, "reason": "no_extracted_contents",
         }
 
     if report and report.strip():
-        eval_logger.info("Running report relevance evaluation...")
-        try:
-            results["evaluations"]["report_relevance"] = evaluate_report_relevance(
-                query=query, report=report,
-                trace_id=trace_id, llm=llm, langfuse=langfuse,
-            )
-        except Exception as e:
-            logger.error("Failed to run report relevance evaluation: %s", e, exc_info=True)
-            results["evaluations"]["report_relevance"] = {"error": str(e), "status": "failed"}
+        eval_specs.append(("report_relevance", evaluate_report_relevance, dict(
+            query=query, report=report,
+            trace_id=trace_id, llm=llm, langfuse=langfuse,
+        )))
     else:
-        eval_logger.info("No report provided, skipping report relevance evaluation")
-        results["evaluations"]["report_relevance"] = {"status": "skipped", "reason": "no_report"}
+        eval_logger.info("No report provided, skipping report relevance")
+        results["evaluations"]["report_relevance"] = {
+            "status": EvalStatus.SKIPPED, "reason": "no_report",
+        }
+
+    # --- Run all evaluations in parallel (finding 3.1) ---
+    def _run_eval(
+        name: str, func: Callable[..., Dict[str, Any]], kwargs: Dict[str, Any],
+    ) -> tuple[str, Dict[str, Any]]:
+        eval_logger.info("Running %s evaluation...", name)
+        try:
+            return name, func(**kwargs)
+        except Exception as e:
+            logger.error("Failed to run %s evaluation: %s", name, e, exc_info=True)
+            return name, {"error": str(e), "status": EvalStatus.FAILED}
+
+    with ThreadPoolExecutor(max_workers=len(eval_specs)) as executor:
+        futures = {
+            executor.submit(_run_eval, name, func, kwargs): name
+            for name, func, kwargs in eval_specs
+        }
+        for future in as_completed(futures):
+            name, result = future.result()
+            results["evaluations"][name] = result
 
     # --- Flush Langfuse once at the end (finding 3.6) ---
     if langfuse:
@@ -197,27 +195,29 @@ def run_comprehensive_evaluation(
     results["elapsed_time"] = elapsed_time
 
     skipped_evals = sum(
-        1 for r in results["evaluations"].values() if r.get("status") == "skipped"
+        1 for r in results["evaluations"].values()
+        if r.get("status") == EvalStatus.SKIPPED
     )
     successful_evals = sum(
-        1 for r in results["evaluations"].values() if r.get("status") == "success"
+        1 for r in results["evaluations"].values()
+        if r.get("status") == EvalStatus.SUCCESS
     )
     ran_evals = len(results["evaluations"]) - skipped_evals
 
     if ran_evals == 0:
-        results["status"] = "skipped"
+        results["status"] = EvalStatus.SKIPPED
         eval_logger.warning("=" * 60)
         eval_logger.warning("All evaluations skipped in %.2fs", elapsed_time)
         eval_logger.warning("=" * 60)
     elif successful_evals == ran_evals:
-        results["status"] = "success"
+        results["status"] = EvalStatus.SUCCESS
         eval_logger.info("=" * 60)
         eval_logger.info(
             "All %s evaluations passed in %.2fs", ran_evals, elapsed_time,
         )
         eval_logger.info("=" * 60)
     elif successful_evals > 0:
-        results["status"] = "partial_success"
+        results["status"] = EvalStatus.PARTIAL_SUCCESS
         eval_logger.warning("=" * 60)
         eval_logger.warning(
             "%s/%s evaluations passed in %.2fs",
@@ -225,7 +225,7 @@ def run_comprehensive_evaluation(
         )
         eval_logger.warning("=" * 60)
     else:
-        results["status"] = "failed"
+        results["status"] = EvalStatus.FAILED
         eval_logger.error("=" * 60)
         eval_logger.error("All evaluations failed in %.2fs", elapsed_time)
         eval_logger.error("=" * 60)

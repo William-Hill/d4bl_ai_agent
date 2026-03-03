@@ -5,20 +5,14 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.llm_runner import call_llm_text
 from d4bl.services.langfuse.prompts import report_relevance_prompt
-from d4bl.services.langfuse.parsers import parse_first_json_block
+from d4bl.services.langfuse.parsers import keyword_relevance, parse_first_json_block
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
-
-def _keyword_relevance(query: str, text: str) -> float:
-    """Fallback keyword-matching relevance score."""
-    query_words = set(query.lower().split())
-    text_lower = text.lower()
-    matches = sum(1 for word in query_words if word in text_lower and len(word) > 3)
-    return max(1.0, min(5.0, (matches / len(query_words)) * 5)) if query_words else 3.0
 
 
 def evaluate_report_relevance(
@@ -36,13 +30,13 @@ def evaluate_report_relevance(
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping report relevance evaluation")
-        return {"error": "Langfuse not configured", "status": "skipped"}
+        return {"error": "Langfuse not configured", "status": EvalStatus.SKIPPED}
 
     try:
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
         if not report or not report.strip():
-            return {"relevance_score": 0.0, "status": "skipped", "reason": "no_report"}
+            return {"relevance_score": 0.0, "status": EvalStatus.SKIPPED, "reason": "no_report"}
 
         if llm is None:
             from d4bl.services.langfuse.llm_runner import get_eval_llm
@@ -64,7 +58,7 @@ def evaluate_report_relevance(
             key_points_addressed = parsed.get("key_points_addressed", [])
             missing_aspects = parsed.get("missing_aspects", [])
         else:
-            relevance_score = _keyword_relevance(query, report_sample)
+            relevance_score = keyword_relevance(query, report_sample)
             explanation = "Fallback keyword matching (LLM parse failed)"
             key_points_addressed = []
             missing_aspects = []
@@ -88,7 +82,7 @@ def evaluate_report_relevance(
             "explanation": explanation,
             "key_points_addressed": key_points_addressed,
             "missing_aspects": missing_aspects,
-            "status": "success",
+            "status": EvalStatus.SUCCESS,
             "elapsed_time": elapsed_time,
         }
 
@@ -96,7 +90,7 @@ def evaluate_report_relevance(
         logger.error(
             "Validation error in report relevance evaluation: %s", ve, exc_info=True,
         )
-        return {"error": str(ve), "status": "failed", "error_type": "validation"}
+        return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error(
@@ -105,7 +99,7 @@ def evaluate_report_relevance(
         )
         return {
             "error": str(e),
-            "status": "failed",
+            "status": EvalStatus.FAILED,
             "error_type": type(e).__name__,
             "elapsed_time": elapsed_time,
         }
