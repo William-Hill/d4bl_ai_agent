@@ -58,7 +58,8 @@ class Settings:
         _set(
             "is_docker",
             os.path.exists("/.dockerenv")
-            or bool(os.getenv("DOCKER_CONTAINER")),
+            or os.getenv("DOCKER_CONTAINER", "").strip().lower()
+            in {"1", "true", "yes", "on"},
         )
 
         # LLM / Ollama
@@ -77,7 +78,7 @@ class Settings:
         _set("firecrawl_api_key", os.getenv("FIRECRAWL_API_KEY"))
         _set(
             "firecrawl_base_url",
-            os.getenv("FIRECRAWL_BASE_URL", "http://firecrawl-api:3002"),
+            os.getenv("FIRECRAWL_BASE_URL", "http://firecrawl-api:3002").rstrip("/"),
         )
 
         # Langfuse / OTLP
