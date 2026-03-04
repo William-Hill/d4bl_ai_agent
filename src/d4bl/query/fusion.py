@@ -23,7 +23,7 @@ Sources:
 Answer:"""
 
 
-@dataclass
+@dataclass(frozen=True)
 class SourceReference:
     """A source used to answer a query."""
 
@@ -34,7 +34,7 @@ class SourceReference:
     relevance_score: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class QueryResult:
     """The final result of a natural language query."""
 
@@ -128,9 +128,9 @@ class ResultFusion:
             f"[{i + 1}] ({s.source_type}) {s.title}\n{s.snippet}"
             for i, s in enumerate(sources[:10])  # Limit context
         )
-        prompt = SYNTHESIS_PROMPT.format(
-            query=query, sources_text=sources_text
-        )
+        prompt = SYNTHESIS_PROMPT.replace(
+            "{query}", query
+        ).replace("{sources_text}", sources_text)
 
         timeout = aiohttp.ClientTimeout(total=60)
         async with aiohttp.ClientSession(timeout=timeout) as session:

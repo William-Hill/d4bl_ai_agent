@@ -24,7 +24,7 @@ Respond with ONLY a JSON object, no other text.
 User question: {query}"""
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParsedQuery:
     """Structured representation of a parsed natural language query."""
 

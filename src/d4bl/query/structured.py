@@ -12,7 +12,7 @@ from d4bl.infra.database import ResearchJob
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class StructuredResult:
     """A result from the structured database."""
 
