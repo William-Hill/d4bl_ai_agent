@@ -11,11 +11,13 @@
 `client.py:30` reads `LANGFUSE_HOST` via raw `os.getenv` instead of `get_settings().langfuse_host`. Replace with `Settings` to ensure consistency.
 
 ### Changes
+
 - Replace `langfuse_host = os.getenv("LANGFUSE_HOST", "http://localhost:3002")` with `langfuse_host = get_settings().langfuse_host`
 - Remove `import os` if no longer needed
 - The Docker adjustment logic on lines 41-46 can stay — it modifies the local variable
 
 ### Tests
+
 - Existing tests (if any) should still pass
 - Verify `get_langfuse_eval_client` still works with the Settings-backed value
 
@@ -28,6 +30,7 @@
 5 functions wrap their bodies in `try/except Exception as e: raise Exception(...)` which discards the original traceback and exception type. Remove these wrappers.
 
 ### Changes
+
 - `run()`: Remove try/except around `crew_instance` kickoff (lines 89-99)
 - `train()`: Remove try/except (lines 110-114)
 - `replay()`: Remove try/except (lines 120-124)
@@ -35,6 +38,7 @@
 - `run_with_trigger()`: Remove try/except (lines 161-165)
 
 ### Tests
+
 - No existing tests for main.py CLI functions
 - Verify module still imports cleanly
 
@@ -47,6 +51,7 @@
 ### 3a: Simplify `otlp_endpoint` (finding 2.6)
 
 The triple-nested `os.getenv` on lines 33-36 is hard to read:
+
 ```python
 otlp_endpoint: str = os.getenv(
     "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -63,11 +68,13 @@ Currently field defaults call `os.getenv()` at class definition time, not instan
 Move env reads into `__post_init__` so they execute when `Settings()` is called (which is at first `get_settings()` call due to `@lru_cache`).
 
 ### Changes
+
 - Convert all field defaults from `os.getenv(...)` to `field(default=None)` or similar
 - Add `__post_init__` that reads env vars and sets fields via `object.__setattr__` (required for `frozen=True`)
 - `otlp_endpoint` should fall back to `self.langfuse_otel_host or self.langfuse_host` + suffix
 
 ### Tests
+
 - Add test that `get_settings()` reads env vars at call time, not import time
 - Verify all existing code that calls `get_settings()` still works
 
@@ -88,6 +95,7 @@ Line 17: `settings.ollama_base_url.rstrip("/")` — the `.rstrip("/")` is alread
 Move `from d4bl.agents.crew import D4Bl` from module scope into each function that uses it (`run()`, `train()`, `replay()`, `test()`, `run_with_trigger()`). This avoids loading CrewAI and all agent dependencies for CLI startup.
 
 ### Tests
+
 - Verify module imports cleanly
 - Verify functions still work with lazy import
 

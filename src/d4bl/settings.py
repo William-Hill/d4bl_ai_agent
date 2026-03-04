@@ -81,18 +81,23 @@ class Settings:
         )
 
         # Langfuse / OTLP
-        _set("langfuse_host", os.getenv("LANGFUSE_HOST", "http://localhost:3002"))
-        langfuse_otel_host = os.getenv("LANGFUSE_OTEL_HOST", "")
+        _set(
+            "langfuse_host",
+            os.getenv("LANGFUSE_HOST", "http://localhost:3002").rstrip("/"),
+        )
+        langfuse_otel_host = os.getenv("LANGFUSE_OTEL_HOST", "").rstrip("/")
         _set("langfuse_otel_host", langfuse_otel_host)
         _set("langfuse_base_url", os.getenv("LANGFUSE_BASE_URL", ""))
 
         # Build OTLP endpoint: explicit env var > otel host > langfuse host
+        # Treat empty-string OTEL_EXPORTER_OTLP_ENDPOINT as unset.
+        explicit_otlp = (
+            os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or ""
+        ).strip()
         _set(
             "otlp_endpoint",
-            os.getenv(
-                "OTEL_EXPORTER_OTLP_ENDPOINT",
-                f"{langfuse_otel_host or self.langfuse_host}{_OTEL_SUFFIX}",
-            ),
+            explicit_otlp
+            or f"{langfuse_otel_host or self.langfuse_host}{_OTEL_SUFFIX}",
         )
 
         # Database

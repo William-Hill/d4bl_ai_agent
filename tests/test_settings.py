@@ -56,7 +56,7 @@ class TestDeferredEnvReads:
         s = Settings()
         assert s.postgres_host == "my-db-host"
 
-    def test_lru_cache_returns_same_instance(self, monkeypatch):
+    def test_lru_cache_returns_same_instance(self):
         get_settings.cache_clear()
         a = get_settings()
         b = get_settings()
@@ -99,6 +99,15 @@ class TestOtlpEndpoint:
         s = _fresh_settings(
             OTEL_EXPORTER_OTLP_ENDPOINT=None,
             LANGFUSE_OTEL_HOST="",
+            LANGFUSE_HOST="http://my-langfuse:5555",
+        )
+        assert s.otlp_endpoint == f"http://my-langfuse:5555{_OTEL_SUFFIX}"
+
+    def test_empty_otlp_env_falls_through_to_fallback(self):
+        """OTEL_EXPORTER_OTLP_ENDPOINT="" should be treated as unset."""
+        s = _fresh_settings(
+            OTEL_EXPORTER_OTLP_ENDPOINT="",
+            LANGFUSE_OTEL_HOST=None,
             LANGFUSE_HOST="http://my-langfuse:5555",
         )
         assert s.otlp_endpoint == f"http://my-langfuse:5555{_OTEL_SUFFIX}"
@@ -166,6 +175,10 @@ class TestFieldDefaults:
     def test_postgres_port_from_env(self):
         s = _fresh_settings(POSTGRES_PORT="54322")
         assert s.postgres_port == 54322
+
+    def test_postgres_port_invalid_raises(self):
+        with pytest.raises(ValueError):
+            _fresh_settings(POSTGRES_PORT="not_a_number")
 
     def test_db_echo_truthy(self):
         for val in ("1", "true", "True", "YES", " on "):
