@@ -13,7 +13,7 @@ from d4bl.settings import Settings, get_settings, _OTEL_SUFFIX
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _fresh_settings(**env_overrides: str) -> Settings:
+def _fresh_settings(**env_overrides: str | None) -> Settings:
     """Create a Settings instance with specific env vars, then restore originals."""
     old = {}
     for key, val in env_overrides.items():
@@ -91,6 +91,14 @@ class TestOtlpEndpoint:
         s = _fresh_settings(
             OTEL_EXPORTER_OTLP_ENDPOINT=None,
             LANGFUSE_OTEL_HOST=None,
+            LANGFUSE_HOST="http://my-langfuse:5555",
+        )
+        assert s.otlp_endpoint == f"http://my-langfuse:5555{_OTEL_SUFFIX}"
+
+    def test_empty_otel_host_falls_through_to_langfuse_host(self):
+        s = _fresh_settings(
+            OTEL_EXPORTER_OTLP_ENDPOINT=None,
+            LANGFUSE_OTEL_HOST="",
             LANGFUSE_HOST="http://my-langfuse:5555",
         )
         assert s.otlp_endpoint == f"http://my-langfuse:5555{_OTEL_SUFFIX}"
