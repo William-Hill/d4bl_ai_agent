@@ -4,6 +4,7 @@ import os
 import logging
 from typing import Optional
 
+from d4bl.observability.langfuse import _resolve_langfuse_host
 from d4bl.settings import get_settings
 
 try:  # Optional dependency: degrade gracefully when Langfuse is not installed
@@ -27,7 +28,10 @@ def get_langfuse_eval_client() -> Optional[Langfuse]:
             return None
         langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-        langfuse_host = get_settings().langfuse_host
+        settings = get_settings()
+        langfuse_host = _resolve_langfuse_host(
+            settings.langfuse_host, settings.is_docker
+        )
 
         logger.debug("Initializing Langfuse client - Host: %s", langfuse_host)
 
@@ -36,14 +40,6 @@ def get_langfuse_eval_client() -> Optional[Langfuse]:
             logger.debug("LANGFUSE_PUBLIC_KEY present: %s", bool(langfuse_public_key))
             logger.debug("LANGFUSE_SECRET_KEY present: %s", bool(langfuse_secret_key))
             return None
-
-        # Adjust host for Docker
-        if get_settings().is_docker and "localhost" in langfuse_host:
-            original_host = langfuse_host
-            langfuse_host = langfuse_host.replace("localhost", "langfuse-web")
-            if ":3002" in langfuse_host:
-                langfuse_host = langfuse_host.replace(":3002", ":3000")
-            logger.debug("Adjusted host for Docker: %s -> %s", original_host, langfuse_host)
 
         _langfuse_client = Langfuse(
             public_key=langfuse_public_key,

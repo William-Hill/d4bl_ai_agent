@@ -1,9 +1,40 @@
 """Tests for the observability module."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import d4bl.observability.langfuse as langfuse_mod
-from d4bl.observability.langfuse import check_langfuse_service_available
+from d4bl.observability.langfuse import (
+    _resolve_langfuse_host,
+    check_langfuse_service_available,
+)
+
+
+class TestResolveLangfuseHost:
+    """Tests for _resolve_langfuse_host Docker host adjustment."""
+
+    def test_non_docker_returns_host_unchanged(self):
+        """When not in Docker, the host should be returned as-is."""
+        host = "http://localhost:3002"
+        assert _resolve_langfuse_host(host, is_docker=False) == host
+
+    def test_docker_replaces_localhost_with_service_name(self):
+        """In Docker, localhost should be replaced with langfuse-web."""
+        result = _resolve_langfuse_host(
+            "http://localhost:3000", is_docker=True
+        )
+        assert result == "http://langfuse-web:3000"
+
+    def test_docker_replaces_localhost_and_adjusts_port_3002(self):
+        """In Docker, localhost:3002 should become langfuse-web:3000."""
+        result = _resolve_langfuse_host(
+            "http://localhost:3002", is_docker=True
+        )
+        assert result == "http://langfuse-web:3000"
+
+    def test_docker_without_localhost_returns_unchanged(self):
+        """In Docker, a non-localhost host should be returned as-is."""
+        host = "http://langfuse-web:3000"
+        assert _resolve_langfuse_host(host, is_docker=True) == host
 
 
 class TestCheckLangfuseServiceAvailable:
@@ -18,13 +49,14 @@ class TestCheckLangfuseServiceAvailable:
 
     def test_returns_true_on_successful_health_check(self):
         """Should return True when the health endpoint responds."""
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_urlopen.return_value = True
+        mock_resp = MagicMock()
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
             result = check_langfuse_service_available("http://localhost:3000")
         assert result is True
         mock_urlopen.assert_called_once_with(
             "http://localhost:3000/api/public/health", timeout=3.0
         )
+        mock_resp.close.assert_called_once()
 
     def test_returns_false_on_exception(self):
         """Should return False when urlopen raises any exception."""

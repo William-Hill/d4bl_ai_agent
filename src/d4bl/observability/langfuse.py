@@ -11,18 +11,32 @@ _langfuse_init_state: bool | None = None  # None=untried, True=ok, False=failed
 _langfuse_client = None
 
 
+def _resolve_langfuse_host(host: str, is_docker: bool) -> str:
+    """Adjust a Langfuse host for Docker if needed.
+
+    Replaces localhost with the Docker service name (langfuse-web)
+    and adjusts port 3002 to 3000 (internal Docker port).
+    """
+    if is_docker and "localhost" in host:
+        host = host.replace("localhost", "langfuse-web")
+        if ":3002" in host:
+            host = host.replace(":3002", ":3000")
+    return host
+
+
 def check_langfuse_service_available(host: str, timeout: float = 3.0) -> bool:
     """Check if Langfuse service is reachable via HTTP GET."""
     import urllib.request
 
     try:
-        urllib.request.urlopen(f"{host}/api/public/health", timeout=timeout)
+        resp = urllib.request.urlopen(f"{host}/api/public/health", timeout=timeout)
+        resp.close()
         return True
     except Exception:
         return False
 
 
-def initialize_langfuse():
+def initialize_langfuse() -> object | None:
     """Initialize Langfuse observability and CrewAI instrumentation."""
     global _langfuse_init_state, _langfuse_client
 
@@ -108,7 +122,7 @@ def initialize_langfuse():
         return None
 
 
-def get_langfuse_client():
+def get_langfuse_client() -> object | None:
     """Get the initialized Langfuse client, initializing if necessary."""
     global _langfuse_client
     if _langfuse_init_state is None:
