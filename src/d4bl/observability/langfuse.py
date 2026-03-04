@@ -24,8 +24,6 @@ def initialize_langfuse():
 
         settings = get_settings()
 
-        langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
-        langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
         langfuse_host = settings.langfuse_host
         langfuse_base_url = settings.langfuse_base_url or settings.langfuse_host
         langfuse_otel_host = settings.langfuse_otel_host or langfuse_host
@@ -40,10 +38,6 @@ def initialize_langfuse():
                 langfuse_base_url = langfuse_host
 
         # Set environment variables if not already set
-        if langfuse_public_key and not os.getenv("LANGFUSE_PUBLIC_KEY"):
-            os.environ["LANGFUSE_PUBLIC_KEY"] = langfuse_public_key
-        if langfuse_secret_key and not os.getenv("LANGFUSE_SECRET_KEY"):
-            os.environ["LANGFUSE_SECRET_KEY"] = langfuse_secret_key
         if not os.getenv("LANGFUSE_HOST"):
             os.environ["LANGFUSE_HOST"] = langfuse_host
         if settings.is_docker:
@@ -82,7 +76,6 @@ def initialize_langfuse():
                 print(f"   Actual: {current_otlp_endpoint}")
 
         CrewAIInstrumentor().instrument(skip_dep_check=True)
-        print("✅ CrewAI instrumentation initialized")
 
         _langfuse_initialized = True
         print("✅ CrewAI instrumentation initialized for Langfuse observability")
