@@ -6,9 +6,9 @@ from d4bl.observability.langfuse import (
 )
 
 __all__ = [
-    "resolve_langfuse_host",
     "check_langfuse_service_available",
-    "initialize_langfuse",
     "get_langfuse_client",
+    "initialize_langfuse",
+    "resolve_langfuse_host",
 ]
 

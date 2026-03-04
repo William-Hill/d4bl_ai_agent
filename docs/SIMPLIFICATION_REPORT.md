@@ -31,14 +31,14 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
 | Source LOC | -204 net | | |
-| Key changes | Base evaluator eliminated ~250 LOC boilerplate, enum types replaced string constants, parallel eval execution |
+| Key changes | Base evaluator eliminated ~250 LOC boilerplate, enum types replaced string constants, parallel eval execution | — | — |
 
 ### agents/ (PR #34)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
 | Source LOC | -372 net | | |
-| Key changes | Removed dead `crew.py` (255 LOC), dead scaffold, consolidated domain lists |
+| Key changes | Removed dead `crew.py` (255 LOC), dead scaffold, consolidated domain lists | — | — |
 
 ### app/ (PR #35)
 
@@ -46,7 +46,7 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 |--------|--------|-------|-------|
 | Source LOC | +8 net | | |
 | Test LOC | +131 | | |
-| Key changes | UUID helper, deprecated FastAPI patterns, WS manager cleanup |
+| Key changes | UUID helper, deprecated FastAPI patterns, WS manager cleanup | — | — |
 
 ### infra/ (PR #36)
 
@@ -54,7 +54,7 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 |--------|--------|-------|-------|
 | Source LOC | -35 net | | |
 | Test LOC | +131 | | |
-| Key changes | Async blocking fix, fragile SQL index access, dead Docker check |
+| Key changes | Async blocking fix, fragile SQL index access, dead Docker check | — | — |
 
 ### query/ (PR #37)
 
@@ -62,7 +62,7 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 |--------|--------|-------|-------|
 | Source LOC | +48 net | | |
 | Test LOC | +97 | | |
-| Key changes | Shared Ollama HTTP helper, format bug fix, unused LLM intent parsing removed |
+| Key changes | Shared Ollama HTTP helper, format bug fix, unused LLM intent parsing removed | — | — |
 
 ### Root files (PR #38)
 
@@ -70,7 +70,7 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 |--------|--------|-------|-------|
 | Source LOC | +56 net | | |
 | Test LOC | +206 | | |
-| Key changes | Deferred env reads in Settings, removed catch-and-re-raise, lazy imports |
+| Key changes | Deferred env reads in Settings, removed catch-and-re-raise, lazy imports | — | — |
 
 ---
 

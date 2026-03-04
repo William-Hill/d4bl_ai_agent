@@ -96,9 +96,14 @@ def initialize_langfuse() -> Langfuse | None:
         current_otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 
         if not current_otlp_endpoint:
-            os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
-            os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
-            logger.warning("OTLP endpoint was not set, forced to: %s", otlp_endpoint)
+            if check_langfuse_service_available(langfuse_otel_host):
+                os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
+                os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
+                logger.warning("OTLP endpoint was not set, forced to: %s", otlp_endpoint)
+            else:
+                logger.warning(
+                    "Langfuse service unavailable; OTLP endpoints remain unset."
+                )
         else:
             logger.info("OTLP endpoint configured: %s", current_otlp_endpoint)
             if current_otlp_endpoint != otlp_endpoint:

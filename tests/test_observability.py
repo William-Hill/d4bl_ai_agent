@@ -42,9 +42,10 @@ class TestCheckLangfuseServiceAvailable:
 
     def test_returns_false_for_unreachable_host(self):
         """Should return False when the host is not reachable."""
-        result = check_langfuse_service_available(
-            "http://127.0.0.1:19999", timeout=0.5
-        )
+        with patch("urllib.request.urlopen", side_effect=OSError("Connection refused")):
+            result = check_langfuse_service_available(
+                "http://127.0.0.1:19999", timeout=0.5
+            )
         assert result is False
 
     def test_returns_true_on_successful_health_check(self):
