@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-import requests
+import aiohttp
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,55 +34,68 @@ class VectorStore:
         self.embedder_model = embedder_model
         self.embedding_dimension = 1024  # mxbai-embed-large produces 1024-dimensional vectors
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    def _format_embedding(self, embedding: List[float]) -> str:
+        """Format embedding list as a pgvector-compatible string."""
+        return '[' + ','.join(str(x) for x in embedding) + ']'
+
+    @staticmethod
+    def _row_to_content_dict(row) -> Dict[str, Any]:
+        """Convert a scraped_content_vectors row (mapping) to a dict."""
+        return {
+            "id": str(row["id"]) if row["id"] else None,
+            "job_id": str(row["job_id"]) if row["job_id"] else None,
+            "url": row["url"],
+            "content": row["content"],
+            "content_type": row["content_type"],
+            "metadata": row["metadata"] if row["metadata"] else {},
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        }
+
+    async def generate_embedding(self, text_input: str) -> List[float]:
         """
         Generate embedding vector for the given text using Ollama.
-        
+
         Args:
-            text: Text to embed
-            
+            text_input: Text to embed
+
         Returns:
             List of floats representing the embedding vector
         """
         try:
-            # Truncate text if too long (most embedding models have token limits)
-            # mxbai-embed-large can handle up to ~8192 tokens, so we'll limit to ~6000 chars
-            if len(text) > 6000:
-                text = text[:6000]
+            if len(text_input) > 6000:
+                text_input = text_input[:6000]
                 logger.warning("Text truncated to 6000 characters for embedding")
 
-            response = requests.post(
-                f"{self.ollama_base_url}/api/embeddings",
-                json={
-                    "model": self.embedder_model,
-                    "prompt": text,
-                },
-                timeout=30,
-            )
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.ollama_base_url}/api/embeddings",
+                    json={"model": self.embedder_model, "prompt": text_input},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as response:
+                    if response.status != 200:
+                        body = await response.text()
+                        error_msg = f"Ollama embedding API returned {response.status}: {body}"
+                        logger.error(error_msg)
+                        raise RuntimeError(error_msg)
 
-            if response.status_code != 200:
-                error_msg = f"Ollama embedding API returned {response.status_code}: {response.text}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
+                    result = await response.json()
 
-            result = response.json()
             embedding = result.get("embedding")
-            
+
             if not embedding:
                 raise ValueError("No embedding in Ollama response")
-            
+
             if len(embedding) != self.embedding_dimension:
                 logger.warning(
-                    "Embedding dimension mismatch: expected %s, got %s",
+                    "Embedding dimension mismatch: expected %s, got %s. "
+                    "Check embedder model configuration.",
                     self.embedding_dimension,
-                    len(embedding)
+                    len(embedding),
                 )
-                # Adjust dimension if needed (though this shouldn't happen)
-                self.embedding_dimension = len(embedding)
 
             return embedding
 
-        except requests.exceptions.RequestException as e:
+        except aiohttp.ClientError as e:
             logger.error("Failed to generate embedding: %s", e)
             raise RuntimeError(f"Embedding generation failed: {str(e)}") from e
         except Exception as e:
@@ -125,8 +138,7 @@ class VectorStore:
             metadata_json = json.dumps(metadata or {})
 
             # Insert into database
-            # pgvector expects the embedding as a string in format: '[0.1, 0.2, ...]'
-            embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
+            embedding_str = self._format_embedding(embedding)
             
             query = text("""
                 INSERT INTO scraped_content_vectors
@@ -214,74 +226,42 @@ class VectorStore:
             List of matching records with similarity scores
         """
         try:
-            # Generate embedding for query
             query_embedding = await self.generate_embedding(query_text)
-            
-            # Format embedding for pgvector
-            query_embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
+            query_embedding_str = self._format_embedding(query_embedding)
 
-            # Build query
+            # Build query with optional job_id filter
+            where_clauses = [
+                "1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold"
+            ]
+            params: Dict[str, Any] = {
+                "query_embedding": query_embedding_str,
+                "threshold": similarity_threshold,
+                "limit": limit,
+            }
+
             if job_id:
-                query = text("""
-                    SELECT 
-                        id,
-                        job_id,
-                        url,
-                        content,
-                        content_type,
-                        metadata,
-                        created_at,
-                        1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
-                    FROM scraped_content_vectors
-                    WHERE job_id = :job_id
-                        AND 1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold
-                    ORDER BY embedding <=> CAST(:query_embedding AS vector)
-                    LIMIT :limit
-                """)
-                params = {
-                    "query_embedding": query_embedding_str,
-                    "job_id": str(job_id),
-                    "threshold": similarity_threshold,
-                    "limit": limit,
-                }
-            else:
-                query = text("""
-                    SELECT 
-                        id,
-                        job_id,
-                        url,
-                        content,
-                        content_type,
-                        metadata,
-                        created_at,
-                        1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
-                    FROM scraped_content_vectors
-                    WHERE 1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold
-                    ORDER BY embedding <=> CAST(:query_embedding AS vector)
-                    LIMIT :limit
-                """)
-                params = {
-                    "query_embedding": query_embedding_str,
-                    "threshold": similarity_threshold,
-                    "limit": limit,
-                }
+                where_clauses.append("job_id = :job_id")
+                params["job_id"] = str(job_id)
+
+            where_sql = " AND ".join(where_clauses)
+
+            query = text(f"""
+                SELECT
+                    id, job_id, url, content, content_type, metadata, created_at,
+                    1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
+                FROM scraped_content_vectors
+                WHERE {where_sql}
+                ORDER BY embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :limit
+            """)
 
             result = await db.execute(query, params)
-            rows = result.fetchall()
 
-            # Convert to list of dicts
             results = []
-            for row in rows:
-                results.append({
-                    "id": str(row[0]),
-                    "job_id": str(row[1]) if row[1] else None,
-                    "url": row[2],
-                    "content": row[3],
-                    "content_type": row[4],
-                    "metadata": row[5] if row[5] else {},
-                    "created_at": row[6].isoformat() if row[6] else None,
-                    "similarity": float(row[7]),
-                })
+            for row in result.mappings():
+                d = self._row_to_content_dict(row)
+                d["similarity"] = float(row["similarity"])
+                results.append(d)
 
             logger.info("Found %s similar results for query", len(results))
             return results
@@ -308,41 +288,21 @@ class VectorStore:
             List of records
         """
         try:
-            query = text("""
-                SELECT 
-                    id,
-                    job_id,
-                    url,
-                    content,
-                    content_type,
-                    metadata,
-                    created_at
+            limit_clause = "LIMIT :limit" if limit else ""
+            query = text(f"""
+                SELECT id, job_id, url, content, content_type, metadata, created_at
                 FROM scraped_content_vectors
                 WHERE job_id = :job_id
                 ORDER BY created_at DESC
+                {limit_clause}
             """)
-            
-            params = {"job_id": str(job_id)}
+
+            params: Dict[str, Any] = {"job_id": str(job_id)}
             if limit:
-                query = text(str(query) + " LIMIT :limit")
                 params["limit"] = limit
 
             result = await db.execute(query, params)
-            rows = result.fetchall()
-
-            results = []
-            for row in rows:
-                results.append({
-                    "id": str(row[0]),
-                    "job_id": str(row[1]) if row[1] else None,
-                    "url": row[2],
-                    "content": row[3],
-                    "content_type": row[4],
-                    "metadata": row[5] if row[5] else {},
-                    "created_at": row[6].isoformat() if row[6] else None,
-                })
-
-            return results
+            return [self._row_to_content_dict(row) for row in result.mappings()]
 
         except Exception as e:
             logger.error("Failed to get content by job_id: %s", e, exc_info=True)

@@ -1,9 +1,8 @@
 """
 Database models and connection for storing research queries and results
 """
-import os
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date, Index, UniqueConstraint
@@ -11,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
+from d4bl.settings import get_settings
+
 Base = declarative_base()
+
+
+def _utc_now() -> datetime:
+    """Return the current UTC time as a timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class ResearchJob(Base):
@@ -28,15 +34,15 @@ class ResearchJob(Base):
     research_data = Column(JSON, nullable=True)  # Store research data for use as reference in evaluations
     error = Column(Text, nullable=True)
     logs = Column(JSON, nullable=True)  # Store logs array as JSON
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
     completed_at = Column(DateTime, nullable=True)
 
     def to_dict(self):
         """Convert model to dictionary"""
         return {
             "job_id": str(self.job_id),
-             "trace_id": self.trace_id,
+            "trace_id": self.trace_id,
             "query": self.query,
             "summary_format": self.summary_format,
             "status": self.status,
@@ -66,7 +72,7 @@ class EvaluationResult(Base):
     input_text = Column(Text, nullable=True)
     output_text = Column(Text, nullable=True)
     context_text = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
 
     def to_dict(self):
         return {
@@ -99,7 +105,7 @@ class CensusIndicator(Base):
     metric = Column(String(100), nullable=False)
     value = Column(Float, nullable=False)
     margin_of_error = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
 
     __table_args__ = (
         # Composite index to support common query filters
@@ -140,8 +146,8 @@ class PolicyBill(Base):
     introduced_date = Column(Date, nullable=True)
     last_action_date = Column(Date, nullable=True)
     url = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
 
     __table_args__ = (
         # Support common filters for policy tracker views
@@ -163,46 +169,34 @@ class PolicyBill(Base):
 
 # Database connection setup
 def get_database_url() -> str:
-    """Get database URL from environment variables"""
-    db_user = os.getenv("POSTGRES_USER", "d4bl_user")
-    db_password = os.getenv("POSTGRES_PASSWORD", "d4bl_password")
-    db_host = os.getenv("POSTGRES_HOST", "localhost")
-    db_port = os.getenv("POSTGRES_PORT", "5432")
-    db_name = os.getenv("POSTGRES_DB", "postgres")
-    
-    # CRITICAL: In Docker, we MUST use 'postgres' as the hostname (Docker service name)
-    # OR use 'host.docker.internal' to reach services on the host machine (like Supabase)
-    # Only override if host is localhost/127.0.0.1 AND we're running inside Docker
-    if db_host in ("localhost", "127.0.0.1"):
-        # Check if we're in Docker (common indicators)
-        if os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER"):
-            original_host = db_host
-            db_host = "postgres"
-            print(
-                f"⚠ Warning: Detected Docker environment, "
-                f"using 'postgres' as hostname instead of '{original_host}'"
-            )
-        else:
-            print(
-                "⚠ Warning: Using 'localhost' as database host. "
-                "In Docker, this should be 'postgres' or 'host.docker.internal'"
-            )
-    
-    # Ensure we're using the correct database name (not the username)
+    """Get database URL from settings."""
+    settings = get_settings()
+    db_user = settings.postgres_user
+    db_password = settings.postgres_password
+    db_host = settings.postgres_host
+    db_port = settings.postgres_port
+    db_name = settings.postgres_db
+
+    if db_host in ("localhost", "127.0.0.1") and settings.is_docker:
+        original_host = db_host
+        db_host = "postgres"
+        print(
+            f"⚠ Warning: Detected Docker environment, "
+            f"using 'postgres' as hostname instead of '{original_host}'"
+        )
+    elif db_host in ("localhost", "127.0.0.1"):
+        print(
+            "⚠ Warning: Using 'localhost' as database host. "
+            "In Docker, this should be 'postgres' or 'host.docker.internal'"
+        )
+
     if not db_name or db_name == db_user:
         db_name = "postgres"
         print(f"⚠ Warning: Using default database name: {db_name}")
-    
-    # Use asyncpg driver for async operations
+
     database_url = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     print(f"📊 Database URL: postgresql+asyncpg://{db_user}:***@{db_host}:{db_port}/{db_name}")
-    
-    # Final safety check: warn if using localhost in what looks like Docker
-    if (db_host == "localhost" or db_host == "127.0.0.1") and os.path.exists("/.dockerenv"):
-        print(f"⚠⚠⚠ CRITICAL WARNING: Using localhost in Docker container!")
-        print(f"   This will try to connect to host Postgres, not Docker Postgres!")
-        print(f"   Set POSTGRES_HOST=postgres in docker-compose.yml")
-    
+
     return database_url
 
 
@@ -214,11 +208,12 @@ async_session_maker = None
 def init_db():
     """Initialize database connection"""
     global engine, async_session_maker
-    
+
+    settings = get_settings()
     database_url = get_database_url()
     engine = create_async_engine(
         database_url,
-        echo=os.getenv("DB_ECHO", "false").lower() == "true",
+        echo=settings.db_echo,
         future=True,
         pool_pre_ping=True,  # Verify connections before using them
         pool_size=5,  # Limit connection pool size
