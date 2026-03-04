@@ -4,7 +4,7 @@ import os
 import logging
 from typing import Optional
 
-from d4bl.observability.langfuse import _resolve_langfuse_host
+from d4bl.observability.langfuse import resolve_langfuse_host
 from d4bl.settings import get_settings
 
 try:  # Optional dependency: degrade gracefully when Langfuse is not installed
@@ -29,7 +29,7 @@ def get_langfuse_eval_client() -> Optional[Langfuse]:
         langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
         settings = get_settings()
-        langfuse_host = _resolve_langfuse_host(
+        langfuse_host = resolve_langfuse_host(
             settings.langfuse_host, settings.is_docker
         )
 

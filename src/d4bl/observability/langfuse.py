@@ -5,13 +5,18 @@ import logging
 
 from d4bl.settings import get_settings
 
+try:  # Optional dependency
+    from langfuse import Langfuse  # type: ignore[import-untyped]
+except ImportError:  # pragma: no cover
+    Langfuse = None  # type: ignore[misc,assignment]
+
 logger = logging.getLogger(__name__)
 
 _langfuse_init_state: bool | None = None  # None=untried, True=ok, False=failed
-_langfuse_client = None
+_langfuse_client: Langfuse | None = None
 
 
-def _resolve_langfuse_host(host: str, is_docker: bool) -> str:
+def resolve_langfuse_host(host: str, is_docker: bool) -> str:
     """Adjust a Langfuse host for Docker if needed.
 
     Replaces localhost with the Docker service name (langfuse-web)
@@ -36,7 +41,7 @@ def check_langfuse_service_available(host: str, timeout: float = 3.0) -> bool:
         return False
 
 
-def initialize_langfuse() -> object | None:
+def initialize_langfuse() -> Langfuse | None:
     """Initialize Langfuse observability and CrewAI instrumentation."""
     global _langfuse_init_state, _langfuse_client
 
@@ -57,7 +62,9 @@ def initialize_langfuse() -> object | None:
             f"{langfuse_otel_host}/api/public/otel/v1/traces",
         )
 
-        # If running in Docker, ensure BASE_URL uses service name and internal port
+        # Docker BASE_URL adjustment: unlike resolve_langfuse_host (which remaps
+        # localhost→langfuse-web), this resets base_url to langfuse_host entirely
+        # because base_url may point to a different external endpoint.
         if settings.is_docker:
             if "localhost" in langfuse_base_url or ":3002" in langfuse_base_url:
                 langfuse_base_url = langfuse_host
@@ -122,7 +129,7 @@ def initialize_langfuse() -> object | None:
         return None
 
 
-def get_langfuse_client() -> object | None:
+def get_langfuse_client() -> Langfuse | None:
     """Get the initialized Langfuse client, initializing if necessary."""
     global _langfuse_client
     if _langfuse_init_state is None:

@@ -4,29 +4,29 @@ from unittest.mock import MagicMock, patch
 
 import d4bl.observability.langfuse as langfuse_mod
 from d4bl.observability.langfuse import (
-    _resolve_langfuse_host,
+    resolve_langfuse_host,
     check_langfuse_service_available,
 )
 
 
 class TestResolveLangfuseHost:
-    """Tests for _resolve_langfuse_host Docker host adjustment."""
+    """Tests for resolve_langfuse_host Docker host adjustment."""
 
     def test_non_docker_returns_host_unchanged(self):
         """When not in Docker, the host should be returned as-is."""
         host = "http://localhost:3002"
-        assert _resolve_langfuse_host(host, is_docker=False) == host
+        assert resolve_langfuse_host(host, is_docker=False) == host
 
     def test_docker_replaces_localhost_with_service_name(self):
         """In Docker, localhost should be replaced with langfuse-web."""
-        result = _resolve_langfuse_host(
+        result = resolve_langfuse_host(
             "http://localhost:3000", is_docker=True
         )
         assert result == "http://langfuse-web:3000"
 
     def test_docker_replaces_localhost_and_adjusts_port_3002(self):
         """In Docker, localhost:3002 should become langfuse-web:3000."""
-        result = _resolve_langfuse_host(
+        result = resolve_langfuse_host(
             "http://localhost:3002", is_docker=True
         )
         assert result == "http://langfuse-web:3000"
@@ -34,7 +34,7 @@ class TestResolveLangfuseHost:
     def test_docker_without_localhost_returns_unchanged(self):
         """In Docker, a non-localhost host should be returned as-is."""
         host = "http://langfuse-web:3000"
-        assert _resolve_langfuse_host(host, is_docker=True) == host
+        assert resolve_langfuse_host(host, is_docker=True) == host
 
 
 class TestCheckLangfuseServiceAvailable:
