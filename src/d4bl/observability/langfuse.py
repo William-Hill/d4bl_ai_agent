@@ -51,48 +51,48 @@ def initialize_langfuse():
         # Best-effort auth check
         try:
             if _langfuse_client.auth_check():
-                print("✅ Langfuse client authenticated and ready!")
+                logger.info("Langfuse client authenticated and ready")
             else:
-                print("⚠️ Langfuse authentication failed. Check credentials/host.")
-                print(f"   LANGFUSE_HOST: {langfuse_host}")
-                print(f"   LANGFUSE_BASE_URL: {langfuse_base_url}")
+                logger.warning("Langfuse authentication failed. Check credentials/host.")
+                logger.debug("LANGFUSE_HOST: %s", langfuse_host)
+                logger.debug("LANGFUSE_BASE_URL: %s", langfuse_base_url)
         except Exception as auth_error:
-            print(f"⚠️ Langfuse auth check failed: {auth_error}")
-            print(f"   LANGFUSE_HOST: {langfuse_host}")
-            print(f"   LANGFUSE_BASE_URL: {langfuse_base_url}")
+            logger.warning("Langfuse auth check failed: %s", auth_error)
+            logger.debug("LANGFUSE_HOST: %s", langfuse_host)
+            logger.debug("LANGFUSE_BASE_URL: %s", langfuse_base_url)
 
         current_otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-        current_traces_endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
 
         if not current_otlp_endpoint:
             os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
             os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
-            print(f"⚠️  OTLP endpoint was not set! Forced to: {otlp_endpoint}")
+            logger.warning("OTLP endpoint was not set, forced to: %s", otlp_endpoint)
         else:
-            print(f"✓ OTLP endpoint configured: {current_otlp_endpoint}")
+            logger.info("OTLP endpoint configured: %s", current_otlp_endpoint)
             if current_otlp_endpoint != otlp_endpoint:
-                print("⚠️  WARNING: OTLP endpoint mismatch!")
-                print(f"   Expected: {otlp_endpoint}")
-                print(f"   Actual: {current_otlp_endpoint}")
+                logger.warning(
+                    "OTLP endpoint mismatch: expected %s, actual %s",
+                    otlp_endpoint,
+                    current_otlp_endpoint,
+                )
 
         CrewAIInstrumentor().instrument(skip_dep_check=True)
 
         _langfuse_initialized = True
-        print("✅ CrewAI instrumentation initialized for Langfuse observability")
-        print(f"   Langfuse Host: {langfuse_host}")
-        print(f"   View traces at: {langfuse_base_url}")
+        logger.info("CrewAI instrumentation initialized for Langfuse observability")
+        logger.debug("Langfuse Host: %s", langfuse_host)
+        logger.debug("View traces at: %s", langfuse_base_url)
 
         return _langfuse_client
     except ImportError as e:
-        print(f"⚠️ Langfuse dependencies not installed: {e}")
-        print("   Install with: pip install langfuse openinference-instrumentation-crewai")
+        logger.warning("Langfuse dependencies not installed: %s", e)
+        logger.debug(
+            "Install with: pip install langfuse openinference-instrumentation-crewai"
+        )
         _langfuse_initialized = False
         return None
     except Exception as e:
-        print(f"⚠️ Error initializing Langfuse: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error("Error initializing Langfuse: %s", e, exc_info=True)
         _langfuse_initialized = False
         return None
 
