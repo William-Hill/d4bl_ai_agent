@@ -27,7 +27,7 @@ def get_langfuse_eval_client() -> Optional[Langfuse]:
             return None
         langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-        langfuse_host = os.getenv("LANGFUSE_HOST", "http://localhost:3002")
+        langfuse_host = get_settings().langfuse_host
 
         logger.debug("Initializing Langfuse client - Host: %s", langfuse_host)
 

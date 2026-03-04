@@ -5,8 +5,6 @@ import argparse
 
 from datetime import datetime
 
-from d4bl.agents.crew import D4Bl
-
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 # This main file is intended to be a way for you to run your
@@ -86,17 +84,16 @@ def run():
         print(f"Selected agents: {', '.join(args.agents)}")
     print(f"{'='*80}\n")
 
-    try:
-        crew_instance = D4Bl()
-        if args.agents:
-            crew_instance.selected_agents = args.agents
-        result = crew_instance.crew().kickoff(inputs=inputs)
-        print("\n" + "="*80)
-        print("Research and Analysis Complete!")
-        print("="*80)
-        return result
-    except Exception as e:
-        raise Exception(f"An error occurred while running the crew: {e}")
+    from d4bl.agents.crew import D4Bl
+
+    crew_instance = D4Bl()
+    if args.agents:
+        crew_instance.selected_agents = args.agents
+    result = crew_instance.crew().kickoff(inputs=inputs)
+    print("\n" + "="*80)
+    print("Research and Analysis Complete!")
+    print("="*80)
+    return result
 
 
 def train():
@@ -107,21 +104,17 @@ def train():
         "topic": "AI LLMs",
         'current_year': str(datetime.now().year)
     }
-    try:
-        D4Bl().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
+    from d4bl.agents.crew import D4Bl
 
-    except Exception as e:
-        raise Exception(f"An error occurred while training the crew: {e}")
+    D4Bl().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
 
 def replay():
     """
     Replay the crew execution from a specific task.
     """
-    try:
-        D4Bl().crew().replay(task_id=sys.argv[1])
+    from d4bl.agents.crew import D4Bl
 
-    except Exception as e:
-        raise Exception(f"An error occurred while replaying the crew: {e}")
+    D4Bl().crew().replay(task_id=sys.argv[1])
 
 def test():
     """
@@ -132,11 +125,9 @@ def test():
         "current_year": str(datetime.now().year)
     }
 
-    try:
-        D4Bl().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
+    from d4bl.agents.crew import D4Bl
 
-    except Exception as e:
-        raise Exception(f"An error occurred while testing the crew: {e}")
+    D4Bl().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
 
 def run_with_trigger():
     """
@@ -147,10 +138,7 @@ def run_with_trigger():
     if len(sys.argv) < 2:
         raise Exception("No trigger payload provided. Please provide JSON payload as argument.")
 
-    try:
-        trigger_payload = json.loads(sys.argv[1])
-    except json.JSONDecodeError:
-        raise Exception("Invalid JSON payload provided as argument")
+    trigger_payload = json.loads(sys.argv[1])
 
     inputs = {
         "crewai_trigger_payload": trigger_payload,
@@ -158,9 +146,8 @@ def run_with_trigger():
         "current_year": ""
     }
 
-    try:
-        result = D4Bl().crew().kickoff(inputs=inputs)
-        return result
-    except Exception as e:
-        raise Exception(f"An error occurred while running the crew with trigger: {e}")
+    from d4bl.agents.crew import D4Bl
+
+    result = D4Bl().crew().kickoff(inputs=inputs)
+    return result
 

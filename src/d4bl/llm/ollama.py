@@ -14,7 +14,7 @@ def get_ollama_llm():
     if _ollama_llm is None:
         try:
             settings = get_settings()
-            ollama_base_url = settings.ollama_base_url.rstrip("/")
+            ollama_base_url = settings.ollama_base_url
 
             # Set environment variable for LiteLLM to use
             os.environ["OLLAMA_API_BASE"] = ollama_base_url
