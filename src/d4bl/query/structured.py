@@ -66,6 +66,8 @@ class StructuredSearcher:
             result = await db.execute(stmt)
             rows = result.scalars().all()
 
+            query_word_sets = self._precompute_query_word_sets(search_queries)
+
             return [
                 StructuredResult(
                     job_id=str(row.job_id),
@@ -76,7 +78,7 @@ class StructuredSearcher:
                     if row.created_at
                     else "",
                     relevance_score=self._score_relevance(
-                        row.query, search_queries
+                        row.query, query_word_sets
                     ),
                 )
                 for row in rows
@@ -93,14 +95,26 @@ class StructuredSearcher:
             return result.get("summary") or result.get("raw", "")[:500]
         return str(result)[:500]
 
+    @staticmethod
+    def _precompute_query_word_sets(
+        search_queries: list[str],
+    ) -> list[frozenset[str]]:
+        """Precompute lowercased word sets for search queries."""
+        return [
+            frozenset(sq.lower().split())
+            for sq in search_queries
+            if sq.strip()
+        ]
+
     def _score_relevance(
-        self, job_query: str, search_queries: list[str]
+        self,
+        job_query: str,
+        query_word_sets: list[frozenset[str]],
     ) -> float:
         """Simple keyword overlap relevance score (0.0 to 1.0)."""
         job_words = set(job_query.lower().split())
         max_score = 0.0
-        for sq in search_queries:
-            sq_words = set(sq.lower().split())
+        for sq_words in query_word_sets:
             if not sq_words:
                 continue
             overlap = len(job_words & sq_words) / len(sq_words)
