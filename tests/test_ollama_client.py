@@ -11,7 +11,9 @@ class TestOllamaGenerate:
     """Test the ollama_generate helper."""
 
     @staticmethod
-    def _make_aiohttp_mocks(response_body: dict, status: int = 200):
+    def _make_aiohttp_mocks(
+        response_body: dict, status: int = 200,
+    ) -> MagicMock:
         """Build mock aiohttp session + response."""
         mock_response = MagicMock()
         mock_response.status = status
@@ -86,3 +88,7 @@ class TestOllamaGenerate:
             timeout_seconds=120,
         )
         assert result == "ok"
+        mock_session_cls.assert_called_once()
+        timeout_obj = mock_session_cls.call_args.kwargs.get("timeout")
+        assert timeout_obj is not None
+        assert getattr(timeout_obj, "total", None) == 120

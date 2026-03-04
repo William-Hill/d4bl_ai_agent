@@ -128,8 +128,8 @@ class ResultFusion:
             for i, s in enumerate(sources[:10])  # Limit context
         )
         prompt = SYNTHESIS_PROMPT.replace(
-            "{query}", query
-        ).replace("{sources_text}", sources_text)
+            "{sources_text}", sources_text
+        ).replace("{query}", query)
 
         return await ollama_generate(
             base_url=self.ollama_base_url,

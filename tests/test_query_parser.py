@@ -44,7 +44,12 @@ class TestQueryParser:
     async def test_parse_returns_parsed_query(self, mock_session_cls):
         """parse() should return a ParsedQuery with extracted entities."""
         llm_response = {
-            "response": '{"entities": ["NIL", "Mississippi", "Black athletes"], "search_queries": ["NIL policies Mississippi Black athletes"], "data_sources": ["vector", "structured"]}'
+            "response": (
+                '{"entities": ["NIL", "Mississippi", "Black athletes"],'
+                ' "search_queries": ["NIL policies Mississippi'
+                ' Black athletes"],'
+                ' "data_sources": ["vector", "structured"]}'
+            )
         }
         mock_response = AsyncMock()
         mock_response.status = 200
