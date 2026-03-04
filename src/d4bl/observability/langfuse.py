@@ -7,15 +7,26 @@ from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-_langfuse_initialized = False
+_langfuse_init_state: bool | None = None  # None=untried, True=ok, False=failed
 _langfuse_client = None
+
+
+def check_langfuse_service_available(host: str, timeout: float = 3.0) -> bool:
+    """Check if Langfuse service is reachable via HTTP GET."""
+    import urllib.request
+
+    try:
+        urllib.request.urlopen(f"{host}/api/public/health", timeout=timeout)
+        return True
+    except Exception:
+        return False
 
 
 def initialize_langfuse():
     """Initialize Langfuse observability and CrewAI instrumentation."""
-    global _langfuse_initialized, _langfuse_client
+    global _langfuse_init_state, _langfuse_client
 
-    if _langfuse_initialized:
+    if _langfuse_init_state is not None:
         return _langfuse_client
 
     try:
@@ -78,7 +89,7 @@ def initialize_langfuse():
 
         CrewAIInstrumentor().instrument(skip_dep_check=True)
 
-        _langfuse_initialized = True
+        _langfuse_init_state = True
         logger.info("CrewAI instrumentation initialized for Langfuse observability")
         logger.debug("Langfuse Host: %s", langfuse_host)
         logger.debug("View traces at: %s", langfuse_base_url)
@@ -89,18 +100,18 @@ def initialize_langfuse():
         logger.debug(
             "Install with: pip install langfuse openinference-instrumentation-crewai"
         )
-        _langfuse_initialized = False
+        _langfuse_init_state = False
         return None
     except Exception as e:
         logger.error("Error initializing Langfuse: %s", e, exc_info=True)
-        _langfuse_initialized = False
+        _langfuse_init_state = False
         return None
 
 
 def get_langfuse_client():
     """Get the initialized Langfuse client, initializing if necessary."""
     global _langfuse_client
-    if _langfuse_client is None:
+    if _langfuse_init_state is None:
         _langfuse_client = initialize_langfuse()
     return _langfuse_client
 
