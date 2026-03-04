@@ -115,7 +115,7 @@ class TestResultFusion:
         assert merged[0].relevance_score > merged[1].relevance_score
 
     @pytest.mark.asyncio
-    @patch("d4bl.query.fusion.aiohttp.ClientSession")
+    @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
     async def test_synthesize_returns_query_result(self, mock_session_cls):
         """synthesize() should return a QueryResult with an answer."""
         llm_response = {
@@ -163,7 +163,7 @@ class TestResultFusion:
         assert "no" in result.answer.lower()
 
     @pytest.mark.asyncio
-    @patch("d4bl.query.fusion.aiohttp.ClientSession")
+    @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
     async def test_synthesize_falls_back_on_llm_failure(self, mock_session_cls):
         """synthesize() should fall back to raw sources if LLM fails."""
         mock_response = AsyncMock()

@@ -2,28 +2,31 @@
 
 import logging
 from dataclasses import dataclass
+from string import Template
 from typing import Optional
 
-import aiohttp
-
+from d4bl.llm.ollama_client import ollama_generate
 from d4bl.query.structured import StructuredResult
 from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-SYNTHESIS_PROMPT = """You are a research assistant for a data justice platform. Based on the following sources, answer the user's question. Cite sources by number [1], [2], etc.
+SYNTHESIS_PROMPT = Template("""\
+You are a research assistant for a data justice platform. \
+Based on the following sources, answer the user's question. \
+Cite sources by number [1], [2], etc.
 
 If the sources don't contain enough information to answer, say so clearly.
 
-Question: {query}
+Question: $query
 
 Sources:
-{sources_text}
+$sources_text
 
-Answer:"""
+Answer:""")
 
 
-@dataclass
+@dataclass(frozen=True)
 class SourceReference:
     """A source used to answer a query."""
 
@@ -34,7 +37,7 @@ class SourceReference:
     relevance_score: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class QueryResult:
     """The final result of a natural language query."""
 
@@ -81,7 +84,7 @@ class ResultFusion:
         # Add structured results (deduplicated by job_id)
         seen_job_ids: set[str] = set()
         for sr in structured_results:
-            job_key = str(sr.job_id)
+            job_key = sr.job_id
             if job_key in seen_job_ids:
                 continue
             seen_job_ids.add(job_key)
@@ -128,28 +131,17 @@ class ResultFusion:
             f"[{i + 1}] ({s.source_type}) {s.title}\n{s.snippet}"
             for i, s in enumerate(sources[:10])  # Limit context
         )
-        prompt = SYNTHESIS_PROMPT.format(
+        prompt = SYNTHESIS_PROMPT.substitute(
             query=query, sources_text=sources_text
         )
 
-        timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.ollama_base_url}/api/generate",
-                json={
-                    "model": "mistral",
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.3},
-                },
-            ) as response:
-                if response.status != 200:
-                    raise RuntimeError(
-                        f"Ollama returned status {response.status}"
-                    )
-                data = await response.json()
-
-        return data.get("response", "").strip()
+        return await ollama_generate(
+            base_url=self.ollama_base_url,
+            prompt=prompt,
+            model="mistral",
+            temperature=0.3,
+            timeout_seconds=60,
+        )
 
     def _fallback_answer(self, sources: list[SourceReference]) -> str:
         """Build a simple answer from sources without LLM."""

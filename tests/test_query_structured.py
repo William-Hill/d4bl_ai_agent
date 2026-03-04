@@ -81,17 +81,23 @@ class TestStructuredSearcher:
 
     def test_score_relevance_full_overlap(self):
         """Full keyword overlap should score 1.0."""
+        word_sets = StructuredSearcher._precompute_query_word_sets(
+            ["NIL policies Mississippi"]
+        )
         score = self.searcher._score_relevance(
             "NIL policies Mississippi",
-            ["NIL policies Mississippi"],
+            word_sets,
         )
         assert score == 1.0
 
     def test_score_relevance_partial_overlap(self):
         """Partial keyword overlap should score between 0 and 1."""
+        word_sets = StructuredSearcher._precompute_query_word_sets(
+            ["NIL policies California"]
+        )
         score = self.searcher._score_relevance(
             "Mississippi NIL policy impact",
-            ["NIL policies California"],
+            word_sets,
         )
         assert 0 < score < 1.0
 

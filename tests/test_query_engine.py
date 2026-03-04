@@ -23,10 +23,9 @@ class TestQueryEngine:
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
                 original_query="NIL policies Mississippi",
-                intent="information_retrieval",
-                entities=["NIL", "Mississippi"],
-                search_queries=["NIL policies Mississippi"],
-                data_sources=["vector", "structured"],
+                entities=("NIL", "Mississippi"),
+                search_queries=("NIL policies Mississippi",),
+                data_sources=("vector", "structured"),
             )
         )
 
@@ -90,10 +89,9 @@ class TestQueryEngine:
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
                 original_query="test",
-                intent="information_retrieval",
-                entities=[],
-                search_queries=["test"],
-                data_sources=["vector"],
+                entities=(),
+                search_queries=("test",),
+                data_sources=("vector",),
             )
         )
         self.engine.vector_store.search_similar = AsyncMock(return_value=[])
@@ -117,10 +115,9 @@ class TestQueryEngine:
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
                 original_query="how many jobs ran",
-                intent="count_query",
-                entities=[],
-                search_queries=["research jobs count"],
-                data_sources=["structured"],
+                entities=(),
+                search_queries=("research jobs count",),
+                data_sources=("structured",),
             )
         )
         self.engine.vector_store.search_similar = AsyncMock(return_value=[])
@@ -146,10 +143,9 @@ class TestQueryEngine:
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
                 original_query="test",
-                intent="information_retrieval",
-                entities=[],
-                search_queries=["test"],
-                data_sources=["vector"],
+                entities=(),
+                search_queries=("test",),
+                data_sources=("vector",),
             )
         )
         self.engine.vector_store.search_similar = AsyncMock(return_value=[])

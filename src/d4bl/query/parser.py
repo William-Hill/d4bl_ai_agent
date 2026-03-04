@@ -3,36 +3,40 @@
 import json
 import logging
 from dataclasses import dataclass
+from string import Template
 from typing import Optional
 
-import aiohttp
-
+from d4bl.llm.ollama_client import ollama_generate
 from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-PARSE_PROMPT = """You are a query parser for a research platform about data justice and racial equity.
+PARSE_PROMPT = Template("""\
+You are a query parser for a research platform about \
+data justice and racial equity.
 
 Given a user's natural language question, extract:
-1. "intent": The type of query. One of: "information_retrieval", "count_query", "comparison", "timeline", "summary".
-2. "entities": Key entities mentioned (people, places, policies, organizations, topics).
-3. "search_queries": 1-3 rephrased search queries optimized for semantic search.
-4. "data_sources": Which data sources to query. Options: "vector" (scraped research content), "structured" (research jobs, evaluations in PostgreSQL). Include both if unsure.
+1. "entities": Key entities mentioned (people, places, policies, \
+organizations, topics).
+2. "search_queries": 1-3 rephrased search queries optimized for \
+semantic search.
+3. "data_sources": Which data sources to query. Options: "vector" \
+(scraped research content), "structured" (research jobs, evaluations \
+in PostgreSQL). Include both if unsure.
 
 Respond with ONLY a JSON object, no other text.
 
-User question: {query}"""
+User question: $query""")
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParsedQuery:
     """Structured representation of a parsed natural language query."""
 
     original_query: str
-    intent: str
-    entities: list[str]
-    search_queries: list[str]
-    data_sources: list[str]
+    entities: tuple[str, ...]
+    search_queries: tuple[str, ...]
+    data_sources: tuple[str, ...]
 
 
 class QueryParser:
@@ -60,28 +64,15 @@ class QueryParser:
 
     async def _parse_with_llm(self, query: str) -> ParsedQuery:
         """Use Ollama/Mistral to parse the query."""
-        # Use replace() instead of format() so curly braces in user input
-        # (e.g. "What is {NIL}?") don't raise KeyError.
-        prompt = PARSE_PROMPT.replace("{query}", query)
+        prompt = PARSE_PROMPT.substitute(query=query)
 
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.ollama_base_url}/api/generate",
-                json={
-                    "model": "mistral",
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.1},
-                },
-            ) as response:
-                if response.status != 200:
-                    raise RuntimeError(
-                        f"Ollama returned status {response.status}"
-                    )
-                data = await response.json()
-
-        raw_text = data.get("response", "").strip()
+        raw_text = await ollama_generate(
+            base_url=self.ollama_base_url,
+            prompt=prompt,
+            model="mistral",
+            temperature=0.1,
+            timeout_seconds=30,
+        )
         parsed = json.loads(raw_text)
 
         # Guard against hallucinated field types (e.g. "entities": "Mississippi")
@@ -99,18 +90,16 @@ class QueryParser:
 
         return ParsedQuery(
             original_query=query,
-            intent=parsed.get("intent", "information_retrieval"),
-            entities=entities,
-            search_queries=search_queries,
-            data_sources=data_sources,
+            entities=tuple(entities),
+            search_queries=tuple(search_queries),
+            data_sources=tuple(data_sources),
         )
 
     def _fallback_parse(self, query: str) -> ParsedQuery:
         """Simple fallback when LLM parsing fails."""
         return ParsedQuery(
             original_query=query,
-            intent="information_retrieval",
-            entities=[],
-            search_queries=[query],
-            data_sources=["vector", "structured"],
+            entities=(),
+            search_queries=(query,),
+            data_sources=("vector", "structured"),
         )
