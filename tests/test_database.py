@@ -60,3 +60,9 @@ class TestDatetimeDefaults:
 
     def test_policy_bill_updated_at_onupdate_uses_utc_now(self):
         assert _get_column_onupdate(PolicyBill, "updated_at").__name__ == "_utc_now"
+
+    def test_get_column_default_returns_none_when_missing(self):
+        assert _get_column_default(ResearchJob, "completed_at") is None
+
+    def test_get_column_onupdate_returns_none_when_missing(self):
+        assert _get_column_onupdate(ResearchJob, "completed_at") is None
