@@ -1441,6 +1441,7 @@ export default function MetricFilterPanel({ filters, onChange }: Props) {
 
 **Step 2: Create the choropleth map component**
 
+{% raw %}
 ```tsx
 // ui-nextjs/components/explore/StateMap.tsx
 'use client';
@@ -1527,6 +1528,7 @@ export default function StateMap({ indicators, selectedStateFips, onSelectState 
   );
 }
 ```
+{% endraw %}
 
 **Step 3: Run build to check TypeScript**
 
@@ -1556,6 +1558,7 @@ git commit -m "feat: Add MetricFilterPanel and StateMap explore components"
 
 **Step 1: Create RacialGapChart**
 
+{% raw %}
 ```tsx
 // ui-nextjs/components/explore/RacialGapChart.tsx
 'use client';
@@ -1645,6 +1648,7 @@ export default function RacialGapChart({ indicators, metric, stateName }: Props)
   );
 }
 ```
+{% endraw %}
 
 **Step 2: Create PolicyTable**
 
