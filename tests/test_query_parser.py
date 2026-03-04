@@ -13,20 +13,17 @@ class TestParsedQuery:
     def test_parsed_query_defaults(self):
         pq = ParsedQuery(
             original_query="What are NIL policies in Mississippi?",
-            intent="information_retrieval",
             entities=["NIL", "Mississippi"],
             search_queries=["NIL policies Mississippi"],
             data_sources=["vector"],
         )
         assert pq.original_query == "What are NIL policies in Mississippi?"
-        assert pq.intent == "information_retrieval"
         assert "NIL" in pq.entities
         assert "vector" in pq.data_sources
 
     def test_parsed_query_with_structured_source(self):
         pq = ParsedQuery(
             original_query="How many research jobs have run?",
-            intent="count_query",
             entities=[],
             search_queries=["research jobs count"],
             data_sources=["structured"],
@@ -47,7 +44,7 @@ class TestQueryParser:
     async def test_parse_returns_parsed_query(self, mock_session_cls):
         """parse() should return a ParsedQuery with extracted entities."""
         llm_response = {
-            "response": '{"intent": "information_retrieval", "entities": ["NIL", "Mississippi", "Black athletes"], "search_queries": ["NIL policies Mississippi Black athletes"], "data_sources": ["vector", "structured"]}'
+            "response": '{"entities": ["NIL", "Mississippi", "Black athletes"], "search_queries": ["NIL policies Mississippi Black athletes"], "data_sources": ["vector", "structured"]}'
         }
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -66,7 +63,6 @@ class TestQueryParser:
         )
 
         assert isinstance(result, ParsedQuery)
-        assert result.intent == "information_retrieval"
         assert "NIL" in result.entities
         assert len(result.search_queries) > 0
         assert "vector" in result.data_sources

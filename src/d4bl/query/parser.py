@@ -13,10 +13,9 @@ logger = logging.getLogger(__name__)
 PARSE_PROMPT = """You are a query parser for a research platform about data justice and racial equity.
 
 Given a user's natural language question, extract:
-1. "intent": The type of query. One of: "information_retrieval", "count_query", "comparison", "timeline", "summary".
-2. "entities": Key entities mentioned (people, places, policies, organizations, topics).
-3. "search_queries": 1-3 rephrased search queries optimized for semantic search.
-4. "data_sources": Which data sources to query. Options: "vector" (scraped research content), "structured" (research jobs, evaluations in PostgreSQL). Include both if unsure.
+1. "entities": Key entities mentioned (people, places, policies, organizations, topics).
+2. "search_queries": 1-3 rephrased search queries optimized for semantic search.
+3. "data_sources": Which data sources to query. Options: "vector" (scraped research content), "structured" (research jobs, evaluations in PostgreSQL). Include both if unsure.
 
 Respond with ONLY a JSON object, no other text.
 
@@ -28,7 +27,6 @@ class ParsedQuery:
     """Structured representation of a parsed natural language query."""
 
     original_query: str
-    intent: str
     entities: list[str]
     search_queries: list[str]
     data_sources: list[str]
@@ -87,7 +85,6 @@ class QueryParser:
 
         return ParsedQuery(
             original_query=query,
-            intent=parsed.get("intent", "information_retrieval"),
             entities=entities,
             search_queries=search_queries,
             data_sources=data_sources,
@@ -97,7 +94,6 @@ class QueryParser:
         """Simple fallback when LLM parsing fails."""
         return ParsedQuery(
             original_query=query,
-            intent="information_retrieval",
             entities=[],
             search_queries=[query],
             data_sources=["vector", "structured"],

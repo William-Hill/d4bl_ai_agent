@@ -53,8 +53,7 @@ class QueryEngine:
         # 1. Parse the query
         parsed = await self.parser.parse(question)
         logger.info(
-            "Parsed query: intent=%s, entities=%s, sources=%s",
-            parsed.intent,
+            "Parsed query: entities=%s, sources=%s",
             parsed.entities,
             parsed.data_sources,
         )
