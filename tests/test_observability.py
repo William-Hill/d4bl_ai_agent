@@ -65,11 +65,16 @@ class TestCheckLangfuseServiceAvailable:
             result = check_langfuse_service_available("http://localhost:3000")
         assert result is False
 
+    def test_rejects_non_http_scheme(self):
+        """Should return False for non-HTTP schemes (S310 URL audit)."""
+        assert check_langfuse_service_available("ftp://evil.com") is False
+        assert check_langfuse_service_available("file:///etc/passwd") is False
+
 
 class TestInitializeLangfuseSentinel:
     """Tests for the three-state init sentinel."""
 
-    def _reset_module_state(self):
+    def _reset_module_state(self) -> None:
         """Reset module-level sentinel and client to pristine state."""
         langfuse_mod._langfuse_init_state = None
         langfuse_mod._langfuse_client = None

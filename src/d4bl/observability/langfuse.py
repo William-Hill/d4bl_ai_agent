@@ -33,6 +33,10 @@ def check_langfuse_service_available(host: str, timeout: float = 3.0) -> bool:
     """Check if Langfuse service is reachable via HTTP GET."""
     import urllib.request
 
+    if not host.startswith(("http://", "https://")):
+        logger.warning("Refusing health check for non-HTTP host: %s", host)
+        return False
+
     try:
         resp = urllib.request.urlopen(f"{host}/api/public/health", timeout=timeout)
         resp.close()
@@ -129,7 +133,7 @@ def initialize_langfuse() -> Langfuse | None:
         _langfuse_init_state = False
         return None
     except Exception as e:
-        logger.error("Error initializing Langfuse: %s", e, exc_info=True)
+        logger.exception("Error initializing Langfuse: %s", e)
         _langfuse_init_state = False
         return None
 
