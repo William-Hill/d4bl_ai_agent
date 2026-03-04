@@ -35,6 +35,14 @@ class Settings:
         f"{os.getenv('LANGFUSE_OTEL_HOST', os.getenv('LANGFUSE_HOST', 'http://localhost:3002'))}/api/public/otel/v1/traces",
     )
 
+    # Database
+    postgres_user: str = os.getenv("POSTGRES_USER", "d4bl_user")
+    postgres_password: str = os.getenv("POSTGRES_PASSWORD", "d4bl_password")
+    postgres_host: str = os.getenv("POSTGRES_HOST", "localhost")
+    postgres_port: str = os.getenv("POSTGRES_PORT", "5432")
+    postgres_db: str = os.getenv("POSTGRES_DB", "postgres")
+    db_echo: bool = os.getenv("DB_ECHO", "false").lower() == "true"
+
     # CORS
     cors_allowed_origins: tuple[str, ...] = field(
         default_factory=lambda: tuple(

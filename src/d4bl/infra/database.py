@@ -1,7 +1,6 @@
 """
 Database models and connection for storing research queries and results
 """
-import os
 from datetime import datetime, timezone
 
 from uuid import UUID, uuid4
@@ -10,6 +9,8 @@ from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Dat
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+from d4bl.settings import get_settings
 
 Base = declarative_base()
 
@@ -168,37 +169,31 @@ class PolicyBill(Base):
 
 # Database connection setup
 def get_database_url() -> str:
-    """Get database URL from environment variables"""
-    db_user = os.getenv("POSTGRES_USER", "d4bl_user")
-    db_password = os.getenv("POSTGRES_PASSWORD", "d4bl_password")
-    db_host = os.getenv("POSTGRES_HOST", "localhost")
-    db_port = os.getenv("POSTGRES_PORT", "5432")
-    db_name = os.getenv("POSTGRES_DB", "postgres")
-    
-    # CRITICAL: In Docker, we MUST use 'postgres' as the hostname (Docker service name)
-    # OR use 'host.docker.internal' to reach services on the host machine (like Supabase)
-    # Only override if host is localhost/127.0.0.1 AND we're running inside Docker
-    if db_host in ("localhost", "127.0.0.1"):
-        # Check if we're in Docker (common indicators)
-        if os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER"):
-            original_host = db_host
-            db_host = "postgres"
-            print(
-                f"⚠ Warning: Detected Docker environment, "
-                f"using 'postgres' as hostname instead of '{original_host}'"
-            )
-        else:
-            print(
-                "⚠ Warning: Using 'localhost' as database host. "
-                "In Docker, this should be 'postgres' or 'host.docker.internal'"
-            )
-    
-    # Ensure we're using the correct database name (not the username)
+    """Get database URL from settings."""
+    settings = get_settings()
+    db_user = settings.postgres_user
+    db_password = settings.postgres_password
+    db_host = settings.postgres_host
+    db_port = settings.postgres_port
+    db_name = settings.postgres_db
+
+    if db_host in ("localhost", "127.0.0.1") and settings.is_docker:
+        original_host = db_host
+        db_host = "postgres"
+        print(
+            f"⚠ Warning: Detected Docker environment, "
+            f"using 'postgres' as hostname instead of '{original_host}'"
+        )
+    elif db_host in ("localhost", "127.0.0.1"):
+        print(
+            "⚠ Warning: Using 'localhost' as database host. "
+            "In Docker, this should be 'postgres' or 'host.docker.internal'"
+        )
+
     if not db_name or db_name == db_user:
         db_name = "postgres"
         print(f"⚠ Warning: Using default database name: {db_name}")
-    
-    # Use asyncpg driver for async operations
+
     database_url = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     print(f"📊 Database URL: postgresql+asyncpg://{db_user}:***@{db_host}:{db_port}/{db_name}")
 
@@ -213,11 +208,12 @@ async_session_maker = None
 def init_db():
     """Initialize database connection"""
     global engine, async_session_maker
-    
+
+    settings = get_settings()
     database_url = get_database_url()
     engine = create_async_engine(
         database_url,
-        echo=os.getenv("DB_ECHO", "false").lower() == "true",
+        echo=settings.db_echo,
         future=True,
         pool_pre_ping=True,  # Verify connections before using them
         pool_size=5,  # Limit connection pool size
