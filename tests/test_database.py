@@ -1,6 +1,4 @@
 """Tests for database model defaults and helpers."""
-from typing import Any
-
 from d4bl.infra.database import (
     ResearchJob, EvaluationResult, CensusIndicator, PolicyBill, _utc_now,
 )
@@ -19,7 +17,7 @@ class TestUtcNow:
         assert result.tzinfo == timezone.utc
 
 
-def _get_column_default(model_class, column_name: str) -> Any:
+def _get_column_default(model_class, column_name: str) -> object | None:
     """Extract the default callable from a SQLAlchemy column."""
     col = model_class.__table__.columns[column_name]
     if col.default is not None:
@@ -27,7 +25,7 @@ def _get_column_default(model_class, column_name: str) -> Any:
     return None
 
 
-def _get_column_onupdate(model_class, column_name: str) -> Any:
+def _get_column_onupdate(model_class, column_name: str) -> object | None:
     """Extract the onupdate callable from a SQLAlchemy column."""
     col = model_class.__table__.columns[column_name]
     if col.onupdate is not None:
