@@ -97,16 +97,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Check Langfuse availability early and unset OTLP endpoint if not available
     try:
-        from d4bl.observability.langfuse import check_langfuse_service_available
+        from d4bl.observability.langfuse import (
+            resolve_langfuse_host,
+            check_langfuse_service_available,
+        )
 
         settings = get_settings()
-        langfuse_otel_host = settings.langfuse_otel_host or settings.langfuse_host
-
-        if os.path.exists("/.dockerenv"):
-            if "localhost" in langfuse_otel_host:
-                langfuse_otel_host = langfuse_otel_host.replace("localhost", "langfuse-web")
-            if ":3002" in langfuse_otel_host:
-                langfuse_otel_host = langfuse_otel_host.replace(":3002", ":3000")
+        langfuse_otel_host = resolve_langfuse_host(
+            settings.langfuse_otel_host or settings.langfuse_host,
+            settings.is_docker,
+        )
 
         if not check_langfuse_service_available(langfuse_otel_host):
             logger.warning("Langfuse service not available. Unsetting OTLP endpoint.")

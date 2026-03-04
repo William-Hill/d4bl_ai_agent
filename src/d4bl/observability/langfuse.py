@@ -5,17 +5,51 @@ import logging
 
 from d4bl.settings import get_settings
 
+try:  # Optional dependency
+    from langfuse import Langfuse  # type: ignore[import-untyped]
+except ImportError:  # pragma: no cover
+    Langfuse = None  # type: ignore[misc,assignment]
+
 logger = logging.getLogger(__name__)
 
-_langfuse_initialized = False
-_langfuse_client = None
+_langfuse_init_state: bool | None = None  # None=untried, True=ok, False=failed
+_langfuse_client: Langfuse | None = None
 
 
-def initialize_langfuse():
+def resolve_langfuse_host(host: str, is_docker: bool) -> str:
+    """Adjust a Langfuse host for Docker if needed.
+
+    Replaces localhost with the Docker service name (langfuse-web)
+    and adjusts port 3002 to 3000 (internal Docker port).
+    """
+    if is_docker and "localhost" in host:
+        host = host.replace("localhost", "langfuse-web")
+        if ":3002" in host:
+            host = host.replace(":3002", ":3000")
+    return host
+
+
+def check_langfuse_service_available(host: str, timeout: float = 3.0) -> bool:
+    """Check if Langfuse service is reachable via HTTP GET."""
+    import urllib.request
+
+    if not host.startswith(("http://", "https://")):
+        logger.warning("Refusing health check for non-HTTP host: %s", host)
+        return False
+
+    try:
+        resp = urllib.request.urlopen(f"{host}/api/public/health", timeout=timeout)
+        resp.close()
+        return True
+    except Exception:
+        return False
+
+
+def initialize_langfuse() -> Langfuse | None:
     """Initialize Langfuse observability and CrewAI instrumentation."""
-    global _langfuse_initialized, _langfuse_client
+    global _langfuse_init_state, _langfuse_client
 
-    if _langfuse_initialized:
+    if _langfuse_init_state is not None:
         return _langfuse_client
 
     try:
@@ -24,8 +58,6 @@ def initialize_langfuse():
 
         settings = get_settings()
 
-        langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
-        langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
         langfuse_host = settings.langfuse_host
         langfuse_base_url = settings.langfuse_base_url or settings.langfuse_host
         langfuse_otel_host = settings.langfuse_otel_host or langfuse_host
@@ -34,16 +66,14 @@ def initialize_langfuse():
             f"{langfuse_otel_host}/api/public/otel/v1/traces",
         )
 
-        # If running in Docker, ensure BASE_URL uses service name and internal port
+        # Docker BASE_URL adjustment: unlike resolve_langfuse_host (which remaps
+        # localhost→langfuse-web), this resets base_url to langfuse_host entirely
+        # because base_url may point to a different external endpoint.
         if settings.is_docker:
             if "localhost" in langfuse_base_url or ":3002" in langfuse_base_url:
                 langfuse_base_url = langfuse_host
 
         # Set environment variables if not already set
-        if langfuse_public_key and not os.getenv("LANGFUSE_PUBLIC_KEY"):
-            os.environ["LANGFUSE_PUBLIC_KEY"] = langfuse_public_key
-        if langfuse_secret_key and not os.getenv("LANGFUSE_SECRET_KEY"):
-            os.environ["LANGFUSE_SECRET_KEY"] = langfuse_secret_key
         if not os.getenv("LANGFUSE_HOST"):
             os.environ["LANGFUSE_HOST"] = langfuse_host
         if settings.is_docker:
@@ -57,57 +87,61 @@ def initialize_langfuse():
         # Best-effort auth check
         try:
             if _langfuse_client.auth_check():
-                print("✅ Langfuse client authenticated and ready!")
+                logger.info("Langfuse client authenticated and ready")
             else:
-                print("⚠️ Langfuse authentication failed. Check credentials/host.")
-                print(f"   LANGFUSE_HOST: {langfuse_host}")
-                print(f"   LANGFUSE_BASE_URL: {langfuse_base_url}")
+                logger.warning("Langfuse authentication failed. Check credentials/host.")
+                logger.debug("LANGFUSE_HOST: %s", langfuse_host)
+                logger.debug("LANGFUSE_BASE_URL: %s", langfuse_base_url)
         except Exception as auth_error:
-            print(f"⚠️ Langfuse auth check failed: {auth_error}")
-            print(f"   LANGFUSE_HOST: {langfuse_host}")
-            print(f"   LANGFUSE_BASE_URL: {langfuse_base_url}")
+            logger.warning("Langfuse auth check failed: %s", auth_error)
+            logger.debug("LANGFUSE_HOST: %s", langfuse_host)
+            logger.debug("LANGFUSE_BASE_URL: %s", langfuse_base_url)
 
         current_otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-        current_traces_endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
 
         if not current_otlp_endpoint:
-            os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
-            os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
-            print(f"⚠️  OTLP endpoint was not set! Forced to: {otlp_endpoint}")
+            if check_langfuse_service_available(langfuse_otel_host):
+                os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlp_endpoint
+                os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
+                logger.warning("OTLP endpoint was not set, forced to: %s", otlp_endpoint)
+            else:
+                logger.warning(
+                    "Langfuse service unavailable; OTLP endpoints remain unset."
+                )
         else:
-            print(f"✓ OTLP endpoint configured: {current_otlp_endpoint}")
+            logger.info("OTLP endpoint configured: %s", current_otlp_endpoint)
             if current_otlp_endpoint != otlp_endpoint:
-                print("⚠️  WARNING: OTLP endpoint mismatch!")
-                print(f"   Expected: {otlp_endpoint}")
-                print(f"   Actual: {current_otlp_endpoint}")
+                logger.warning(
+                    "OTLP endpoint mismatch: expected %s, actual %s",
+                    otlp_endpoint,
+                    current_otlp_endpoint,
+                )
 
         CrewAIInstrumentor().instrument(skip_dep_check=True)
-        print("✅ CrewAI instrumentation initialized")
 
-        _langfuse_initialized = True
-        print("✅ CrewAI instrumentation initialized for Langfuse observability")
-        print(f"   Langfuse Host: {langfuse_host}")
-        print(f"   View traces at: {langfuse_base_url}")
+        _langfuse_init_state = True
+        logger.info("CrewAI instrumentation initialized for Langfuse observability")
+        logger.debug("Langfuse Host: %s", langfuse_host)
+        logger.debug("View traces at: %s", langfuse_base_url)
 
         return _langfuse_client
     except ImportError as e:
-        print(f"⚠️ Langfuse dependencies not installed: {e}")
-        print("   Install with: pip install langfuse openinference-instrumentation-crewai")
-        _langfuse_initialized = False
+        logger.warning("Langfuse dependencies not installed: %s", e)
+        logger.debug(
+            "Install with: pip install langfuse openinference-instrumentation-crewai"
+        )
+        _langfuse_init_state = False
         return None
     except Exception as e:
-        print(f"⚠️ Error initializing Langfuse: {e}")
-        import traceback
-
-        traceback.print_exc()
-        _langfuse_initialized = False
+        logger.exception("Error initializing Langfuse: %s", e)
+        _langfuse_init_state = False
         return None
 
 
-def get_langfuse_client():
+def get_langfuse_client() -> Langfuse | None:
     """Get the initialized Langfuse client, initializing if necessary."""
     global _langfuse_client
-    if _langfuse_client is None:
+    if _langfuse_init_state is None:
         _langfuse_client = initialize_langfuse()
     return _langfuse_client
 
