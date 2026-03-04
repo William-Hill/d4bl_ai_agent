@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from string import Template
 from typing import Optional
 
 from d4bl.llm.ollama_client import ollama_generate
@@ -10,16 +11,19 @@ from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-SYNTHESIS_PROMPT = """You are a research assistant for a data justice platform. Based on the following sources, answer the user's question. Cite sources by number [1], [2], etc.
+SYNTHESIS_PROMPT = Template("""\
+You are a research assistant for a data justice platform. \
+Based on the following sources, answer the user's question. \
+Cite sources by number [1], [2], etc.
 
 If the sources don't contain enough information to answer, say so clearly.
 
-Question: {query}
+Question: $query
 
 Sources:
-{sources_text}
+$sources_text
 
-Answer:"""
+Answer:""")
 
 
 @dataclass(frozen=True)
@@ -127,9 +131,9 @@ class ResultFusion:
             f"[{i + 1}] ({s.source_type}) {s.title}\n{s.snippet}"
             for i, s in enumerate(sources[:10])  # Limit context
         )
-        prompt = SYNTHESIS_PROMPT.replace(
-            "{sources_text}", sources_text
-        ).replace("{query}", query)
+        prompt = SYNTHESIS_PROMPT.substitute(
+            query=query, sources_text=sources_text
+        )
 
         return await ollama_generate(
             base_url=self.ollama_base_url,

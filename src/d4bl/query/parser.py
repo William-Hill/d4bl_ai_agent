@@ -3,6 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass
+from string import Template
 from typing import Optional
 
 from d4bl.llm.ollama_client import ollama_generate
@@ -10,16 +11,22 @@ from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-PARSE_PROMPT = """You are a query parser for a research platform about data justice and racial equity.
+PARSE_PROMPT = Template("""\
+You are a query parser for a research platform about \
+data justice and racial equity.
 
 Given a user's natural language question, extract:
-1. "entities": Key entities mentioned (people, places, policies, organizations, topics).
-2. "search_queries": 1-3 rephrased search queries optimized for semantic search.
-3. "data_sources": Which data sources to query. Options: "vector" (scraped research content), "structured" (research jobs, evaluations in PostgreSQL). Include both if unsure.
+1. "entities": Key entities mentioned (people, places, policies, \
+organizations, topics).
+2. "search_queries": 1-3 rephrased search queries optimized for \
+semantic search.
+3. "data_sources": Which data sources to query. Options: "vector" \
+(scraped research content), "structured" (research jobs, evaluations \
+in PostgreSQL). Include both if unsure.
 
 Respond with ONLY a JSON object, no other text.
 
-User question: {query}"""
+User question: $query""")
 
 
 @dataclass(frozen=True)
@@ -57,9 +64,7 @@ class QueryParser:
 
     async def _parse_with_llm(self, query: str) -> ParsedQuery:
         """Use Ollama/Mistral to parse the query."""
-        # Use replace() instead of format() so curly braces in user input
-        # (e.g. "What is {NIL}?") don't raise KeyError.
-        prompt = PARSE_PROMPT.replace("{query}", query)
+        prompt = PARSE_PROMPT.substitute(query=query)
 
         raw_text = await ollama_generate(
             base_url=self.ollama_base_url,
