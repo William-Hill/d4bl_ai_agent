@@ -76,18 +76,21 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 
 ## Remaining Modules
 
-### observability/ (#25) — In Progress
+### observability/ (#25) — PR #TBD
 
 | Metric | Baseline | After | Delta |
 |--------|----------|-------|-------|
-| Source LOC | 120 | | |
-| Source files | 2 | | |
-| Functions/methods | 2 | | |
-| Avg cyclomatic complexity | 11.0 | | |
-| CC grades | A:1, C:1 | | |
-| Avg maintainability index | 76.2 | | |
-| `print()` calls | 15 | | |
-| `os.getenv` bypassing Settings | 3 | | |
+| Source LOC | 120 | 152 | +32 (+27%) |
+| Source files | 2 | 2 | — |
+| Functions/methods | 2 | 4 | +2 |
+| Avg cyclomatic complexity | 11.0 | 6.0 | **-5.0 (-45%)** |
+| CC grades | A:1, C:1 | A:3, C:1 | +2 A |
+| Avg maintainability index | 76.2 | 79.5 | **+3.3** |
+| `print()` calls | 15 | 0 | **-15** |
+| `os.getenv` bypassing Settings | 3 | 4 | +1 |
+| Test LOC added | — | 158 | +158 |
+
+> LOC increased because two new functions were added (`resolve_langfuse_host`, `check_langfuse_service_available`) and print calls were replaced with more verbose logger calls. Average CC dropped significantly because the new functions are low-complexity.
 
 ### evals/ (#26)
 
