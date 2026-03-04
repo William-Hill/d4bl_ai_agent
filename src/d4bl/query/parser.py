@@ -34,9 +34,9 @@ class ParsedQuery:
     """Structured representation of a parsed natural language query."""
 
     original_query: str
-    entities: list[str]
-    search_queries: list[str]
-    data_sources: list[str]
+    entities: tuple[str, ...]
+    search_queries: tuple[str, ...]
+    data_sources: tuple[str, ...]
 
 
 class QueryParser:
@@ -90,16 +90,16 @@ class QueryParser:
 
         return ParsedQuery(
             original_query=query,
-            entities=entities,
-            search_queries=search_queries,
-            data_sources=data_sources,
+            entities=tuple(entities),
+            search_queries=tuple(search_queries),
+            data_sources=tuple(data_sources),
         )
 
     def _fallback_parse(self, query: str) -> ParsedQuery:
         """Simple fallback when LLM parsing fails."""
         return ParsedQuery(
             original_query=query,
-            entities=[],
-            search_queries=[query],
-            data_sources=["vector", "structured"],
+            entities=(),
+            search_queries=(query,),
+            data_sources=("vector", "structured"),
         )

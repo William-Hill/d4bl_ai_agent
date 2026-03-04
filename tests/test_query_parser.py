@@ -13,9 +13,9 @@ class TestParsedQuery:
     def test_parsed_query_defaults(self):
         pq = ParsedQuery(
             original_query="What are NIL policies in Mississippi?",
-            entities=["NIL", "Mississippi"],
-            search_queries=["NIL policies Mississippi"],
-            data_sources=["vector"],
+            entities=("NIL", "Mississippi"),
+            search_queries=("NIL policies Mississippi",),
+            data_sources=("vector",),
         )
         assert pq.original_query == "What are NIL policies in Mississippi?"
         assert "NIL" in pq.entities
@@ -24,9 +24,9 @@ class TestParsedQuery:
     def test_parsed_query_with_structured_source(self):
         pq = ParsedQuery(
             original_query="How many research jobs have run?",
-            entities=[],
-            search_queries=["research jobs count"],
-            data_sources=["structured"],
+            entities=(),
+            search_queries=("research jobs count",),
+            data_sources=("structured",),
         )
         assert "structured" in pq.data_sources
 
@@ -91,6 +91,6 @@ class TestQueryParser:
 
         assert isinstance(result, ParsedQuery)
         assert result.original_query == "NIL policies Mississippi"
-        assert result.search_queries == ["NIL policies Mississippi"]
+        assert result.search_queries == ("NIL policies Mississippi",)
         assert "vector" in result.data_sources
         assert "structured" in result.data_sources
