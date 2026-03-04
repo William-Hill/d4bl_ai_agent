@@ -5,8 +5,6 @@ import argparse
 
 from datetime import datetime
 
-from d4bl.agents.crew import D4Bl
-
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 # This main file is intended to be a way for you to run your
@@ -86,6 +84,8 @@ def run():
         print(f"Selected agents: {', '.join(args.agents)}")
     print(f"{'='*80}\n")
 
+    from d4bl.agents.crew import D4Bl
+
     crew_instance = D4Bl()
     if args.agents:
         crew_instance.selected_agents = args.agents
@@ -104,12 +104,16 @@ def train():
         "topic": "AI LLMs",
         'current_year': str(datetime.now().year)
     }
+    from d4bl.agents.crew import D4Bl
+
     D4Bl().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
 
 def replay():
     """
     Replay the crew execution from a specific task.
     """
+    from d4bl.agents.crew import D4Bl
+
     D4Bl().crew().replay(task_id=sys.argv[1])
 
 def test():
@@ -120,6 +124,8 @@ def test():
         "topic": "AI LLMs",
         "current_year": str(datetime.now().year)
     }
+
+    from d4bl.agents.crew import D4Bl
 
     D4Bl().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
 
@@ -139,6 +145,8 @@ def run_with_trigger():
         "topic": "",
         "current_year": ""
     }
+
+    from d4bl.agents.crew import D4Bl
 
     result = D4Bl().crew().kickoff(inputs=inputs)
     return result
