@@ -9,7 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-import requests
+import aiohttp
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,55 +51,51 @@ class VectorStore:
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(self, text_input: str) -> List[float]:
         """
         Generate embedding vector for the given text using Ollama.
-        
+
         Args:
-            text: Text to embed
-            
+            text_input: Text to embed
+
         Returns:
             List of floats representing the embedding vector
         """
         try:
-            # Truncate text if too long (most embedding models have token limits)
-            # mxbai-embed-large can handle up to ~8192 tokens, so we'll limit to ~6000 chars
-            if len(text) > 6000:
-                text = text[:6000]
+            if len(text_input) > 6000:
+                text_input = text_input[:6000]
                 logger.warning("Text truncated to 6000 characters for embedding")
 
-            response = requests.post(
-                f"{self.ollama_base_url}/api/embeddings",
-                json={
-                    "model": self.embedder_model,
-                    "prompt": text,
-                },
-                timeout=30,
-            )
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.ollama_base_url}/api/embeddings",
+                    json={"model": self.embedder_model, "prompt": text_input},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as response:
+                    if response.status != 200:
+                        body = await response.text()
+                        error_msg = f"Ollama embedding API returned {response.status}: {body}"
+                        logger.error(error_msg)
+                        raise RuntimeError(error_msg)
 
-            if response.status_code != 200:
-                error_msg = f"Ollama embedding API returned {response.status_code}: {response.text}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
+                    result = await response.json()
 
-            result = response.json()
             embedding = result.get("embedding")
-            
+
             if not embedding:
                 raise ValueError("No embedding in Ollama response")
-            
+
             if len(embedding) != self.embedding_dimension:
                 logger.warning(
                     "Embedding dimension mismatch: expected %s, got %s",
                     self.embedding_dimension,
-                    len(embedding)
+                    len(embedding),
                 )
-                # Adjust dimension if needed (though this shouldn't happen)
                 self.embedding_dimension = len(embedding)
 
             return embedding
 
-        except requests.exceptions.RequestException as e:
+        except aiohttp.ClientError as e:
             logger.error("Failed to generate embedding: %s", e)
             raise RuntimeError(f"Embedding generation failed: {str(e)}") from e
         except Exception as e:

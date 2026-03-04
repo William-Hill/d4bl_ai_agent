@@ -17,45 +17,51 @@ class TestVectorStore:
             embedder_model="mxbai-embed-large",
         )
 
-    @patch("d4bl.infra.vector_store.requests.post")
-    def test_generate_embedding_returns_vector(self, mock_post):
+    @staticmethod
+    def _make_aiohttp_mocks(fake_embedding):
+        """Build mock aiohttp session + response for generate_embedding tests."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"embedding": fake_embedding})
+        mock_response.text = AsyncMock(return_value="")
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_response
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        return mock_session
+
+    @pytest.mark.asyncio
+    @patch("d4bl.infra.vector_store.aiohttp.ClientSession")
+    async def test_generate_embedding_returns_vector(self, mock_session_cls):
         """generate_embedding should return a list of floats from Ollama."""
         fake_embedding = [0.1] * 1024
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"embedding": fake_embedding}
-        mock_post.return_value = mock_response
+        mock_session = self._make_aiohttp_mocks(fake_embedding)
+        mock_session_cls.return_value = mock_session
 
-        import asyncio
-        result = asyncio.get_event_loop().run_until_complete(
-            self.store.generate_embedding("test text")
-        )
+        result = await self.store.generate_embedding("test text")
 
         assert isinstance(result, list)
         assert len(result) == 1024
-        mock_post.assert_called_once()
 
-    @patch("d4bl.infra.vector_store.requests.post")
-    def test_generate_embedding_truncates_long_text(self, mock_post):
+    @pytest.mark.asyncio
+    @patch("d4bl.infra.vector_store.aiohttp.ClientSession")
+    async def test_generate_embedding_truncates_long_text(self, mock_session_cls):
         """generate_embedding should truncate text longer than 6000 chars."""
         fake_embedding = [0.2] * 1024
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"embedding": fake_embedding}
-        mock_post.return_value = mock_response
+        mock_session = self._make_aiohttp_mocks(fake_embedding)
+        mock_session_cls.return_value = mock_session
 
-        import asyncio
         long_text = "x" * 10000
-        result = asyncio.get_event_loop().run_until_complete(
-            self.store.generate_embedding(long_text)
-        )
-
+        result = await self.store.generate_embedding(long_text)
         assert len(result) == 1024
+
         # Verify the text sent was truncated
-        call_kwargs = mock_post.call_args
-        sent_prompt = call_kwargs[1]["json"]["prompt"] if "json" in call_kwargs[1] else call_kwargs[0][0]
-        # The prompt should be truncated to 6000 chars
-        assert len(sent_prompt) <= 6000
+        call_kwargs = mock_session.post.call_args
+        sent_json = call_kwargs[1]["json"]
+        assert len(sent_json["prompt"]) <= 6000
 
     @pytest.mark.asyncio
     async def test_store_scraped_content_calls_generate_embedding(
