@@ -87,11 +87,11 @@ class VectorStore:
 
             if len(embedding) != self.embedding_dimension:
                 logger.warning(
-                    "Embedding dimension mismatch: expected %s, got %s",
+                    "Embedding dimension mismatch: expected %s, got %s. "
+                    "Check embedder model configuration.",
                     self.embedding_dimension,
                     len(embedding),
                 )
-                self.embedding_dimension = len(embedding)
 
             return embedding
 
