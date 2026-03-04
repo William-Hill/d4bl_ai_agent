@@ -5,8 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-import aiohttp
-
+from d4bl.llm.ollama_client import ollama_generate
 from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -64,24 +63,13 @@ class QueryParser:
         # (e.g. "What is {NIL}?") don't raise KeyError.
         prompt = PARSE_PROMPT.replace("{query}", query)
 
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.ollama_base_url}/api/generate",
-                json={
-                    "model": "mistral",
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.1},
-                },
-            ) as response:
-                if response.status != 200:
-                    raise RuntimeError(
-                        f"Ollama returned status {response.status}"
-                    )
-                data = await response.json()
-
-        raw_text = data.get("response", "").strip()
+        raw_text = await ollama_generate(
+            base_url=self.ollama_base_url,
+            prompt=prompt,
+            model="mistral",
+            temperature=0.1,
+            timeout_seconds=30,
+        )
         parsed = json.loads(raw_text)
 
         # Guard against hallucinated field types (e.g. "entities": "Mississippi")

@@ -4,8 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-import aiohttp
-
+from d4bl.llm.ollama_client import ollama_generate
 from d4bl.query.structured import StructuredResult
 from d4bl.settings import get_settings
 
@@ -132,24 +131,13 @@ class ResultFusion:
             "{query}", query
         ).replace("{sources_text}", sources_text)
 
-        timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.ollama_base_url}/api/generate",
-                json={
-                    "model": "mistral",
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.3},
-                },
-            ) as response:
-                if response.status != 200:
-                    raise RuntimeError(
-                        f"Ollama returned status {response.status}"
-                    )
-                data = await response.json()
-
-        return data.get("response", "").strip()
+        return await ollama_generate(
+            base_url=self.ollama_base_url,
+            prompt=prompt,
+            model="mistral",
+            temperature=0.3,
+            timeout_seconds=60,
+        )
 
     def _fallback_answer(self, sources: list[SourceReference]) -> str:
         """Build a simple answer from sources without LLM."""

@@ -43,7 +43,7 @@ class TestQueryParser:
         )
 
     @pytest.mark.asyncio
-    @patch("d4bl.query.parser.aiohttp.ClientSession")
+    @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
     async def test_parse_returns_parsed_query(self, mock_session_cls):
         """parse() should return a ParsedQuery with extracted entities."""
         llm_response = {
@@ -72,7 +72,7 @@ class TestQueryParser:
         assert "vector" in result.data_sources
 
     @pytest.mark.asyncio
-    @patch("d4bl.query.parser.aiohttp.ClientSession")
+    @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
     async def test_parse_falls_back_on_llm_failure(self, mock_session_cls):
         """parse() should return a fallback ParsedQuery if LLM fails."""
         mock_response = AsyncMock()
