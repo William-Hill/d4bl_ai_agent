@@ -23,8 +23,8 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
       const response = await getJobHistory(page, pageSize, statusFilter || undefined);
       setJobs(response.jobs);
       setTotal(response.total);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load job history');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load job history');
     } finally {
       setLoading(false);
     }

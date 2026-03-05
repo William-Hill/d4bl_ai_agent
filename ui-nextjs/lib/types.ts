@@ -38,3 +38,16 @@ export interface PolicyBill {
   last_action_date: string | null;
   url: string | null;
 }
+
+/** Individual task output from a CrewAI agent. */
+export interface ResearchTaskOutput {
+  agent?: string;
+  output?: string;
+}
+
+/** Result payload returned when a research job completes. */
+export interface ResearchResult {
+  report?: string;
+  tasks_output?: ResearchTaskOutput[];
+  raw_output?: string;
+}

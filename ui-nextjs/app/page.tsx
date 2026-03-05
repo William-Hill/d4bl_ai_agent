@@ -10,7 +10,7 @@ import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import QueryBar from '@/components/QueryBar';
 import QueryResults from '@/components/QueryResults';
-import { QueryResponse } from '@/lib/types';
+import { QueryResponse, ResearchResult } from '@/lib/types';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 import EvaluationsPanel from '@/components/EvaluationsPanel';
@@ -19,7 +19,7 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);  // Track selected job from history
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<ResearchResult | null>(null);
   const [progress, setProgress] = useState<string>('');
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
@@ -75,7 +75,7 @@ export default function Home() {
           const status = await getJobStatus(jobId);
           if (status.status === 'completed') {
             setProgress('Research completed!');
-            setResults(status.result);
+            setResults(status.result ?? null);
             setJobId(null);
             clearInterval(pollInterval);
           } else if (status.status === 'error') {
@@ -105,8 +105,8 @@ export default function Home() {
       const response = await createResearchJob(query, summaryFormat, selectedAgents);
       setJobId(response.job_id);
       setProgress('Job created, starting research...');
-    } catch (err: any) {
-      setError(err.message || 'Failed to create research job');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create research job');
       setJobId(null);
       setLiveLogs([]);
     }
@@ -143,8 +143,8 @@ export default function Home() {
           setProgress(latestStatus.progress || 'Processing...');
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load job details');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load job details');
     }
   };
 

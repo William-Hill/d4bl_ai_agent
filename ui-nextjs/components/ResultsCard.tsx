@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { ResearchResult, ResearchTaskOutput } from '@/lib/types';
 
 interface ResultsCardProps {
-  results: any;
+  results: ResearchResult;
 }
 
 export default function ResultsCard({ results }: ResultsCardProps) {
@@ -69,7 +70,7 @@ export default function ResultsCard({ results }: ResultsCardProps) {
 
         {results.tasks_output && results.tasks_output.length > 0 && (
           <div className="space-y-4">
-            {results.tasks_output.map((task: any, index: number) => (
+            {results.tasks_output.map((task: ResearchTaskOutput, index: number) => (
               <div key={index} className="border-b border-[#404040] pb-4 last:border-b-0">
                 <h3 className="text-lg font-bold text-[#00ff32] mb-3">
                   {task.agent || `Task ${index + 1}`}

@@ -24,9 +24,9 @@ export default function EvaluationsPanel({ defaultLimit = 50, jobId }: Evaluatio
         limit: defaultLimit,
       });
       setEvaluations(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch evaluations', err);
-      setError(err.message || 'Failed to fetch evaluations');
+      setError(err instanceof Error ? err.message : 'Failed to fetch evaluations');
     } finally {
       setLoading(false);
     }
