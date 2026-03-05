@@ -288,7 +288,7 @@ class VectorStore:
             List of records
         """
         try:
-            limit_clause = "LIMIT :limit" if limit else ""
+            limit_clause = "LIMIT :limit" if limit is not None else ""
             query = text(f"""
                 SELECT id, job_id, url, content, content_type, metadata, created_at
                 FROM scraped_content_vectors
@@ -298,7 +298,7 @@ class VectorStore:
             """)
 
             params: dict[str, Any] = {"job_id": str(job_id)}
-            if limit:
+            if limit is not None:
                 params["limit"] = limit
 
             result = await db.execute(query, params)
