@@ -65,6 +65,13 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
     return query.substring(0, maxLength) + '...';
   };
 
+  const STATUS_FILTERS = [
+    { value: '', label: 'All' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'running', label: 'Running' },
+    { value: 'error', label: 'Error' },
+  ] as const;
+
   const totalPages = Math.ceil(total / pageSize);
 
   return (
@@ -81,46 +88,19 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
 
       {/* Status Filter */}
       <div className="mb-4 flex gap-2 flex-wrap">
-        <button
-          onClick={() => setStatusFilter('')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === ''
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          All
-        </button>
-        <button
-          onClick={() => setStatusFilter('completed')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === 'completed'
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          Completed
-        </button>
-        <button
-          onClick={() => setStatusFilter('running')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === 'running'
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          Running
-        </button>
-        <button
-          onClick={() => setStatusFilter('error')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === 'error'
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          Error
-        </button>
+        {STATUS_FILTERS.map(({ value, label }) => (
+          <button
+            key={label}
+            onClick={() => setStatusFilter(value)}
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              statusFilter === value
+                ? 'bg-[#00ff32] text-black'
+                : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {error && (
