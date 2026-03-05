@@ -3,14 +3,9 @@
 import { useState } from 'react';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import { scaleLinear } from 'd3-scale';
+import { IndicatorRow } from '@/lib/types';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json';
-
-interface IndicatorRow {
-  fips_code: string;
-  state_fips: string;
-  value: number;
-}
 
 interface Props {
   indicators: IndicatorRow[];

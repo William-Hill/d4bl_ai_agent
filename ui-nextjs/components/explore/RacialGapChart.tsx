@@ -10,11 +10,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-
-interface IndicatorRow {
-  race: string;
-  value: number;
-}
+import { IndicatorRow } from '@/lib/types';
 
 interface Props {
   indicators: IndicatorRow[];

@@ -5,6 +5,7 @@ import MetricFilterPanel, { ExploreFilters } from '@/components/explore/MetricFi
 import StateMap from '@/components/explore/StateMap';
 import RacialGapChart from '@/components/explore/RacialGapChart';
 import PolicyTable from '@/components/explore/PolicyTable';
+import { IndicatorRow, PolicyBill } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -19,31 +20,6 @@ const FIPS_TO_ABBREV: Record<string, string> = {
   '47': 'TN', '48': 'TX', '49': 'UT', '50': 'VT', '51': 'VA', '53': 'WA', '54': 'WV',
   '55': 'WI', '56': 'WY',
 };
-
-interface IndicatorRow {
-  fips_code: string;
-  geography_name: string;
-  state_fips: string;
-  geography_type: string;
-  year: number;
-  race: string;
-  metric: string;
-  value: number;
-  margin_of_error: number | null;
-}
-
-interface PolicyBill {
-  state: string;
-  state_name: string;
-  bill_number: string;
-  title: string;
-  summary: string | null;
-  status: string;
-  topic_tags: string[] | null;
-  introduced_date: string | null;
-  last_action_date: string | null;
-  url: string | null;
-}
 
 export default function ExplorePage() {
   const [filters, setFilters] = useState<ExploreFilters>({
