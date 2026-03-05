@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getJobHistory, JobStatus } from '@/lib/api';
 
 interface JobHistoryProps {
@@ -16,7 +16,7 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const pageSize = 10;
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -28,11 +28,11 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, statusFilter]);
 
   useEffect(() => {
     loadHistory();
-  }, [page, statusFilter]);
+  }, [loadHistory]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
