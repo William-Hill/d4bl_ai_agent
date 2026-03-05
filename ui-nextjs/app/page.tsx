@@ -68,6 +68,8 @@ export default function Home() {
             setError(data.error || data.message || 'An error occurred during research');
             setJobId(null);
             break;
+          default:
+            console.warn('Unhandled WebSocket message type:', (data as { type?: string }).type);
         }
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);

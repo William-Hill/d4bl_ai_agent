@@ -7,6 +7,13 @@ interface JobHistoryProps {
   onSelectJob?: (job: JobStatus) => void;
 }
 
+const STATUS_FILTERS = [
+  { value: '', label: 'All' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'running', label: 'Running' },
+  { value: 'error', label: 'Error' },
+] as const;
+
 export default function JobHistory({ onSelectJob }: JobHistoryProps) {
   const [jobs, setJobs] = useState<JobStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,13 +71,6 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
     if (query.length <= maxLength) return query;
     return query.substring(0, maxLength) + '...';
   };
-
-  const STATUS_FILTERS = [
-    { value: '', label: 'All' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'running', label: 'Running' },
-    { value: 'error', label: 'Error' },
-  ] as const;
 
   const totalPages = Math.ceil(total / pageSize);
 
