@@ -8,7 +8,8 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from d4bl.infra.database import ResearchJob, async_session_maker, init_db
+from d4bl.infra import database as db_module
+from d4bl.infra.database import ResearchJob, init_db
 from d4bl.services.langfuse.runner import run_comprehensive_evaluation
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ async def run_evals_and_log(
     """
     init_db()
 
+    if concurrency < 1:
+        raise ValueError("concurrency must be >= 1")
     sem = asyncio.Semaphore(concurrency)
 
     async def _evaluate_job(job: ResearchJob) -> None:
@@ -86,7 +89,7 @@ async def run_evals_and_log(
             )
             await asyncio.to_thread(run_comprehensive_evaluation, **inputs)
 
-    async with async_session_maker() as db:
+    async with db_module.async_session_maker() as db:
         query = (
             select(ResearchJob)
             .where(
