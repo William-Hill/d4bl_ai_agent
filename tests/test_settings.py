@@ -194,6 +194,42 @@ class TestFieldDefaults:
             s = _fresh_settings(DB_ECHO=val)
             assert s.db_echo is False, f"DB_ECHO={val!r} should be False"
 
+    def test_llm_provider_default(self) -> None:
+        s = _fresh_settings(LLM_PROVIDER=None)
+        assert s.llm_provider == "ollama"
+
+    def test_llm_provider_from_env(self) -> None:
+        s = _fresh_settings(LLM_PROVIDER="gemini")
+        assert s.llm_provider == "gemini"
+
+    def test_llm_provider_lowercased(self) -> None:
+        s = _fresh_settings(LLM_PROVIDER="Gemini")
+        assert s.llm_provider == "gemini"
+
+    def test_llm_model_default(self) -> None:
+        s = _fresh_settings(LLM_MODEL=None)
+        assert s.llm_model == "mistral"
+
+    def test_llm_model_from_env(self) -> None:
+        s = _fresh_settings(LLM_MODEL="gemini-2.0-flash")
+        assert s.llm_model == "gemini-2.0-flash"
+
+    def test_llm_api_key_default_none(self) -> None:
+        s = _fresh_settings(LLM_API_KEY=None)
+        assert s.llm_api_key is None
+
+    def test_llm_api_key_from_env(self) -> None:
+        s = _fresh_settings(LLM_API_KEY="sk-test-key")
+        assert s.llm_api_key == "sk-test-key"
+
+    def test_tenant_id_default_none(self) -> None:
+        s = _fresh_settings(TENANT_ID=None)
+        assert s.tenant_id is None
+
+    def test_tenant_id_from_env(self) -> None:
+        s = _fresh_settings(TENANT_ID="org-d4bl")
+        assert s.tenant_id == "org-d4bl"
+
 
 # ---------------------------------------------------------------------------
 # Frozen immutability

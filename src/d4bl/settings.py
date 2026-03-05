@@ -51,6 +51,14 @@ class Settings:
     # -- CORS --
     cors_allowed_origins: tuple[str, ...] = field(init=False)
 
+    # -- LLM provider --
+    llm_provider: str = field(init=False)
+    llm_model: str = field(init=False)
+    llm_api_key: str | None = field(init=False)
+
+    # -- Multi-tenancy --
+    tenant_id: str | None = field(init=False)
+
     def __post_init__(self) -> None:
         def _set(name: str, value: object) -> None:
             object.__setattr__(self, name, value)
@@ -125,6 +133,14 @@ class Settings:
             if origin
         ) or ("*",)
         _set("cors_allowed_origins", origins)
+
+        # LLM provider
+        _set("llm_provider", os.getenv("LLM_PROVIDER", "ollama").lower())
+        _set("llm_model", os.getenv("LLM_MODEL", "mistral"))
+        _set("llm_api_key", os.getenv("LLM_API_KEY"))
+
+        # Multi-tenancy
+        _set("tenant_id", os.getenv("TENANT_ID"))
 
 
 @lru_cache(maxsize=1)
