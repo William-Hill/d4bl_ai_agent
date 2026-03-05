@@ -30,47 +30,53 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | -204 net | | |
-| Key changes | Base evaluator eliminated ~250 LOC boilerplate, enum types replaced string constants, parallel eval execution | — | — |
+| Source LOC | — | — | -204 net |
+
+**Key changes**: Base evaluator eliminated ~250 LOC boilerplate, enum types replaced string constants, parallel eval execution
 
 ### agents/ (PR #34)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | -372 net | | |
-| Key changes | Removed dead `crew.py` (255 LOC), dead scaffold, consolidated domain lists | — | — |
+| Source LOC | — | — | -372 net |
+
+**Key changes**: Removed dead `crew.py` (255 LOC), dead scaffold, consolidated domain lists
 
 ### app/ (PR #35)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | +8 net | | |
-| Test LOC | +131 | | |
-| Key changes | UUID helper, deprecated FastAPI patterns, WS manager cleanup | — | — |
+| Source LOC | — | — | +8 net |
+| Test LOC | — | — | +131 |
+
+**Key changes**: UUID helper, deprecated FastAPI patterns, WS manager cleanup
 
 ### infra/ (PR #36)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | -35 net | | |
-| Test LOC | +131 | | |
-| Key changes | Async blocking fix, fragile SQL index access, dead Docker check | — | — |
+| Source LOC | — | — | -35 net |
+| Test LOC | — | — | +131 |
+
+**Key changes**: Async blocking fix, fragile SQL index access, dead Docker check
 
 ### query/ (PR #37)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | +48 net | | |
-| Test LOC | +97 | | |
-| Key changes | Shared Ollama HTTP helper, format bug fix, unused LLM intent parsing removed | — | — |
+| Source LOC | — | — | +48 net |
+| Test LOC | — | — | +97 |
+
+**Key changes**: Shared Ollama HTTP helper, format bug fix, unused LLM intent parsing removed
 
 ### Root files (PR #38)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | +56 net | | |
-| Test LOC | +206 | | |
-| Key changes | Deferred env reads in Settings, removed catch-and-re-raise, lazy imports | — | — |
+| Source LOC | — | — | +56 net |
+| Test LOC | — | — | +206 |
+
+**Key changes**: Deferred env reads in Settings, removed catch-and-re-raise, lazy imports
 
 ---
 
@@ -166,7 +172,7 @@ for filepath, blocks in data.items():
         total_cc += block['complexity']
         count += 1
 print(f'Total functions/methods: {count}')
-print(f'Average complexity: {total_cc/count:.1f}')
+print(f'Average complexity: {total_cc/count:.1f}' if count else 'Average complexity: N/A')
 for grade in sorted(grades.keys()):
     print(f'  Grade {grade}: {grades[grade]}')
 "
