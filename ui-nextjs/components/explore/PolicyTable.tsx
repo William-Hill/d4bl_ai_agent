@@ -1,19 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-
-interface PolicyBill {
-  state: string;
-  state_name?: string;
-  bill_number: string;
-  title: string;
-  summary: string | null;
-  status: string;
-  topic_tags: string[] | null;
-  introduced_date: string | null;
-  last_action_date: string | null;
-  url: string | null;
-}
+import { PolicyBill } from '@/lib/types';
 
 interface Props {
   bills: PolicyBill[];

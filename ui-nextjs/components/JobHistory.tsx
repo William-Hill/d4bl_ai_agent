@@ -1,11 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getJobHistory, JobStatus } from '@/lib/api';
 
 interface JobHistoryProps {
   onSelectJob?: (job: JobStatus) => void;
 }
+
+const STATUS_FILTERS = [
+  { value: '', label: 'All' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'running', label: 'Running' },
+  { value: 'error', label: 'Error' },
+] as const;
 
 export default function JobHistory({ onSelectJob }: JobHistoryProps) {
   const [jobs, setJobs] = useState<JobStatus[]>([]);
@@ -16,23 +23,23 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const pageSize = 10;
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await getJobHistory(page, pageSize, statusFilter || undefined);
       setJobs(response.jobs);
       setTotal(response.total);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load job history');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load job history');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, statusFilter]);
 
   useEffect(() => {
     loadHistory();
-  }, [page, statusFilter]);
+  }, [loadHistory]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -81,46 +88,20 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
 
       {/* Status Filter */}
       <div className="mb-4 flex gap-2 flex-wrap">
-        <button
-          onClick={() => setStatusFilter('')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === ''
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          All
-        </button>
-        <button
-          onClick={() => setStatusFilter('completed')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === 'completed'
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          Completed
-        </button>
-        <button
-          onClick={() => setStatusFilter('running')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === 'running'
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          Running
-        </button>
-        <button
-          onClick={() => setStatusFilter('error')}
-          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-            statusFilter === 'error'
-              ? 'bg-[#00ff32] text-black'
-              : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
-          }`}
-        >
-          Error
-        </button>
+        {STATUS_FILTERS.map(({ value, label }) => (
+          <button
+            type="button"
+            key={label}
+            onClick={() => setStatusFilter(value)}
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              statusFilter === value
+                ? 'bg-[#00ff32] text-black'
+                : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {error && (

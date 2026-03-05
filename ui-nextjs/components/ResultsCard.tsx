@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { ResearchResult, ResearchTaskOutput } from '@/lib/types';
 
 interface ResultsCardProps {
-  results: any;
+  results: ResearchResult;
 }
 
 export default function ResultsCard({ results }: ResultsCardProps) {
@@ -49,6 +50,11 @@ export default function ResultsCard({ results }: ResultsCardProps) {
     return html;
   };
 
+  const formattedReport = useMemo(
+    () => (results.report ? formatMarkdown(results.report) : ''),
+    [results.report],
+  );
+
   return (
     <div ref={resultsRef} className="bg-[#333333] border border-[#404040] rounded-lg p-8 shadow-sm">
       <h2 className="text-2xl font-bold text-white mb-6">
@@ -62,14 +68,14 @@ export default function ResultsCard({ results }: ResultsCardProps) {
             </h3>
             <div
               className="prose max-w-none prose-invert"
-              dangerouslySetInnerHTML={{ __html: formatMarkdown(results.report) }}
+              dangerouslySetInnerHTML={{ __html: formattedReport }}
             />
           </div>
         )}
 
         {results.tasks_output && results.tasks_output.length > 0 && (
           <div className="space-y-4">
-            {results.tasks_output.map((task: any, index: number) => (
+            {results.tasks_output.map((task: ResearchTaskOutput, index: number) => (
               <div key={index} className="border-b border-[#404040] pb-4 last:border-b-0">
                 <h3 className="text-lg font-bold text-[#00ff32] mb-3">
                   {task.agent || `Task ${index + 1}`}

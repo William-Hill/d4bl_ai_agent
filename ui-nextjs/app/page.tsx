@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ResearchForm from '@/components/ResearchForm';
 import ProgressCard from '@/components/ProgressCard';
 import ResultsCard from '@/components/ResultsCard';
@@ -10,7 +10,7 @@ import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import QueryBar from '@/components/QueryBar';
 import QueryResults from '@/components/QueryResults';
-import { QueryResponse } from '@/lib/types';
+import { QueryResponse, ResearchResult, WsMessage } from '@/lib/types';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 import EvaluationsPanel from '@/components/EvaluationsPanel';
@@ -19,7 +19,7 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);  // Track selected job from history
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<ResearchResult | null>(null);
   const [progress, setProgress] = useState<string>('');
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
@@ -29,43 +29,53 @@ export default function Home() {
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
+  const updateLogs = useCallback((data: WsMessage) => {
+    if (data.logs && Array.isArray(data.logs)) {
+      setLiveLogs(data.logs.length > 500 ? data.logs.slice(-500) : data.logs);
+    }
+  }, []);
+
   // Handle WebSocket messages
   useEffect(() => {
     if (lastMessage) {
       try {
-        const data = JSON.parse(lastMessage.data);
+        const data: WsMessage = JSON.parse(lastMessage.data);
         console.log('WebSocket message received:', data);
-        
-        if (data.type === 'log') {
-          // Append new log message
-          setLiveLogs(prev => [...prev, data.message]);
-        } else if (data.type === 'progress' || data.type === 'status') {
-          setProgress(data.progress || 'Processing...');
-          // Initialize logs if provided
-          if (data.logs && Array.isArray(data.logs)) {
-            setLiveLogs(data.logs);
-          }
-        } else if (data.type === 'complete') {
-          setProgress('Research completed!');
-          setResults(data.result);
-          // Keep logs from completion message
-          if (data.logs && Array.isArray(data.logs)) {
-            setLiveLogs(data.logs);
-          }
-          setJobId(null);
-        } else if (data.type === 'error') {
-          setError(data.error || 'An error occurred during research');
-          // Keep logs from error message
-          if (data.logs && Array.isArray(data.logs)) {
-            setLiveLogs(data.logs);
-          }
-          setJobId(null);
+
+        switch (data.type) {
+          case 'log':
+            setLiveLogs(prev => {
+              const next = [...prev, data.message];
+              return next.length > 500 ? next.slice(-500) : next;
+            });
+            break;
+          case 'progress':
+            updateLogs(data);
+            setProgress(data.message || 'Processing...');
+            break;
+          case 'status':
+            updateLogs(data);
+            setProgress(data.status || 'Processing...');
+            break;
+          case 'complete':
+            updateLogs(data);
+            setProgress('Research completed!');
+            setResults(data.result);
+            setJobId(null);
+            break;
+          case 'error':
+            updateLogs(data);
+            setError(data.error || data.message || 'An error occurred during research');
+            setJobId(null);
+            break;
+          default:
+            console.warn('Unhandled WebSocket message type:', (data as { type?: string }).type);
         }
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, updateLogs]);
 
   // Fallback: Poll job status if WebSocket is not connected
   useEffect(() => {
@@ -75,7 +85,7 @@ export default function Home() {
           const status = await getJobStatus(jobId);
           if (status.status === 'completed') {
             setProgress('Research completed!');
-            setResults(status.result);
+            setResults(status.result ?? null);
             setJobId(null);
             clearInterval(pollInterval);
           } else if (status.status === 'error') {
@@ -105,8 +115,8 @@ export default function Home() {
       const response = await createResearchJob(query, summaryFormat, selectedAgents);
       setJobId(response.job_id);
       setProgress('Job created, starting research...');
-    } catch (err: any) {
-      setError(err.message || 'Failed to create research job');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create research job');
       setJobId(null);
       setLiveLogs([]);
     }
@@ -143,8 +153,8 @@ export default function Home() {
           setProgress(latestStatus.progress || 'Processing...');
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load job details');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load job details');
     }
   };
 

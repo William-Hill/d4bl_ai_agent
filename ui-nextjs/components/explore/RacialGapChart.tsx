@@ -10,11 +10,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-
-interface IndicatorRow {
-  race: string;
-  value: number;
-}
+import { useMemo } from 'react';
+import { IndicatorRow } from '@/lib/types';
 
 interface Props {
   indicators: IndicatorRow[];
@@ -43,13 +40,17 @@ const METRIC_LABELS: Record<string, string> = {
 };
 
 export default function RacialGapChart({ indicators, metric, stateName }: Props) {
-  const data = indicators
-    .filter((r) => r.race !== 'total')
-    .map((r) => ({
-      race: RACE_LABELS[r.race] ?? r.race,
-      value: r.value,
-      fill: RACE_COLORS[r.race] ?? '#666',
-    }));
+  const data = useMemo(
+    () =>
+      indicators
+        .filter((r) => r.race !== 'total')
+        .map((r) => ({
+          race: RACE_LABELS[r.race] ?? r.race,
+          value: r.value,
+          fill: RACE_COLORS[r.race] ?? '#666',
+        })),
+    [indicators],
+  );
 
   if (data.length === 0) {
     return (

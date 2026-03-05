@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EvaluationResultItem, getEvaluations } from '@/lib/api';
 
 interface EvaluationsPanelProps {
@@ -14,7 +14,7 @@ export default function EvaluationsPanel({ defaultLimit = 50, jobId }: Evaluatio
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchEvaluations = async (trace_id?: string) => {
+  const fetchEvaluations = useCallback(async (trace_id?: string) => {
     try {
       setLoading(true);
       setError(null);
@@ -24,17 +24,17 @@ export default function EvaluationsPanel({ defaultLimit = 50, jobId }: Evaluatio
         limit: defaultLimit,
       });
       setEvaluations(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch evaluations', err);
-      setError(err.message || 'Failed to fetch evaluations');
+      setError(err instanceof Error ? err.message : 'Failed to fetch evaluations');
     } finally {
       setLoading(false);
     }
-  };
+  }, [jobId, defaultLimit]);
 
   useEffect(() => {
     fetchEvaluations();
-  }, [jobId]);  // Refetch when jobId changes
+  }, [fetchEvaluations]);
 
   const grouped = useMemo(() => {
     const map: Record<string, EvaluationResultItem[]> = {};
