@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from d4bl.llm import get_available_models
 from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
     CensusIndicator,
@@ -143,6 +144,12 @@ async def read_root():
     return {"status": "ok", "message": "D4BL AI Agent API"}
 
 
+@app.get("/api/models")
+async def list_models():
+    """Return available LLM models."""
+    return get_available_models()
+
+
 @app.post("/api/research", response_model=ResearchResponse)
 async def create_research(request: ResearchRequest, db: AsyncSession = Depends(get_db)):
     """Create a new research job"""
@@ -152,7 +159,8 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             query=request.query,
             summary_format=request.summary_format,
             status="pending",
-            progress="Job created, waiting to start..."
+            progress="Job created, waiting to start...",
+            tenant_id=_settings.tenant_id,
         )
         db.add(job)
         await db.commit()
@@ -167,6 +175,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             request.query,
             request.summary_format,
             request.selected_agents,
+            request.model,
         ))
         _background_tasks.add(task)
         task.add_done_callback(_log_task_exception)
@@ -205,6 +214,8 @@ async def get_job_history(
         filters = []
         if status:
             filters.append(ResearchJob.status == status)
+        if _settings.tenant_id:
+            filters.append(ResearchJob.tenant_id == _settings.tenant_id)
 
         query = select(ResearchJob)
         count_query = select(func.count(ResearchJob.job_id))

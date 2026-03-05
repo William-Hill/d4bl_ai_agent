@@ -13,6 +13,8 @@ class ResearchRequest(BaseModel):
     summary_format: Literal["brief", "detailed", "comprehensive"] = "detailed"
     # List of agent names to run (e.g., ["researcher", "writer"])
     selected_agents: list[str] | None = None
+    # LiteLLM model string, e.g. "gemini/gemini-2.0-flash"
+    model: str | None = None
 
     @field_validator("query")
     @classmethod

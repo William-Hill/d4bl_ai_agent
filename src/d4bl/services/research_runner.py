@@ -181,10 +181,11 @@ async def update_job_status(
 
 
 async def run_research_job(
-    job_id: str, 
-    query: str, 
+    job_id: str,
+    query: str,
     summary_format: str,
-    selected_agents: list[str] | None = None
+    selected_agents: list[str] | None = None,
+    model: str | None = None,
 ) -> None:
     """Run the research crew and send progress updates via WebSocket."""
     set_job_logs(job_id, [])
