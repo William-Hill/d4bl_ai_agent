@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { QueryResponse } from "@/lib/types";
-import { API_BASE } from "@/lib/api";
+import { useState } from 'react';
+import { QueryResponse } from '@/lib/types';
+import { API_BASE } from '@/lib/api';
 
 interface QueryBarProps {
   onResult: (result: QueryResponse) => void;
@@ -11,7 +11,7 @@ interface QueryBarProps {
 }
 
 export default function QueryBar({ onResult, onLoading, onError }: QueryBarProps) {
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,8 +22,8 @@ export default function QueryBar({ onResult, onLoading, onError }: QueryBarProps
 
     try {
       const response = await fetch(`${API_BASE}/api/query`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: question.trim() }),
       });
 
@@ -34,7 +34,7 @@ export default function QueryBar({ onResult, onLoading, onError }: QueryBarProps
       const data: QueryResponse = await response.json();
       onResult(data);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Query failed");
+      onError(err instanceof Error ? err.message : 'Query failed');
     } finally {
       onLoading(false);
     }

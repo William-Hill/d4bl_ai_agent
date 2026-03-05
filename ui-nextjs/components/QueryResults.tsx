@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { QuerySource } from "@/lib/types";
+import { QuerySource } from '@/lib/types';
 
 interface QueryResultsProps {
   answer: string;
@@ -35,9 +35,9 @@ export default function QueryResults({ answer, sources, query }: QueryResultsPro
                 <div className="flex items-center gap-2 mb-1">
                   <span
                     className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      source.source_type === "vector"
-                        ? "bg-blue-900 text-blue-300"
-                        : "bg-purple-900 text-purple-300"
+                      source.source_type === 'vector'
+                        ? 'bg-blue-900 text-blue-300'
+                        : 'bg-purple-900 text-purple-300'
                     }`}
                   >
                     {source.source_type}
@@ -48,7 +48,7 @@ export default function QueryResults({ answer, sources, query }: QueryResultsPro
                 </div>
                 <p className="text-white font-medium">{source.title}</p>
                 <p className="text-gray-400 mt-1">{source.snippet}</p>
-                {source.url && !source.url.startsWith("job://") && (
+                {source.url && !source.url.startsWith('job://') && (
                   <a
                     href={source.url}
                     target="_blank"
