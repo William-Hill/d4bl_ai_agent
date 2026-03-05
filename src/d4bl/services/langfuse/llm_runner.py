@@ -8,10 +8,8 @@ from d4bl.llm import get_ollama_llm
 
 logger = logging.getLogger(__name__)
 
-
-def get_eval_llm():
-    """Return the LLM to use for Langfuse evaluations."""
-    return get_ollama_llm()
+# Alias — evaluators import this name; both reference the shared singleton.
+get_eval_llm = get_ollama_llm
 
 
 def call_llm_text(llm: Any, prompt: str, max_retries: int = 2, retry_delay: float = 2.0) -> str:

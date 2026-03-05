@@ -138,7 +138,6 @@ class ResultFusion:
         return await ollama_generate(
             base_url=self.ollama_base_url,
             prompt=prompt,
-            model="mistral",
             temperature=0.3,
             timeout_seconds=60,
         )

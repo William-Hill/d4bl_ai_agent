@@ -69,7 +69,6 @@ class QueryParser:
         raw_text = await ollama_generate(
             base_url=self.ollama_base_url,
             prompt=prompt,
-            model="mistral",
             temperature=0.1,
             timeout_seconds=30,
         )
