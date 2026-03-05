@@ -1,3 +1,5 @@
+import { ResearchResult } from './types';
+
 // API base URL
 // Strategy: 
 // - Client-side (browser): Use NEXT_PUBLIC_API_URL to call API directly (browser can access localhost:8000)
@@ -17,7 +19,8 @@ const getApiBase = () => {
   return '';
 };
 
-const API_BASE = getApiBase();
+export const API_BASE = getApiBase();
+export const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
 export interface ResearchRequest {
   query: string;
@@ -36,7 +39,7 @@ export interface JobStatus {
   trace_id?: string;
   status: 'pending' | 'running' | 'completed' | 'error';
   progress?: string;
-  result?: any;
+  result?: ResearchResult;
   error?: string;
   query?: string;
   summary_format?: string;

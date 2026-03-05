@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { WS_BASE } from '@/lib/api';
 
 export function useWebSocket(jobId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
@@ -19,10 +20,7 @@ export function useWebSocket(jobId: string | null) {
     }
 
     // Connect directly to the backend API (Next.js rewrites don't support WebSocket)
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const wsProtocol = apiUrl.startsWith('https') ? 'wss:' : 'ws:';
-    const wsHost = apiUrl.replace(/^https?:\/\//, ''); // Remove http:// or https://
-    const wsUrl = `${wsProtocol}//${wsHost}/ws/${jobId}`;
+    const wsUrl = `${WS_BASE}/ws/${jobId}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

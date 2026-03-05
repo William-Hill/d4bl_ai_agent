@@ -6,8 +6,7 @@ import StateMap from '@/components/explore/StateMap';
 import RacialGapChart from '@/components/explore/RacialGapChart';
 import PolicyTable from '@/components/explore/PolicyTable';
 import { IndicatorRow, PolicyBill } from '@/lib/types';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+import { API_BASE } from '@/lib/api';
 
 /** 2-digit FIPS code → 2-letter state abbreviation for API filtering */
 const FIPS_TO_ABBREV: Record<string, string> = {

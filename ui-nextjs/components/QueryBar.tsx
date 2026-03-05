@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { QueryResponse } from "@/lib/types";
+import { API_BASE } from "@/lib/api";
 
 interface QueryBarProps {
   onResult: (result: QueryResponse) => void;
@@ -20,7 +21,7 @@ export default function QueryBar({ onResult, onLoading, onError }: QueryBarProps
     onError(null);
 
     try {
-      const response = await fetch("/api/query", {
+      const response = await fetch(`${API_BASE}/api/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: question.trim() }),
