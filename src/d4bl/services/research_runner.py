@@ -141,7 +141,7 @@ async def update_job_status(
     result: dict | None = None,
     research_data: dict | None = None,
     error: str | None = None,
-    logs: list | None = None,
+    logs: list[str] | None = None,
     trace_id: str | None = None,
     evaluation_results: dict | None = None,
 ) -> None:
@@ -203,7 +203,7 @@ async def run_research_job(
         result: dict | None = None,
         research_data: dict | None = None,
         error: str | None = None,
-        logs: list | None = None,
+        logs: list[str] | None = None,
         trace_override: str | None = None,
         evaluation_results: dict | None = None,
     ) -> None:

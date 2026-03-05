@@ -11,7 +11,8 @@ from pydantic import BaseModel, field_validator
 class ResearchRequest(BaseModel):
     query: str
     summary_format: Literal["brief", "detailed", "comprehensive"] = "detailed"
-    selected_agents: list[str] | None = None  # List of agent names to run (e.g., ["researcher", "writer"])
+    # List of agent names to run (e.g., ["researcher", "writer"])
+    selected_agents: list[str] | None = None
 
     @field_validator("query")
     @classmethod

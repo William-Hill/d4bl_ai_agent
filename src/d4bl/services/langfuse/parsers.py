@@ -73,7 +73,9 @@ def parse_bias_score(text: str) -> tuple[float, str]:
     return 3.0, text
 
 
-def parse_label_score(text: str, mapping: dict[str, float], default_score: float = 3.0) -> tuple[float, str]:
+def parse_label_score(
+    text: str, mapping: dict[str, float], default_score: float = 3.0,
+) -> tuple[float, str]:
     data = parse_first_json_block(text)
     if data:
         label = str(data.get("label", "")).strip().upper()

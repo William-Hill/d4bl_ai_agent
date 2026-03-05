@@ -208,7 +208,7 @@ class VectorStore:
         self,
         db: AsyncSession,
         query_text: str,
-        job_id: UUID | None = None,
+        job_id: UUID | str | None = None,
         limit: int = 10,
         similarity_threshold: float = 0.7,
     ) -> list[dict[str, Any]]:

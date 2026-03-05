@@ -42,7 +42,7 @@ class ParsedQuery:
 class QueryParser:
     """Parse natural language queries using Ollama/Mistral."""
 
-    def __init__(self, ollama_base_url: str | None = None):
+    def __init__(self, ollama_base_url: str | None = None) -> None:
         settings = get_settings()
         self.ollama_base_url = (
             ollama_base_url or settings.ollama_base_url

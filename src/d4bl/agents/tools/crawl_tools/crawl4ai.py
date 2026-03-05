@@ -8,7 +8,6 @@ import os
 import re
 import logging
 import time
-from typing import Type
 
 import requests
 from crewai.tools import BaseTool
@@ -64,7 +63,7 @@ class Crawl4AISearchTool(BaseTool):
                 raise ValueError("Query cannot be empty")
             return v
 
-    args_schema: Type[BaseModel] = InputSchema
+    args_schema: type[BaseModel] = InputSchema
 
     def _run(self, query: str) -> str:
         if _URL_PATTERN.match(query.strip()):
@@ -220,7 +219,7 @@ class Crawl4AISearchTool(BaseTool):
         
         return valid_results, invalid_results
 
-    def _handle_pdfs_separately(self, pdf_urls: list[str], query: str) -> list[dict]:
+    def _handle_pdfs_separately(self, pdf_urls: list[str]) -> list[dict]:
         """
         Handle PDF URLs separately with optimized extraction.
         Returns list of extracted PDF results.
@@ -361,7 +360,7 @@ class Crawl4AISearchTool(BaseTool):
                     failed_pdf_urls = [url for url in urls if url.lower().endswith('.pdf') and url not in pdf_urls_in_results]
                     if failed_pdf_urls:
                         logger.info("Some PDFs failed API extraction, trying separate handling: %s", failed_pdf_urls)
-                        additional_pdf_results = self._handle_pdfs_separately(failed_pdf_urls, query)
+                        additional_pdf_results = self._handle_pdfs_separately(failed_pdf_urls)
                         if additional_pdf_results:
                             raw_results.extend(additional_pdf_results)
                             logger.info("Merged %s additional client-extracted PDFs", len(additional_pdf_results))
