@@ -1,0 +1,48 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, 'epic/**']
+
+jobs:
+  python-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - run: pip install ruff pytest pytest-asyncio httpx
+      - name: Lint
+        run: ruff check src/
+      - name: Tests
+        run: pytest tests/ -v --tb=short
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui-nextjs/package-lock.json
+      - name: Install dependencies
+        run: cd ui-nextjs && npm ci
+      - name: Lint
+        run: cd ui-nextjs && npm run lint
+      - name: Type check
+        run: cd ui-nextjs && npx tsc --noEmit
+      - name: Build
+        run: cd ui-nextjs && npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t d4bl-api:test .
+      - name: Build frontend image
+        run: docker build -t d4bl-frontend:test ./ui-nextjs
