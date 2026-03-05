@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """Service for storing and retrieving scraped content with vector embeddings."""
 
-    def __init__(self, ollama_base_url: str | None = None, embedder_model: str = "mxbai-embed-large"):
+    def __init__(self, ollama_base_url: str | None = None, embedder_model: str = "mxbai-embed-large") -> None:
         """
         Initialize the vector store.
         
