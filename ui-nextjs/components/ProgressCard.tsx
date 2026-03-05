@@ -13,10 +13,7 @@ export default function ProgressCard({ progress, isConnected }: ProgressCardProp
       </h2>
       <div className="space-y-4">
         <div className="w-full bg-[#1a1a1a] rounded-full h-2">
-          <div
-            className="bg-[#00ff32] h-2 rounded-full transition-all duration-300 animate-pulse"
-            style={{ width: '75%' }}
-          />
+          <div className="bg-[#00ff32]/50 h-2 rounded-full w-full animate-pulse" />
         </div>
         <div className="flex items-center justify-between">
           <p className="text-gray-200 font-medium">{progress || 'Processing...'}</p>
