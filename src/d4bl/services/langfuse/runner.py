@@ -172,7 +172,7 @@ def run_comprehensive_evaluation(
                     "status": EvalStatus.FAILED,
                 }
     finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+        executor.shutdown(wait=True, cancel_futures=True)
 
     # --- Flush Langfuse once at the end (finding 3.6) ---
     if langfuse:
