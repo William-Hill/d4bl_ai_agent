@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import { scaleLinear } from 'd3-scale';
 import { IndicatorRow } from '@/lib/types';
@@ -16,18 +16,22 @@ interface Props {
 export default function StateMap({ indicators, selectedStateFips, onSelectState }: Props) {
   const [tooltip, setTooltip] = useState<{ name: string; value: number } | null>(null);
 
-  const valueByFips: Record<string, number> = {};
-  for (const row of indicators) {
-    if (row.fips_code.length === 2) {
-      valueByFips[row.fips_code] = row.value;
+  const { valueByFips, colorScale } = useMemo(() => {
+    const vByFips: Record<string, number> = {};
+    for (const row of indicators) {
+      if (row.fips_code.length === 2) {
+        vByFips[row.fips_code] = row.value;
+      }
     }
-  }
 
-  const values = Object.values(valueByFips);
-  const min = values.length ? Math.min(...values) : 0;
-  const max = values.length ? Math.max(...values) : 100;
+    const values = Object.values(vByFips);
+    const min = values.length ? Math.min(...values) : 0;
+    const max = values.length ? Math.max(...values) : 100;
 
-  const colorScale = scaleLinear<string>().domain([min, max]).range(['#1a3a1a', '#00ff32']);
+    const scale = scaleLinear<string>().domain([min, max]).range(['#1a3a1a', '#00ff32']);
+
+    return { valueByFips: vByFips, colorScale: scale };
+  }, [indicators]);
 
   return (
     <div className="relative bg-[#1a1a1a] rounded-lg border border-[#404040] overflow-hidden">

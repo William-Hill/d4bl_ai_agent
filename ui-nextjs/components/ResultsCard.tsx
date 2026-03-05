@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ResearchResult, ResearchTaskOutput } from '@/lib/types';
 
 interface ResultsCardProps {
@@ -50,6 +50,11 @@ export default function ResultsCard({ results }: ResultsCardProps) {
     return html;
   };
 
+  const formattedReport = useMemo(
+    () => (results.report ? formatMarkdown(results.report) : ''),
+    [results.report],
+  );
+
   return (
     <div ref={resultsRef} className="bg-[#333333] border border-[#404040] rounded-lg p-8 shadow-sm">
       <h2 className="text-2xl font-bold text-white mb-6">
@@ -63,7 +68,7 @@ export default function ResultsCard({ results }: ResultsCardProps) {
             </h3>
             <div
               className="prose max-w-none prose-invert"
-              dangerouslySetInnerHTML={{ __html: formatMarkdown(results.report) }}
+              dangerouslySetInnerHTML={{ __html: formattedReport }}
             />
           </div>
         )}
