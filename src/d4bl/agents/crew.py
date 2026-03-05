@@ -14,7 +14,7 @@ from d4bl.agents.tools import (
     FirecrawlSearchWrapper,
     SelfHostedFirecrawlSearchTool,
 )
-from d4bl.llm import get_ollama_llm
+from d4bl.llm import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class D4Bl():
         """Create a standard agent with common defaults."""
         return Agent(
             config=self.agents_config[config_key],
-            llm=get_ollama_llm(),
+            llm=get_llm(),
             verbose=True,
             allow_delegation=False,
             **kwargs,
@@ -131,7 +131,7 @@ class D4Bl():
 
         return Agent(
             config=self.agents_config['researcher'],
-            llm=get_ollama_llm(),
+            llm=get_llm(),
             tools=[crawl_tool],
             verbose=True,
             allow_delegation=False
