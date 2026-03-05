@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus, run_llm_evaluation
 from d4bl.services.langfuse.prompts import hallucination_prompt
@@ -17,10 +17,10 @@ def evaluate_hallucination(
     query: str,
     answer: str,
     context: str,
-    trace_id: Optional[str] = None,
+    trace_id: str | None = None,
     llm: Any = None,
     langfuse: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not query or not query.strip():
         return {
             "error": "Query cannot be empty",

@@ -1,7 +1,7 @@
 """Orchestrates the full NL query pipeline."""
+from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,7 @@ class QueryEngine:
             print(source.url, source.relevance_score)
     """
 
-    def __init__(self, ollama_base_url: Optional[str] = None):
+    def __init__(self, ollama_base_url: str | None = None):
         self.parser = QueryParser(ollama_base_url=ollama_base_url)
         self.vector_store = get_vector_store()
         self.structured_searcher = StructuredSearcher()
@@ -34,7 +34,7 @@ class QueryEngine:
         self,
         db: AsyncSession,
         question: str,
-        job_id: Optional[str] = None,
+        job_id: str | None = None,
         limit: int = 10,
         similarity_threshold: float = 0.7,
     ) -> QueryResult:

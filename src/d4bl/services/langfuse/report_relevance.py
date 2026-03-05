@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.llm_runner import call_llm_text
@@ -18,10 +18,10 @@ eval_logger = logging.getLogger(f"{__name__}.evaluations")
 def evaluate_report_relevance(
     query: str,
     report: str,
-    trace_id: Optional[str] = None,
+    trace_id: str | None = None,
     llm: Any = None,
     langfuse: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     start_time = time.time()
     eval_logger.info("Starting report relevance evaluation")
 

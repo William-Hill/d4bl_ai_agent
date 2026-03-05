@@ -2,10 +2,13 @@
 Error handling utilities for CrewAI agents and tools.
 Provides retry logic, exponential backoff, and graceful error recovery.
 """
+from __future__ import annotations
+
 import time
 import logging
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar, Optional, Any
+from typing import Any, TypeVar
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -27,8 +30,8 @@ def retry_with_backoff(
     max_delay: float = 60.0,
     exponential_base: float = 2.0,
     retry_on: tuple[type[Exception], ...] = (Exception,),
-    on_retry: Optional[Callable[[Exception, int], None]] = None,
-    on_failure: Optional[Callable[[Exception], Any]] = None,
+    on_retry: Callable[[Exception, int], None] | None = None,
+    on_failure: Callable[[Exception], Any] | None = None,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator that retries a function with exponential backoff.
@@ -87,10 +90,10 @@ def retry_with_backoff(
 
 def safe_execute(
     func: Callable[..., T],
-    default_return: Optional[T] = None,
-    error_message: Optional[str] = None,
+    default_return: T | None = None,
+    error_message: str | None = None,
     log_error: bool = True,
-) -> Optional[T]:
+) -> T | None:
     """
     Safely execute a function, catching all exceptions and returning a default value.
     
@@ -119,7 +122,7 @@ class ErrorRecoveryStrategy:
     """Manages error recovery strategies for different failure scenarios."""
     
     @staticmethod
-    def fallback_to_firecrawl(error: Exception, context: dict[str, Any]) -> Optional[Any]:
+    def fallback_to_firecrawl(error: Exception, context: dict[str, Any]) -> Any | None:
         """Fallback to Firecrawl if Crawl4AI fails."""
         if "Crawl4AI" in str(error) or "crawl4ai" in str(error).lower():
             logger.info("Crawl4AI failed, attempting fallback to Firecrawl...")
@@ -144,7 +147,7 @@ class ErrorRecoveryStrategy:
         }
     
     @staticmethod
-    def retry_with_simplified_query(error: Exception, context: dict[str, Any]) -> Optional[Any]:
+    def retry_with_simplified_query(error: Exception, context: dict[str, Any]) -> Any | None:
         """Retry with a simplified/truncated query."""
         original_query = context.get("query", "")
         if len(original_query) > 100:

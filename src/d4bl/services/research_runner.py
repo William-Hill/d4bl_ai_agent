@@ -11,7 +11,6 @@ import queue
 import re
 import sys
 from datetime import datetime
-from typing import Optional, List
 from uuid import UUID
 
 from opentelemetry import trace
@@ -138,13 +137,13 @@ async def update_job_status(
     db: AsyncSession,
     job_id: str,
     status: str,
-    progress: Optional[str] = None,
-    result: Optional[dict] = None,
-    research_data: Optional[dict] = None,
-    error: Optional[str] = None,
-    logs: Optional[list] = None,
-    trace_id: Optional[str] = None,
-    evaluation_results: Optional[dict] = None,
+    progress: str | None = None,
+    result: dict | None = None,
+    research_data: dict | None = None,
+    error: str | None = None,
+    logs: list[str] | None = None,
+    trace_id: str | None = None,
+    evaluation_results: dict | None = None,
 ) -> None:
     """Persist job state updates to the database."""
     try:
@@ -185,7 +184,7 @@ async def run_research_job(
     job_id: str, 
     query: str, 
     summary_format: str,
-    selected_agents: Optional[List[str]] = None
+    selected_agents: list[str] | None = None
 ) -> None:
     """Run the research crew and send progress updates via WebSocket."""
     set_job_logs(job_id, [])
@@ -196,17 +195,17 @@ async def run_research_job(
         "d4bl.query": query,
         "d4bl.summary_format": summary_format,
     }
-    trace_id_hex: Optional[str] = None
+    trace_id_hex: str | None = None
 
     async def set_status(
-        progress_msg: Optional[str],
+        progress_msg: str | None,
         status: str = "running",
-        result: Optional[dict] = None,
-        research_data: Optional[dict] = None,
-        error: Optional[str] = None,
-        logs: Optional[list] = None,
-        trace_override: Optional[str] = None,
-        evaluation_results: Optional[dict] = None,
+        result: dict | None = None,
+        research_data: dict | None = None,
+        error: str | None = None,
+        logs: list[str] | None = None,
+        trace_override: str | None = None,
+        evaluation_results: dict | None = None,
     ) -> None:
         trace_value = trace_override or trace_id_hex
         async for db in get_db():

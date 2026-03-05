@@ -6,7 +6,6 @@ from __future__ import annotations
 import logging
 import queue
 from collections import OrderedDict
-from typing import Dict, List, Optional
 
 from fastapi import WebSocket
 
@@ -14,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 MAX_JOB_LOGS = 1000
 
-active_connections: Dict[str, WebSocket] = {}
-job_logs: OrderedDict[str, List[str]] = OrderedDict()
-log_queues: Dict[str, queue.Queue] = {}
+active_connections: dict[str, WebSocket] = {}
+job_logs: OrderedDict[str, list[str]] = OrderedDict()
+log_queues: dict[str, queue.Queue] = {}
 
 
 async def send_websocket_update(job_id: str, message: dict) -> None:
@@ -49,7 +48,7 @@ def create_log_queue(job_id: str) -> queue.Queue:
     return log_queue
 
 
-def get_log_queue(job_id: str) -> Optional[queue.Queue]:
+def get_log_queue(job_id: str) -> queue.Queue | None:
     """Return the queue for a job, if it exists."""
     return log_queues.get(job_id)
 
@@ -59,7 +58,7 @@ def remove_log_queue(job_id: str) -> None:
     log_queues.pop(job_id, None)
 
 
-def set_job_logs(job_id: str, logs: List[str]) -> None:
+def set_job_logs(job_id: str, logs: list[str]) -> None:
     """Persist captured logs for later retrieval (bounded to MAX_JOB_LOGS)."""
     job_logs[job_id] = logs
     job_logs.move_to_end(job_id)
@@ -67,7 +66,7 @@ def set_job_logs(job_id: str, logs: List[str]) -> None:
         job_logs.popitem(last=False)
 
 
-def get_job_logs(job_id: str) -> List[str]:
+def get_job_logs(job_id: str) -> list[str]:
     """Look up logs for a job."""
     return job_logs.get(job_id, [])
 

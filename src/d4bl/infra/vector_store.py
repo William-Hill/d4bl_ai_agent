@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 import aiohttp
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """Service for storing and retrieving scraped content with vector embeddings."""
 
-    def __init__(self, ollama_base_url: Optional[str] = None, embedder_model: str = "mxbai-embed-large"):
+    def __init__(self, ollama_base_url: str | None = None, embedder_model: str = "mxbai-embed-large") -> None:
         """
         Initialize the vector store.
         
@@ -34,12 +34,12 @@ class VectorStore:
         self.embedder_model = embedder_model
         self.embedding_dimension = 1024  # mxbai-embed-large produces 1024-dimensional vectors
 
-    def _format_embedding(self, embedding: List[float]) -> str:
+    def _format_embedding(self, embedding: list[float]) -> str:
         """Format embedding list as a pgvector-compatible string."""
         return '[' + ','.join(str(x) for x in embedding) + ']'
 
     @staticmethod
-    def _row_to_content_dict(row) -> Dict[str, Any]:
+    def _row_to_content_dict(row) -> dict[str, Any]:
         """Convert a scraped_content_vectors row (mapping) to a dict."""
         return {
             "id": str(row["id"]) if row["id"] else None,
@@ -51,7 +51,7 @@ class VectorStore:
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
 
-    async def generate_embedding(self, text_input: str) -> List[float]:
+    async def generate_embedding(self, text_input: str) -> list[float]:
         """
         Generate embedding vector for the given text using Ollama.
 
@@ -108,9 +108,9 @@ class VectorStore:
         job_id: UUID,
         url: str,
         content: str,
-        content_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[UUID]:
+        content_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> UUID | None:
         """
         Store scraped content with its embedding in the vector database.
         
@@ -174,7 +174,7 @@ class VectorStore:
         self,
         db: AsyncSession,
         job_id: UUID,
-        items: List[Dict[str, Any]],
+        items: list[dict[str, Any]],
     ) -> int:
         """
         Store multiple scraped content items in batch.
@@ -208,10 +208,10 @@ class VectorStore:
         self,
         db: AsyncSession,
         query_text: str,
-        job_id: Optional[UUID] = None,
+        job_id: UUID | str | None = None,
         limit: int = 10,
         similarity_threshold: float = 0.7,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Search for similar content using vector similarity.
         
@@ -233,7 +233,7 @@ class VectorStore:
             where_clauses = [
                 "1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold"
             ]
-            params: Dict[str, Any] = {
+            params: dict[str, Any] = {
                 "query_embedding": query_embedding_str,
                 "threshold": similarity_threshold,
                 "limit": limit,
@@ -274,8 +274,8 @@ class VectorStore:
         self,
         db: AsyncSession,
         job_id: UUID,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Get all scraped content for a specific job.
         
@@ -288,7 +288,7 @@ class VectorStore:
             List of records
         """
         try:
-            limit_clause = "LIMIT :limit" if limit else ""
+            limit_clause = "LIMIT :limit" if limit is not None else ""
             query = text(f"""
                 SELECT id, job_id, url, content, content_type, metadata, created_at
                 FROM scraped_content_vectors
@@ -297,8 +297,8 @@ class VectorStore:
                 {limit_clause}
             """)
 
-            params: Dict[str, Any] = {"job_id": str(job_id)}
-            if limit:
+            params: dict[str, Any] = {"job_id": str(job_id)}
+            if limit is not None:
                 params["limit"] = limit
 
             result = await db.execute(query, params)
@@ -310,7 +310,7 @@ class VectorStore:
 
 
 # Global instance
-_vector_store: Optional[VectorStore] = None
+_vector_store: VectorStore | None = None
 
 
 def get_vector_store() -> VectorStore:

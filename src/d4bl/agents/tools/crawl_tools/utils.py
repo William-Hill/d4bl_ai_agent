@@ -4,7 +4,6 @@ Shared utilities for crawl tools.
 from __future__ import annotations
 
 import logging
-from typing import Union
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
@@ -21,7 +20,7 @@ PROBLEMATIC_DOMAINS: frozenset[str] = frozenset({
 class FirecrawlSearchWrapperInput(BaseModel):
     """Input schema for Firecrawl Search Wrapper tool."""
 
-    query: Union[str, dict] = Field(
+    query: str | dict = Field(
         ..., description="The search query as a plain text string. Example: 'data science trends 2025'"
     )
 

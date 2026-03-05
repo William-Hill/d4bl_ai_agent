@@ -8,7 +8,6 @@ import os
 import re
 import logging
 import time
-from typing import List, Type, Optional
 
 import requests
 from crewai.tools import BaseTool
@@ -64,7 +63,7 @@ class Crawl4AISearchTool(BaseTool):
                 raise ValueError("Query cannot be empty")
             return v
 
-    args_schema: Type[BaseModel] = InputSchema
+    args_schema: type[BaseModel] = InputSchema
 
     def _run(self, query: str) -> str:
         if _URL_PATTERN.match(query.strip()):
@@ -80,7 +79,7 @@ class Crawl4AISearchTool(BaseTool):
 
         return self._crawl_urls_with_retry(urls, query)
 
-    def _lookup_urls_via_serper(self, query: str) -> List[str] | str:
+    def _lookup_urls_via_serper(self, query: str) -> list[str] | str:
         """Use Serper.dev to turn a search query into URL list; return str on error."""
         serper_api_key = os.getenv("SERPER_API_KEY") or os.getenv("SERP_API_KEY")
         if not serper_api_key:
@@ -191,7 +190,7 @@ class Crawl4AISearchTool(BaseTool):
                 indent=2,
             )
 
-    def _filter_valid_results(self, results: List[dict]) -> tuple[List[dict], List[dict]]:
+    def _filter_valid_results(self, results: list[dict]) -> tuple[list[dict], list[dict]]:
         """Filter crawl results into valid and invalid groups."""
         valid_results = []
         invalid_results = []
@@ -220,7 +219,7 @@ class Crawl4AISearchTool(BaseTool):
         
         return valid_results, invalid_results
 
-    def _handle_pdfs_separately(self, pdf_urls: List[str], query: str) -> List[dict]:
+    def _handle_pdfs_separately(self, pdf_urls: list[str]) -> list[dict]:
         """
         Handle PDF URLs separately with optimized extraction.
         Returns list of extracted PDF results.
@@ -276,7 +275,7 @@ class Crawl4AISearchTool(BaseTool):
         
         return pdf_results
 
-    def _crawl_urls_with_retry(self, urls: List[str], query: str) -> str:
+    def _crawl_urls_with_retry(self, urls: list[str], query: str) -> str:
         """Crawl URLs with retry logic and error recovery."""
         urls = list(urls)  # Don't mutate the caller's list
         endpoint = f"{self._base_url}/crawl"
@@ -361,7 +360,7 @@ class Crawl4AISearchTool(BaseTool):
                     failed_pdf_urls = [url for url in urls if url.lower().endswith('.pdf') and url not in pdf_urls_in_results]
                     if failed_pdf_urls:
                         logger.info("Some PDFs failed API extraction, trying separate handling: %s", failed_pdf_urls)
-                        additional_pdf_results = self._handle_pdfs_separately(failed_pdf_urls, query)
+                        additional_pdf_results = self._handle_pdfs_separately(failed_pdf_urls)
                         if additional_pdf_results:
                             raw_results.extend(additional_pdf_results)
                             logger.info("Merged %s additional client-extracted PDFs", len(additional_pdf_results))
@@ -464,7 +463,7 @@ class Crawl4AISearchTool(BaseTool):
             indent=2,
         )
 
-    def _try_firecrawl_fallback(self, query: str, urls: List[str], error: str) -> str:
+    def _try_firecrawl_fallback(self, query: str, urls: list[str], error: str) -> str:
         """Try Firecrawl as fallback when Crawl4AI fails."""
         try:
             firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")

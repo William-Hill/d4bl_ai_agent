@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict
+from typing import Any
 
 
 def keyword_relevance(query: str, text: str) -> float:
@@ -15,7 +15,7 @@ def keyword_relevance(query: str, text: str) -> float:
     return max(1.0, min(5.0, (matches / len(significant_words)) * 5))
 
 
-def parse_first_json_block(text: str) -> Dict[str, Any]:
+def parse_first_json_block(text: str) -> dict[str, Any]:
     json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
     if not json_match:
         return {}
@@ -25,7 +25,7 @@ def parse_first_json_block(text: str) -> Dict[str, Any]:
         return {}
 
 
-def default_quality_scores(scores: Dict[str, Any], fallback_text: str) -> Dict[str, Any]:
+def default_quality_scores(scores: dict[str, Any], fallback_text: str) -> dict[str, Any]:
     """Ensure all scores are floats and calculate overall score."""
     # Convert all score values to float, defaulting to 3.0 if invalid
     def to_float(value: Any, default: float = 3.0) -> float:
@@ -73,7 +73,9 @@ def parse_bias_score(text: str) -> tuple[float, str]:
     return 3.0, text
 
 
-def parse_label_score(text: str, mapping: Dict[str, float], default_score: float = 3.0) -> tuple[float, str]:
+def parse_label_score(
+    text: str, mapping: dict[str, float], default_score: float = 3.0,
+) -> tuple[float, str]:
     data = parse_first_json_block(text)
     if data:
         label = str(data.get("label", "")).strip().upper()

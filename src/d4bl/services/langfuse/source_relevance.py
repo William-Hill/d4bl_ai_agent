@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.parsers import keyword_relevance
@@ -13,10 +13,10 @@ eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
 def evaluate_source_relevance(
     query: str,
-    sources: List[str],
-    trace_id: Optional[str] = None,
+    sources: list[str],
+    trace_id: str | None = None,
     langfuse: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     start_time = time.time()
     eval_logger.info("Starting source relevance evaluation for %s sources", len(sources))
 
@@ -33,7 +33,7 @@ def evaluate_source_relevance(
         if not sources:
             return {"scores": {}, "average": 0.0, "status": EvalStatus.SKIPPED, "reason": "no_sources"}
 
-        relevance_scores: Dict[str, float] = {}
+        relevance_scores: dict[str, float] = {}
         for idx, source in enumerate(sources):
             try:
                 relevance_scores[source] = keyword_relevance(query, source)

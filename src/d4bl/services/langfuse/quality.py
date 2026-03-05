@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.llm_runner import call_llm_text
@@ -16,11 +16,11 @@ eval_logger = logging.getLogger(f"{__name__}.evaluations")
 def evaluate_research_quality(
     query: str,
     research_output: str,
-    sources: List[str],
-    trace_id: Optional[str] = None,
+    sources: list[str],
+    trace_id: str | None = None,
     llm: Any = None,
     langfuse: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     start_time = time.time()
     eval_logger.info("Starting research quality evaluation")
 
