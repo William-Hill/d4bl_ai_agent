@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import MetricFilterPanel, { ExploreFilters } from '@/components/explore/MetricFilterPanel';
 import StateMap from '@/components/explore/StateMap';
 import RacialGapChart from '@/components/explore/RacialGapChart';
@@ -27,13 +27,20 @@ export default function ExplorePage() {
     year: 2022,
     selectedState: null,
   });
-  const [selectedStateName, setSelectedStateName] = useState<string>('');
-
   const [mapIndicators, setMapIndicators] = useState<IndicatorRow[]>([]);
   const [chartIndicators, setChartIndicators] = useState<IndicatorRow[]>([]);
   const [bills, setBills] = useState<PolicyBill[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** Derive state name from the selected FIPS code + loaded indicators (no separate state needed). */
+  const selectedStateName = useMemo(() => {
+    if (!filters.selectedState) return '';
+    const match = mapIndicators.find(
+      (row) => row.state_fips === filters.selectedState,
+    );
+    return match?.geography_name ?? '';
+  }, [filters.selectedState, mapIndicators]);
 
   // Fetch all-state indicators for the map (current metric + race + year)
   const fetchMapData = useCallback(async (signal: AbortSignal) => {
@@ -123,12 +130,11 @@ export default function ExplorePage() {
     return () => controller.abort();
   }, [fetchMapData, fetchChartData, fetchBills]);
 
-  const handleSelectState = (fips: string, name: string) => {
+  const handleSelectState = (fips: string, _name: string) => {
     setFilters((prev) => ({
       ...prev,
       selectedState: prev.selectedState === fips ? null : fips,
     }));
-    setSelectedStateName((prev) => (prev === name ? '' : name));
   };
 
   return (
