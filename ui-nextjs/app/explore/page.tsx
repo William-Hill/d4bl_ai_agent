@@ -130,7 +130,7 @@ export default function ExplorePage() {
     return () => controller.abort();
   }, [fetchMapData, fetchChartData, fetchBills]);
 
-  const handleSelectState = (fips: string, _name: string) => {
+  const handleSelectState = (fips: string) => {
     setFilters((prev) => ({
       ...prev,
       selectedState: prev.selectedState === fips ? null : fips,
