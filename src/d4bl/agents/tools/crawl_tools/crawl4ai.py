@@ -8,7 +8,7 @@ import os
 import re
 import logging
 import time
-from typing import List, Type, Optional
+from typing import Type
 
 import requests
 from crewai.tools import BaseTool
@@ -80,7 +80,7 @@ class Crawl4AISearchTool(BaseTool):
 
         return self._crawl_urls_with_retry(urls, query)
 
-    def _lookup_urls_via_serper(self, query: str) -> List[str] | str:
+    def _lookup_urls_via_serper(self, query: str) -> list[str] | str:
         """Use Serper.dev to turn a search query into URL list; return str on error."""
         serper_api_key = os.getenv("SERPER_API_KEY") or os.getenv("SERP_API_KEY")
         if not serper_api_key:
@@ -191,7 +191,7 @@ class Crawl4AISearchTool(BaseTool):
                 indent=2,
             )
 
-    def _filter_valid_results(self, results: List[dict]) -> tuple[List[dict], List[dict]]:
+    def _filter_valid_results(self, results: list[dict]) -> tuple[list[dict], list[dict]]:
         """Filter crawl results into valid and invalid groups."""
         valid_results = []
         invalid_results = []
@@ -220,7 +220,7 @@ class Crawl4AISearchTool(BaseTool):
         
         return valid_results, invalid_results
 
-    def _handle_pdfs_separately(self, pdf_urls: List[str], query: str) -> List[dict]:
+    def _handle_pdfs_separately(self, pdf_urls: list[str], query: str) -> list[dict]:
         """
         Handle PDF URLs separately with optimized extraction.
         Returns list of extracted PDF results.
@@ -276,7 +276,7 @@ class Crawl4AISearchTool(BaseTool):
         
         return pdf_results
 
-    def _crawl_urls_with_retry(self, urls: List[str], query: str) -> str:
+    def _crawl_urls_with_retry(self, urls: list[str], query: str) -> str:
         """Crawl URLs with retry logic and error recovery."""
         urls = list(urls)  # Don't mutate the caller's list
         endpoint = f"{self._base_url}/crawl"
@@ -464,7 +464,7 @@ class Crawl4AISearchTool(BaseTool):
             indent=2,
         )
 
-    def _try_firecrawl_fallback(self, query: str, urls: List[str], error: str) -> str:
+    def _try_firecrawl_fallback(self, query: str, urls: list[str], error: str) -> str:
         """Try Firecrawl as fallback when Crawl4AI fails."""
         try:
             firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")

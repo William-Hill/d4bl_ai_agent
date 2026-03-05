@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 import time
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from d4bl.services.langfuse.llm_runner import call_llm_text
 
@@ -26,10 +27,10 @@ def run_llm_evaluation(
     prompt: str,
     parse_fn: Callable[[str], tuple[float, str]],
     score_key: str,
-    trace_id: Optional[str] = None,
+    trace_id: str | None = None,
     llm: Any = None,
     langfuse: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a single LLM-based evaluation with standard boilerplate.
 
     Args:

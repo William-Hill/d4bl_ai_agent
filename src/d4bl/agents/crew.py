@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task, before_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import FirecrawlSearchTool
-from typing import Any, List, Optional
+from typing import Any
 import os
 import logging
 
@@ -21,8 +23,8 @@ logger = logging.getLogger(__name__)
 class D4Bl():
     """D4Bl crew with enhanced error handling and reliability"""
 
-    agents: List[BaseAgent]
-    tasks: List[Task]
+    agents: list[BaseAgent]
+    tasks: list[Task]
     
     # Agent to task mapping
     AGENT_TASK_MAP = {
@@ -57,7 +59,7 @@ class D4Bl():
 
     def __init__(self):
         """Initialize crew with optional agent selection"""
-        self.selected_agents: Optional[List[str]] = None
+        self.selected_agents: list[str] | None = None
 
     @before_kickoff
     def before_kickoff_function(self, inputs):

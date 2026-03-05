@@ -1,13 +1,15 @@
 """
 FastAPI backend for D4BL AI Agent UI
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
-from typing import AsyncGenerator, List, Optional
 from uuid import UUID
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -194,7 +196,7 @@ async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
 async def get_job_history(
     page: int = 1,
     page_size: int = 20,
-    status: Optional[str] = None,
+    status: str | None = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Get paginated job history"""
@@ -234,12 +236,12 @@ async def get_job_history(
         raise HTTPException(status_code=500, detail="Error fetching job history")
 
 
-@app.get("/api/evaluations", response_model=List[EvaluationResultItem])
+@app.get("/api/evaluations", response_model=list[EvaluationResultItem])
 async def get_evaluations(
-    trace_id: Optional[str] = None,
-    job_id: Optional[str] = None,  # job_id maps to trace_id in Phoenix
-    span_id: Optional[str] = None,
-    eval_name: Optional[str] = None,
+    trace_id: str | None = None,
+    job_id: str | None = None,  # job_id maps to trace_id in Phoenix
+    span_id: str | None = None,
+    eval_name: str | None = None,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
 ):
@@ -347,7 +349,7 @@ async def health_check():
 @app.post("/api/vector/search")
 async def search_similar_content(
     query: str = Body(..., embed=True, description="Text query to search for"),
-    job_id: Optional[str] = Body(None, embed=True, description="Optional job ID to filter results"),
+    job_id: str | None = Body(None, embed=True, description="Optional job ID to filter results"),
     limit: int = Body(10, embed=True, ge=1, le=50, description="Maximum number of results"),
     similarity_threshold: float = Body(0.7, embed=True, ge=0.0, le=1.0, description="Minimum cosine similarity score"),
     db: AsyncSession = Depends(get_db),
@@ -392,7 +394,7 @@ async def search_similar_content(
 @app.get("/api/vector/job/{job_id}")
 async def get_scraped_content_by_job(
     job_id: str,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -460,13 +462,13 @@ async def natural_language_query(
         raise HTTPException(status_code=500, detail="Query failed")
 
 
-@app.get("/api/explore/indicators", response_model=List[IndicatorItem])
+@app.get("/api/explore/indicators", response_model=list[IndicatorItem])
 async def get_indicators(
-    state_fips: Optional[str] = None,
+    state_fips: str | None = None,
     geography_type: str = "state",
-    metric: Optional[str] = None,
-    race: Optional[str] = None,
-    year: Optional[int] = None,
+    metric: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
     limit: int = 1000,
     db: AsyncSession = Depends(get_db),
 ):
@@ -505,12 +507,12 @@ async def get_indicators(
         raise HTTPException(status_code=500, detail="Error fetching indicators") from e
 
 
-@app.get("/api/explore/policies", response_model=List[PolicyBillItem])
+@app.get("/api/explore/policies", response_model=list[PolicyBillItem])
 async def get_policies(
-    state: Optional[str] = None,
-    status: Optional[str] = None,
-    topic: Optional[str] = None,
-    session: Optional[str] = None,
+    state: str | None = None,
+    status: str | None = None,
+    topic: str | None = None,
+    session: str | None = None,
     limit: int = 1000,
     db: AsyncSession = Depends(get_db),
 ):
@@ -551,7 +553,7 @@ async def get_policies(
         raise HTTPException(status_code=500, detail="Error fetching policies") from e
 
 
-@app.get("/api/explore/states", response_model=List[StateSummaryItem])
+@app.get("/api/explore/states", response_model=list[StateSummaryItem])
 async def get_states_summary(db: AsyncSession = Depends(get_db)):
     """Summarize available data per state for choropleth coloring."""
     try:
@@ -588,7 +590,7 @@ async def get_states_summary(db: AsyncSession = Depends(get_db)):
         for row in bills_rows:
             bill_counts_by_name[row["state_name"]] = row["bill_count"]
 
-        summary: List[StateSummaryItem] = []
+        summary: list[StateSummaryItem] = []
         for row in metrics_rows:
             metrics_list = row["metrics"].split(",") if row["metrics"] else []
             bill_count = bill_counts_by_name.get(row["state_name"], 0)

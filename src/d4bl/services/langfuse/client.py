@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Optional
 
 from d4bl.observability.langfuse import resolve_langfuse_host
 from d4bl.settings import get_settings
@@ -13,10 +12,10 @@ except ImportError:  # pragma: no cover - handled at runtime
     Langfuse = None  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
-_langfuse_client: Optional[Langfuse] = None
+_langfuse_client: Langfuse | None = None
 
 
-def get_langfuse_eval_client() -> Optional[Langfuse]:
+def get_langfuse_eval_client() -> Langfuse | None:
     """Get or initialize Langfuse client for evaluations."""
     global _langfuse_client
     if _langfuse_client is not None:

@@ -1,7 +1,9 @@
 """
 Pydantic schemas shared by the FastAPI application.
 """
-from typing import List, Literal, Optional
+from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -9,7 +11,7 @@ from pydantic import BaseModel, field_validator
 class ResearchRequest(BaseModel):
     query: str
     summary_format: Literal["brief", "detailed", "comprehensive"] = "detailed"
-    selected_agents: Optional[List[str]] = None  # List of agent names to run (e.g., ["researcher", "writer"])
+    selected_agents: list[str] | None = None  # List of agent names to run (e.g., ["researcher", "writer"])
 
     @field_validator("query")
     @classmethod
@@ -27,22 +29,22 @@ class ResearchResponse(BaseModel):
 
 class JobStatus(BaseModel):
     job_id: str
-    trace_id: Optional[str] = None
+    trace_id: str | None = None
     status: str  # pending, running, completed, error
-    progress: Optional[str] = None
-    result: Optional[dict] = None
-    error: Optional[str] = None
-    query: Optional[str] = None
-    summary_format: Optional[str] = None
-    logs: Optional[List[str]] = None
-    research_data: Optional[dict] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    progress: str | None = None
+    result: dict | None = None
+    error: str | None = None
+    query: str | None = None
+    summary_format: str | None = None
+    logs: list[str] | None = None
+    research_data: dict | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    completed_at: str | None = None
 
 
 class JobHistoryResponse(BaseModel):
-    jobs: List[JobStatus]
+    jobs: list[JobStatus]
     total: int
     page: int
     page_size: int
@@ -51,16 +53,16 @@ class JobHistoryResponse(BaseModel):
 class EvaluationResultItem(BaseModel):
     id: str
     span_id: str
-    trace_id: Optional[str] = None
-    job_id: Optional[str] = None
+    trace_id: str | None = None
+    job_id: str | None = None
     eval_name: str
-    label: Optional[str] = None
-    score: Optional[float] = None
-    explanation: Optional[str] = None
-    input_text: Optional[str] = None
-    output_text: Optional[str] = None
-    context_text: Optional[str] = None
-    created_at: Optional[str] = None
+    label: str | None = None
+    score: float | None = None
+    explanation: str | None = None
+    input_text: str | None = None
+    output_text: str | None = None
+    context_text: str | None = None
+    created_at: str | None = None
 
 
 # --- NL Query models ---
@@ -68,7 +70,7 @@ class EvaluationResultItem(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
-    job_id: Optional[str] = None
+    job_id: str | None = None
     limit: int = 10
 
     @field_validator("question")
@@ -89,7 +91,7 @@ class QuerySourceItem(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    sources: List[QuerySourceItem]
+    sources: list[QuerySourceItem]
     query: str
 
 
@@ -107,7 +109,7 @@ class IndicatorItem(BaseModel):
     race: str
     metric: str
     value: float
-    margin_of_error: Optional[float] = None
+    margin_of_error: float | None = None
 
 
 class PolicyBillItem(BaseModel):
@@ -117,12 +119,12 @@ class PolicyBillItem(BaseModel):
     state_name: str
     bill_number: str
     title: str
-    summary: Optional[str] = None
+    summary: str | None = None
     status: str
-    topic_tags: Optional[List[str]] = None
-    introduced_date: Optional[str] = None
-    last_action_date: Optional[str] = None
-    url: Optional[str] = None
+    topic_tags: list[str] | None = None
+    introduced_date: str | None = None
+    last_action_date: str | None = None
+    url: str | None = None
 
 
 class StateSummaryItem(BaseModel):
@@ -130,7 +132,7 @@ class StateSummaryItem(BaseModel):
 
     state_fips: str
     state_name: str
-    available_metrics: List[str]
+    available_metrics: list[str]
     bill_count: int
-    latest_year: Optional[int] = None
+    latest_year: int | None = None
 

@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import tempfile
-from typing import Optional
 
 import requests
 
@@ -73,7 +72,7 @@ def is_valid_content(result: dict) -> bool:
     return False
 
 
-def extract_pdf_client_side(url: str, timeout: int = 60) -> Optional[dict]:
+def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
     """
     Fallback: Extract PDF content client-side if Crawl4AI fails.
     Downloads the PDF and extracts text using pypdf.

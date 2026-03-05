@@ -1,10 +1,10 @@
 """Parse natural language queries into structured search intents."""
+from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass
 from string import Template
-from typing import Optional
 
 from d4bl.llm.ollama_client import ollama_generate
 from d4bl.settings import get_settings
@@ -42,7 +42,7 @@ class ParsedQuery:
 class QueryParser:
     """Parse natural language queries using Ollama/Mistral."""
 
-    def __init__(self, ollama_base_url: Optional[str] = None):
+    def __init__(self, ollama_base_url: str | None = None):
         settings = get_settings()
         self.ollama_base_url = (
             ollama_base_url or settings.ollama_base_url

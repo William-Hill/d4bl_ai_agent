@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Type, Union
+from typing import Type
 
 import requests
 from crewai.tools import BaseTool
@@ -43,7 +43,7 @@ class FirecrawlSearchWrapper(BaseTool):
         super().__init__()
         object.__setattr__(self, "_firecrawl_tool", firecrawl_tool)
 
-    def _run(self, query: Union[str, dict]) -> str:
+    def _run(self, query: str | dict) -> str:
         normalized_query = FirecrawlSearchWrapperInput(query=query).query
         try:
             result = self._firecrawl_tool._run(query=normalized_query)
@@ -120,7 +120,7 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
             "formats": ["markdown"],
         }
 
-    def _run(self, query: Union[str, dict]) -> str:
+    def _run(self, query: str | dict) -> str:
         """Run search using self-hosted Firecrawl."""
         normalized_query = FirecrawlSearchWrapperInput(query=query).query
 

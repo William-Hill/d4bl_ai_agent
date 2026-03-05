@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus, run_llm_evaluation
 from d4bl.services.langfuse.prompts import bias_prompt
@@ -10,10 +10,10 @@ from d4bl.services.langfuse.parsers import parse_bias_score
 def evaluate_bias_detection(
     research_output: str,
     query: str,
-    trace_id: Optional[str] = None,
+    trace_id: str | None = None,
     llm: Any = None,
     langfuse: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not research_output or not research_output.strip():
         return {
             "error": "Research output cannot be empty",

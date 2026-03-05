@@ -1,8 +1,8 @@
 """Search structured PostgreSQL data (research jobs, evaluations)."""
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ class StructuredResult:
     job_id: str
     query: str
     status: str
-    summary: Optional[str]
+    summary: str | None
     created_at: str
     relevance_score: float
 
@@ -87,7 +87,7 @@ class StructuredSearcher:
             logger.warning("Structured search failed", exc_info=True)
             return []
 
-    def _extract_summary(self, result: Optional[dict]) -> Optional[str]:
+    def _extract_summary(self, result: dict | None) -> str | None:
         """Extract a summary string from the job result JSON."""
         if not result:
             return None

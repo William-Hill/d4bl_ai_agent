@@ -1,9 +1,9 @@
 """Fuse vector and structured search results into a synthesized answer."""
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from string import Template
-from typing import Optional
 
 from d4bl.llm.ollama_client import ollama_generate
 from d4bl.query.structured import StructuredResult
@@ -49,7 +49,7 @@ class QueryResult:
 class ResultFusion:
     """Merge, rank, and synthesize results from multiple data sources."""
 
-    def __init__(self, ollama_base_url: Optional[str] = None):
+    def __init__(self, ollama_base_url: str | None = None):
         settings = get_settings()
         self.ollama_base_url = (
             ollama_base_url or settings.ollama_base_url

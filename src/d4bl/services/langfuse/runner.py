@@ -3,7 +3,8 @@ from __future__ import annotations
 import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus
 from d4bl.services.langfuse.client import get_langfuse_eval_client
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
 
-def _build_context(sources: List[str], research_output: str) -> str:
+def _build_context(sources: list[str], research_output: str) -> str:
     """Build context string for hallucination/reference evaluations."""
     if sources and len(sources) > 0 and not sources[0].startswith("No URLs"):
         return "; ".join(sources[:5])
@@ -29,11 +30,11 @@ def _build_context(sources: List[str], research_output: str) -> str:
 
 
 def _score_with_default(
-    evaluations: Dict[str, Any],
+    evaluations: dict[str, Any],
     key: str,
     score_path: str,
     default: float = 3.0,
-) -> Optional[float]:
+) -> float | None:
     """Extract a score from evaluation results, returning *None* for skipped evals."""
     result = evaluations.get(key, {})
     status = result.get("status")
@@ -59,11 +60,11 @@ def _score_with_default(
 def run_comprehensive_evaluation(
     query: str,
     research_output: str,
-    sources: List[str],
-    trace_id: Optional[str] = None,
-    extracted_contents: Optional[List[Dict[str, Any]]] = None,
-    report: Optional[str] = None,
-) -> Dict[str, Any]:
+    sources: list[str],
+    trace_id: str | None = None,
+    extracted_contents: list[dict[str, Any]] | None = None,
+    report: str | None = None,
+) -> dict[str, Any]:
     start_time = time.time()
     eval_logger.info("=" * 60)
     eval_logger.info("Starting comprehensive evaluation")
@@ -83,7 +84,7 @@ def run_comprehensive_evaluation(
         logger.error("Failed to initialise LLM for evaluations: %s", llm_err, exc_info=True)
         llm = None
 
-    results: Dict[str, Any] = {
+    results: dict[str, Any] = {
         "query": query,
         "trace_id": trace_id,
         "evaluations": {},
@@ -93,7 +94,7 @@ def run_comprehensive_evaluation(
     context = _build_context(sources, research_output)
 
     # --- Build evaluation specs (core + optional) ---
-    eval_specs: list[tuple[str, Callable[..., Dict[str, Any]], dict[str, Any]]] = [
+    eval_specs: list[tuple[str, Callable[..., dict[str, Any]], dict[str, Any]]] = [
         ("quality", evaluate_research_quality, dict(
             query=query, research_output=research_output, sources=sources,
             trace_id=trace_id, llm=llm, langfuse=langfuse,
@@ -140,8 +141,8 @@ def run_comprehensive_evaluation(
 
     # --- Run all evaluations in parallel (finding 3.1) ---
     def _run_eval(
-        name: str, func: Callable[..., Dict[str, Any]], kwargs: Dict[str, Any],
-    ) -> tuple[str, Dict[str, Any]]:
+        name: str, func: Callable[..., dict[str, Any]], kwargs: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
         eval_logger.info("Running %s evaluation...", name)
         try:
             return name, func(**kwargs)
