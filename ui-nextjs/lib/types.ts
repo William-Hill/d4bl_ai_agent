@@ -51,3 +51,18 @@ export interface ResearchResult {
   tasks_output?: ResearchTaskOutput[];
   raw_output?: string;
 }
+
+/* ── WebSocket message discriminated union ── */
+
+export interface WsLogMessage { type: 'log'; message: string; logs?: string[] }
+export interface WsProgressMessage { type: 'progress'; message: string; logs?: string[] }
+export interface WsStatusMessage { type: 'status'; status: string; logs?: string[] }
+export interface WsCompleteMessage { type: 'complete'; result: ResearchResult; logs?: string[] }
+export interface WsErrorMessage { type: 'error'; message: string; logs?: string[] }
+
+export type WsMessage =
+  | WsLogMessage
+  | WsProgressMessage
+  | WsStatusMessage
+  | WsCompleteMessage
+  | WsErrorMessage;

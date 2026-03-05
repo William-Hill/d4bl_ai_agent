@@ -40,15 +40,6 @@ export function useWebSocket(jobId: string | null) {
 
     ws.onclose = () => {
       setIsConnected(false);
-      // Reconnect if job is still active
-      if (jobId) {
-        setTimeout(() => {
-          if (jobId && !wsRef.current) {
-            // Trigger reconnection by updating state
-            setIsConnected(false);
-          }
-        }, 3000);
-      }
     };
 
     return () => {

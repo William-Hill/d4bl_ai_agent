@@ -10,7 +10,7 @@ import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import QueryBar from '@/components/QueryBar';
 import QueryResults from '@/components/QueryResults';
-import { QueryResponse, ResearchResult } from '@/lib/types';
+import { QueryResponse, ResearchResult, WsMessage } from '@/lib/types';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 import EvaluationsPanel from '@/components/EvaluationsPanel';
@@ -33,33 +33,32 @@ export default function Home() {
   useEffect(() => {
     if (lastMessage) {
       try {
-        const data = JSON.parse(lastMessage.data);
+        const data: WsMessage = JSON.parse(lastMessage.data);
         console.log('WebSocket message received:', data);
-        
-        if (data.type === 'log') {
-          // Append new log message
-          setLiveLogs(prev => [...prev, data.message]);
-        } else if (data.type === 'progress' || data.type === 'status') {
-          setProgress(data.progress || 'Processing...');
-          // Initialize logs if provided
-          if (data.logs && Array.isArray(data.logs)) {
-            setLiveLogs(data.logs);
-          }
-        } else if (data.type === 'complete') {
-          setProgress('Research completed!');
-          setResults(data.result);
-          // Keep logs from completion message
-          if (data.logs && Array.isArray(data.logs)) {
-            setLiveLogs(data.logs);
-          }
-          setJobId(null);
-        } else if (data.type === 'error') {
-          setError(data.error || 'An error occurred during research');
-          // Keep logs from error message
-          if (data.logs && Array.isArray(data.logs)) {
-            setLiveLogs(data.logs);
-          }
-          setJobId(null);
+
+        switch (data.type) {
+          case 'log':
+            setLiveLogs(prev => [...prev, data.message]);
+            break;
+          case 'progress':
+            if (data.logs) setLiveLogs(data.logs);
+            setProgress(data.message || 'Processing...');
+            break;
+          case 'status':
+            if (data.logs) setLiveLogs(data.logs);
+            setProgress(data.status || 'Processing...');
+            break;
+          case 'complete':
+            if (data.logs) setLiveLogs(data.logs);
+            setProgress('Research completed!');
+            setResults(data.result);
+            setJobId(null);
+            break;
+          case 'error':
+            if (data.logs) setLiveLogs(data.logs);
+            setError(data.message || 'An error occurred during research');
+            setJobId(null);
+            break;
         }
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
