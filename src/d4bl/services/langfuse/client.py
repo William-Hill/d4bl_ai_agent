@@ -44,6 +44,7 @@ def get_langfuse_eval_client() -> Langfuse | None:
             public_key=langfuse_public_key,
             secret_key=langfuse_secret_key,
             host=langfuse_host,
+            timeout=15,
         )
         logger.info("✅ Langfuse evaluation client initialized successfully")
         logger.debug("Langfuse client configured with host: %s", langfuse_host)
