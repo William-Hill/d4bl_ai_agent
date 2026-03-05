@@ -29,15 +29,25 @@ def _extract_eval_inputs(job: ResearchJob) -> dict | None:
     if not research_output:
         return None
 
-    research_data = job.research_data or {}
-    findings = research_data.get("research_findings") or []
+    research_data = (
+        job.research_data if isinstance(job.research_data, dict) else {}
+    )
+    findings_raw = research_data.get("research_findings")
+    findings = findings_raw if isinstance(findings_raw, list) else []
+    sources_raw = research_data.get("source_urls")
+    sources = sources_raw if isinstance(sources_raw, list) else []
+    report = (
+        raw_result.get("report")
+        if isinstance(raw_result, dict)
+        else None
+    )
 
     return {
         "query": job.query,
         "research_output": research_output,
-        "sources": research_data.get("source_urls", []),
+        "sources": sources,
         "trace_id": job.trace_id or str(job.job_id),
-        "report": raw_result.get("report") if isinstance(raw_result, dict) else None,
+        "report": report if isinstance(report, str) else None,
         "extracted_contents": [
             {"url": f.get("url", ""), "content": f.get("content", "")}
             for f in findings
