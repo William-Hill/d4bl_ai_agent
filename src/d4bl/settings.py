@@ -25,6 +25,7 @@ class Settings:
 
     # -- LLM / Ollama --
     ollama_base_url: str = field(init=False)
+    ollama_model: str = field(init=False)
 
     # -- Crawl provider --
     crawl_provider: str = field(init=False)
@@ -67,6 +68,7 @@ class Settings:
             "ollama_base_url",
             os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
         )
+        _set("ollama_model", os.getenv("OLLAMA_MODEL", "mistral"))
 
         # Crawl provider
         _set("crawl_provider", os.getenv("CRAWL_PROVIDER", "firecrawl").lower())
