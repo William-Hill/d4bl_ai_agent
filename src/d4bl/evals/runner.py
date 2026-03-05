@@ -21,7 +21,11 @@ def _extract_eval_inputs(job: ResearchJob) -> dict | None:
     if the job has no usable result text.
     """
     raw_result = job.result or {}
-    research_output = str(raw_result.get("raw_output", "")).strip() if isinstance(raw_result, dict) else ""
+    research_output = (
+        str(raw_result.get("raw_output", "")).strip()
+        if isinstance(raw_result, dict)
+        else ""
+    )
     if not research_output:
         return None
 

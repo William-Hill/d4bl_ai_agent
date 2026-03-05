@@ -30,64 +30,73 @@ Ongoing metrics report for the code simplification sweep ([Epic #29](https://git
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | -204 net | | |
-| Key changes | Base evaluator eliminated ~250 LOC boilerplate, enum types replaced string constants, parallel eval execution |
+| Source LOC | — | — | -204 net |
+
+**Key changes**: Base evaluator eliminated ~250 LOC boilerplate, enum types replaced string constants, parallel eval execution
 
 ### agents/ (PR #34)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | -372 net | | |
-| Key changes | Removed dead `crew.py` (255 LOC), dead scaffold, consolidated domain lists |
+| Source LOC | — | — | -372 net |
+
+**Key changes**: Removed dead `crew.py` (255 LOC), dead scaffold, consolidated domain lists
 
 ### app/ (PR #35)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | +8 net | | |
-| Test LOC | +131 | | |
-| Key changes | UUID helper, deprecated FastAPI patterns, WS manager cleanup |
+| Source LOC | — | — | +8 net |
+| Test LOC | — | — | +131 |
+
+**Key changes**: UUID helper, deprecated FastAPI patterns, WS manager cleanup
 
 ### infra/ (PR #36)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | -35 net | | |
-| Test LOC | +131 | | |
-| Key changes | Async blocking fix, fragile SQL index access, dead Docker check |
+| Source LOC | — | — | -35 net |
+| Test LOC | — | — | +131 |
+
+**Key changes**: Async blocking fix, fragile SQL index access, dead Docker check
 
 ### query/ (PR #37)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | +48 net | | |
-| Test LOC | +97 | | |
-| Key changes | Shared Ollama HTTP helper, format bug fix, unused LLM intent parsing removed |
+| Source LOC | — | — | +48 net |
+| Test LOC | — | — | +97 |
+
+**Key changes**: Shared Ollama HTTP helper, format bug fix, unused LLM intent parsing removed
 
 ### Root files (PR #38)
 
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
-| Source LOC | +56 net | | |
-| Test LOC | +206 | | |
-| Key changes | Deferred env reads in Settings, removed catch-and-re-raise, lazy imports |
+| Source LOC | — | — | +56 net |
+| Test LOC | — | — | +206 |
+
+**Key changes**: Deferred env reads in Settings, removed catch-and-re-raise, lazy imports
 
 ---
 
 ## Remaining Modules
 
-### observability/ (#25) — In Progress
+### observability/ (#25) — PR #TBD
 
 | Metric | Baseline | After | Delta |
 |--------|----------|-------|-------|
-| Source LOC | 120 | | |
-| Source files | 2 | | |
-| Functions/methods | 2 | | |
-| Avg cyclomatic complexity | 11.0 | | |
-| CC grades | A:1, C:1 | | |
-| Avg maintainability index | 76.2 | | |
-| `print()` calls | 15 | | |
-| `os.getenv` bypassing Settings | 3 | | |
+| Source LOC | 120 | 152 | +32 (+27%) |
+| Source files | 2 | 2 | — |
+| Functions/methods | 2 | 4 | +2 |
+| Avg cyclomatic complexity | 11.0 | 6.0 | **-5.0 (-45%)** |
+| CC grades | A:1, C:1 | A:3, C:1 | +2 A |
+| Avg maintainability index | 76.2 | 79.5 | **+3.3** |
+| `print()` calls | 15 | 0 | **-15** |
+| `os.getenv` bypassing Settings | 3 | 4 | +1 |
+| Test LOC added | — | 158 | +158 |
+
+> LOC increased because two new functions were added (`resolve_langfuse_host`, `check_langfuse_service_available`) and print calls were replaced with more verbose logger calls. Average CC dropped significantly because the new functions are low-complexity.
 
 ### evals/ (#26)
 
@@ -163,7 +172,7 @@ for filepath, blocks in data.items():
         total_cc += block['complexity']
         count += 1
 print(f'Total functions/methods: {count}')
-print(f'Average complexity: {total_cc/count:.1f}')
+print(f'Average complexity: {total_cc/count:.1f}' if count else 'Average complexity: N/A')
 for grade in sorted(grades.keys()):
     print(f'  Grade {grade}: {grades[grade]}')
 "
