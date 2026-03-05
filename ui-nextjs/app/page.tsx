@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ResearchForm from '@/components/ResearchForm';
 import ProgressCard from '@/components/ProgressCard';
 import ResultsCard from '@/components/ResultsCard';
@@ -29,6 +29,12 @@ export default function Home() {
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
+  const updateLogs = useCallback((data: WsMessage) => {
+    if (data.logs && Array.isArray(data.logs)) {
+      setLiveLogs(data.logs.length > 500 ? data.logs.slice(-500) : data.logs);
+    }
+  }, []);
+
   // Handle WebSocket messages
   useEffect(() => {
     if (lastMessage) {
@@ -41,21 +47,21 @@ export default function Home() {
             setLiveLogs(prev => [...prev, data.message]);
             break;
           case 'progress':
-            if (data.logs) setLiveLogs(data.logs);
+            updateLogs(data);
             setProgress(data.message || 'Processing...');
             break;
           case 'status':
-            if (data.logs) setLiveLogs(data.logs);
+            updateLogs(data);
             setProgress(data.status || 'Processing...');
             break;
           case 'complete':
-            if (data.logs) setLiveLogs(data.logs);
+            updateLogs(data);
             setProgress('Research completed!');
             setResults(data.result);
             setJobId(null);
             break;
           case 'error':
-            if (data.logs) setLiveLogs(data.logs);
+            updateLogs(data);
             setError(data.message || 'An error occurred during research');
             setJobId(null);
             break;
@@ -64,7 +70,7 @@ export default function Home() {
         console.error('Error parsing WebSocket message:', err);
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, updateLogs]);
 
   // Fallback: Poll job status if WebSocket is not connected
   useEffect(() => {
