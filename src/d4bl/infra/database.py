@@ -37,6 +37,7 @@ class ResearchJob(Base):
     created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
     updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
     completed_at = Column(DateTime, nullable=True)
+    tenant_id = Column(String(100), nullable=True, index=True)
 
     def to_dict(self):
         """Convert model to dictionary"""
@@ -54,6 +55,7 @@ class ResearchJob(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "tenant_id": self.tenant_id,
         }
 
 
