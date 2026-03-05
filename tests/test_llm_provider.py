@@ -1,9 +1,7 @@
 """Tests for d4bl.llm.provider — multi-provider LLM factory."""
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 
 class TestBuildLlmModelString:

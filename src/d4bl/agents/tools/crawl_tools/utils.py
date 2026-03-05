@@ -4,6 +4,7 @@ Shared utilities for crawl tools.
 from __future__ import annotations
 
 import logging
+
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,6 @@ def filter_problematic_urls(result: dict) -> dict:
         if original_count > len(filtered_data):
             result['filtered_count'] = original_count - len(filtered_data)
             logger.info(f"Filtered {result['filtered_count']} problematic URLs from {original_count} results")
-    
+
     return result
 

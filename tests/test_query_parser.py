@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from d4bl.query.parser import QueryParser, ParsedQuery
+from d4bl.query.parser import ParsedQuery, QueryParser
 
 
 class TestParsedQuery:

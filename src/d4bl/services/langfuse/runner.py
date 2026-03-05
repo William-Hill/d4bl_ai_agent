@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-import time
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus
+from d4bl.services.langfuse.bias import evaluate_bias_detection
 from d4bl.services.langfuse.client import get_langfuse_eval_client
+from d4bl.services.langfuse.content_relevance import evaluate_content_relevance
+from d4bl.services.langfuse.hallucination import evaluate_hallucination
 from d4bl.services.langfuse.llm_runner import get_eval_llm
 from d4bl.services.langfuse.quality import evaluate_research_quality
-from d4bl.services.langfuse.source_relevance import evaluate_source_relevance
-from d4bl.services.langfuse.bias import evaluate_bias_detection
-from d4bl.services.langfuse.hallucination import evaluate_hallucination
 from d4bl.services.langfuse.reference import evaluate_reference
-from d4bl.services.langfuse.content_relevance import evaluate_content_relevance
 from d4bl.services.langfuse.report_relevance import evaluate_report_relevance
+from d4bl.services.langfuse.source_relevance import evaluate_source_relevance
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")

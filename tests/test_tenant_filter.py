@@ -1,7 +1,6 @@
 """Tests for tenant_id filtering on ResearchJob."""
 from __future__ import annotations
 
-import pytest
 from d4bl.infra.database import ResearchJob
 
 

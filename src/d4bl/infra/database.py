@@ -2,13 +2,23 @@
 Database models and connection for storing research queries and results
 """
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from uuid import UUID, uuid4
-
-from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date, Index, UniqueConstraint
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import (
+    JSON,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 from d4bl.settings import get_settings
 
@@ -242,7 +252,7 @@ async def create_tables():
     """Create all database tables"""
     if engine is None:
         init_db()
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -1,8 +1,8 @@
 """Tests for app-level helper functions."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
 from fastapi import HTTPException
 
 from d4bl.app.api import parse_job_uuid
@@ -55,7 +55,7 @@ class TestFetchResearchJob:
 
 class TestJobLogsBounded:
     def test_old_logs_evicted_after_max_size(self):
-        from d4bl.app.websocket_manager import set_job_logs, get_job_logs, job_logs, MAX_JOB_LOGS
+        from d4bl.app.websocket_manager import MAX_JOB_LOGS, get_job_logs, job_logs, set_job_logs
 
         job_logs.clear()
         # Fill beyond max

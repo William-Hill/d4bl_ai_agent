@@ -6,8 +6,7 @@ import os
 
 import pytest
 
-from d4bl.settings import Settings, get_settings, _OTEL_SUFFIX
-
+from d4bl.settings import _OTEL_SUFFIX, Settings, get_settings
 
 # ---------------------------------------------------------------------------
 # Helpers

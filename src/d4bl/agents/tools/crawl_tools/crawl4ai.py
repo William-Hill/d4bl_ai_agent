@@ -4,9 +4,9 @@ Crawl4AI search tool for web crawling and search.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
-import logging
 import time
 
 import requests
@@ -14,14 +14,14 @@ from crewai.tools import BaseTool
 from crewai_tools import FirecrawlSearchTool
 from pydantic import BaseModel, Field, field_validator
 
+from d4bl.agents.tools.crawl_tools.firecrawl import (
+    FIRECRAWL_SDK_AVAILABLE,
+    SelfHostedFirecrawlSearchTool,
+)
 from d4bl.agents.tools.crawl_tools.pdf_extraction import (
     PDF_EXTRACTION_AVAILABLE,
     extract_pdf_client_side,
     is_valid_content,
-)
-from d4bl.agents.tools.crawl_tools.firecrawl import (
-    FIRECRAWL_SDK_AVAILABLE,
-    SelfHostedFirecrawlSearchTool,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,11 +194,11 @@ class Crawl4AISearchTool(BaseTool):
         """Filter crawl results into valid and invalid groups."""
         valid_results = []
         invalid_results = []
-        
+
         for result in results:
             url = result.get("url", "")
             is_pdf = url.lower().endswith('.pdf') if url else False
-            
+
             if is_valid_content(result):
                 valid_results.append(result)
             else:
@@ -210,13 +210,13 @@ class Crawl4AISearchTool(BaseTool):
                         valid_results.append(client_extracted)
                         logger.info("Client-side PDF extraction succeeded for: %s", url)
                         continue
-                
+
                 invalid_results.append(result)
                 logger.warning(
                     "Filtered out crawl result with insufficient content: %s",
                     url
                 )
-        
+
         return valid_results, invalid_results
 
     def _handle_pdfs_separately(self, pdf_urls: list[str]) -> list[dict]:
@@ -225,24 +225,24 @@ class Crawl4AISearchTool(BaseTool):
         Returns list of extracted PDF results.
         """
         pdf_results = []
-        
+
         for pdf_url in pdf_urls:
             logger.info("Processing PDF separately: %s", pdf_url)
-            
+
             # Try client-side extraction first (more reliable)
             if PDF_EXTRACTION_AVAILABLE:
                 extracted = extract_pdf_client_side(pdf_url, timeout=self._timeout)
                 if extracted:
                     pdf_results.append(extracted)
                     continue
-            
+
             # Fallback: Try via Crawl4AI API with PDF-specific config
             try:
                 endpoint = f"{self._base_url}/crawl"
                 headers = {"Content-Type": "application/json"}
                 if self._api_key:
                     headers["Authorization"] = f"Bearer {self._api_key}"
-                
+
                 pdf_payload = {
                     "urls": [pdf_url],
                     "crawler_strategy": "PDFCrawlerStrategy",
@@ -251,14 +251,14 @@ class Crawl4AISearchTool(BaseTool):
                     "extract_text": True,
                     "extract_metadata": True,
                 }
-                
+
                 resp = requests.post(
                     endpoint,
                     json=pdf_payload,
                     headers=headers,
                     timeout=self._timeout * 2,  # PDFs may take longer
                 )
-                
+
                 if resp.status_code == 200:
                     crawl_result = resp.json()
                     results = crawl_result.get("results", [])
@@ -272,7 +272,7 @@ class Crawl4AISearchTool(BaseTool):
                     )
             except Exception as e:
                 logger.warning("Error processing PDF via API: %s", e)
-        
+
         return pdf_results
 
     def _crawl_urls_with_retry(self, urls: list[str], query: str) -> str:
@@ -288,16 +288,16 @@ class Crawl4AISearchTool(BaseTool):
 
         # Initialize PDF results list outside the retry loop
         client_extracted_pdfs = []
-        
+
         for attempt in range(max_retries):
             try:
                 # Separate PDFs from regular URLs for better handling
                 pdf_urls = [url for url in urls if url.lower().endswith('.pdf')]
                 regular_urls = [url for url in urls if not url.lower().endswith('.pdf')]
-                
+
                 # Build crawl payload with PDF-specific configuration
                 crawl_payload = {"urls": urls}
-                
+
                 # If PDFs are present, try client-side extraction first (more reliable)
                 # Only do this on first attempt to avoid re-extracting
                 if pdf_urls and attempt == 0:
@@ -319,14 +319,14 @@ class Crawl4AISearchTool(BaseTool):
                                 logger.warning("Client-side PDF extraction failed for: %s", pdf_url)
                         else:
                             remaining_pdf_urls.append(pdf_url)
-                    
+
                     # If we successfully extracted some PDFs, use those and only crawl remaining ones
                     if client_extracted_pdfs:
                         logger.info("Extracted %s PDFs client-side, %s remaining for API", len(client_extracted_pdfs), len(remaining_pdf_urls))
                         # Update URLs to only include remaining PDFs + regular URLs
                         urls = remaining_pdf_urls + regular_urls
                         crawl_payload["urls"] = urls
-                    
+
                     # Configure API extraction for any remaining PDFs
                     if remaining_pdf_urls:
                         # Try multiple parameter formats for compatibility
@@ -339,7 +339,7 @@ class Crawl4AISearchTool(BaseTool):
                         # Enable text extraction from PDFs
                         crawl_payload["extract_text"] = True
                         crawl_payload["extract_metadata"] = True
-                
+
                 resp = requests.post(
                     endpoint,
                     json=crawl_payload,
@@ -350,11 +350,11 @@ class Crawl4AISearchTool(BaseTool):
                 if resp.status_code == 200:
                     crawl_results = resp.json()
                     raw_results = crawl_results.get("results", [])
-                    
+
                     # Merge any client-side extracted PDFs from earlier
                     if client_extracted_pdfs:
                         raw_results.extend(client_extracted_pdfs)
-                    
+
                     # If we still have PDFs that failed, try separate handling
                     pdf_urls_in_results = [r.get("url", "") for r in raw_results if r.get("url", "").lower().endswith('.pdf')]
                     failed_pdf_urls = [url for url in urls if url.lower().endswith('.pdf') and url not in pdf_urls_in_results]
@@ -364,10 +364,10 @@ class Crawl4AISearchTool(BaseTool):
                         if additional_pdf_results:
                             raw_results.extend(additional_pdf_results)
                             logger.info("Merged %s additional client-extracted PDFs", len(additional_pdf_results))
-                    
+
                     # Filter out results with no valid content
                     valid_results, invalid_results = self._filter_valid_results(raw_results)
-                    
+
                     if not valid_results and raw_results:
                         logger.warning(
                             "All %s crawl results were filtered out due to insufficient content. "
@@ -383,10 +383,10 @@ class Crawl4AISearchTool(BaseTool):
                                 "  - %s: extracted_content=%s, has_html=%s",
                                 url, has_extracted, has_html
                             )
-                    
+
                     # Extract source URLs from valid results for later use
                     source_urls = [r.get("url", "") for r in valid_results if r.get("url")]
-                    
+
                     formatted_results = {
                         "query": query,
                         "urls_crawled": urls,
@@ -395,7 +395,7 @@ class Crawl4AISearchTool(BaseTool):
                         "source_urls": source_urls,  # Include source URLs for evaluation
                         "success": crawl_results.get("success", False) and len(valid_results) > 0,
                     }
-                    
+
                     logger.info(
                         "Successfully crawled %s URLs on attempt %s (%s valid, %s filtered)",
                         len(urls),
@@ -468,7 +468,7 @@ class Crawl4AISearchTool(BaseTool):
         try:
             firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
             firecrawl_base_url = os.getenv("FIRECRAWL_BASE_URL")
-            
+
             # Check if self-hosted or cloud Firecrawl is configured
             if not firecrawl_base_url and not firecrawl_api_key:
                 logger.warning("Firecrawl not configured for fallback")
@@ -483,7 +483,7 @@ class Crawl4AISearchTool(BaseTool):
                 )
 
             logger.info("Attempting Firecrawl fallback...")
-            
+
             # Use self-hosted if base URL is set, otherwise use cloud
             if firecrawl_base_url:
                 logger.info("Using self-hosted Firecrawl for fallback: %s", firecrawl_base_url)
@@ -495,10 +495,10 @@ class Crawl4AISearchTool(BaseTool):
                         headers = {"Content-Type": "application/json"}
                         if firecrawl_api_key:
                             headers["Authorization"] = f"Bearer {firecrawl_api_key}"
-                        
+
                         payload = {"query": query, "pageOptions": {"maxResults": 5}}
                         response = requests.post(search_url, json=payload, headers=headers, timeout=60)
-                        
+
                         if response.status_code == 200:
                             result = response.json()
                             logger.info("Self-hosted Firecrawl fallback succeeded")

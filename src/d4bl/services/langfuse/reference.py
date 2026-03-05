@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from d4bl.services.langfuse._base import EvalStatus, run_llm_evaluation
-from d4bl.services.langfuse.prompts import reference_prompt
 from d4bl.services.langfuse.parsers import parse_label_score
-
+from d4bl.services.langfuse.prompts import reference_prompt
 
 MAPPING = {
     "WELL_REFERENCED": 5.0,

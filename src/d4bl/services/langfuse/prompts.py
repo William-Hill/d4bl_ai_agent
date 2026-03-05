@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def quality_prompt(query: str, research_output: str, sources: list[str]) -> str:
     newline = '\n'
     sources_list = newline.join(f'- {s}' for s in sources[:5])
