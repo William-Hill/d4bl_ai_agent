@@ -73,7 +73,8 @@ export interface EvaluationResultItem {
 export async function createResearchJob(
   query: string,
   summaryFormat: string,
-  selectedAgents?: string[]
+  selectedAgents?: string[],
+  model?: string
 ): Promise<ResearchResponse> {
   const response = await fetch(`${API_BASE}/api/research`, {
     method: 'POST',
@@ -84,6 +85,7 @@ export async function createResearchJob(
       query,
       summary_format: summaryFormat,
       selected_agents: selectedAgents,
+      model,
     }),
   });
 

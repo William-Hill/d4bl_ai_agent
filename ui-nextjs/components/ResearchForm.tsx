@@ -1,10 +1,17 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 
 interface ResearchFormProps {
-  onSubmit: (query: string, summaryFormat: string, selectedAgents?: string[]) => void;
+  onSubmit: (query: string, summaryFormat: string, selectedAgents?: string[], model?: string) => void;
   disabled?: boolean;
+}
+
+interface ModelOption {
+  provider: string;
+  model: string;
+  model_string: string;
+  is_default: boolean;
 }
 
 const AVAILABLE_AGENTS = [
@@ -22,11 +29,25 @@ export default function ResearchForm({ onSubmit, disabled }: ResearchFormProps) 
   const [query, setQuery] = useState('');
   const [summaryFormat, setSummaryFormat] = useState('detailed');
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    fetch(`${apiUrl}/api/models`)
+      .then(res => res.json())
+      .then((data: ModelOption[]) => {
+        setModels(data);
+        const defaultModel = data.find(m => m.is_default);
+        if (defaultModel) setSelectedModel(defaultModel.model_string);
+      })
+      .catch(err => console.error('Failed to fetch models:', err));
+  }, []);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (query.trim() && !disabled) {
-      onSubmit(query.trim(), summaryFormat, selectedAgents.length > 0 ? selectedAgents : undefined);
+      onSubmit(query.trim(), summaryFormat, selectedAgents.length > 0 ? selectedAgents : undefined, selectedModel || undefined);
     }
   };
 
@@ -82,6 +103,30 @@ export default function ResearchForm({ onSubmit, disabled }: ResearchFormProps) 
             <option value="comprehensive">Comprehensive (2000-3000 words)</option>
           </select>
         </div>
+
+        {models.length > 0 && (
+          <div>
+            <label
+              htmlFor="model"
+              className="block text-sm font-medium text-gray-300 mb-2"
+            >
+              LLM Model
+            </label>
+            <select
+              id="model"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-black text-black bg-white disabled:bg-gray-50 disabled:text-gray-600"
+              disabled={disabled}
+            >
+              {models.map((m) => (
+                <option key={m.model_string} value={m.model_string}>
+                  {m.provider}/{m.model}{m.is_default ? ' (default)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">

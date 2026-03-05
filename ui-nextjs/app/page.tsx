@@ -104,7 +104,7 @@ export default function Home() {
     }
   }, [jobId, isConnected]);
 
-  const handleSubmit = async (query: string, summaryFormat: string, selectedAgents?: string[]) => {
+  const handleSubmit = async (query: string, summaryFormat: string, selectedAgents?: string[], model?: string) => {
     try {
       setError(null);
       setResults(null);
@@ -112,7 +112,7 @@ export default function Home() {
       setProgress('Creating research job...');
       setLiveLogs([]); // Clear previous logs
 
-      const response = await createResearchJob(query, summaryFormat, selectedAgents);
+      const response = await createResearchJob(query, summaryFormat, selectedAgents, model);
       setJobId(response.job_id);
       setProgress('Job created, starting research...');
     } catch (err: unknown) {
