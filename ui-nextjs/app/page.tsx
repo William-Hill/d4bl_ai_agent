@@ -44,7 +44,10 @@ export default function Home() {
 
         switch (data.type) {
           case 'log':
-            setLiveLogs(prev => [...prev, data.message]);
+            setLiveLogs(prev => {
+              const next = [...prev, data.message];
+              return next.length > 500 ? next.slice(-500) : next;
+            });
             break;
           case 'progress':
             updateLogs(data);
@@ -62,7 +65,7 @@ export default function Home() {
             break;
           case 'error':
             updateLogs(data);
-            setError(data.message || 'An error occurred during research');
+            setError(data.error || data.message || 'An error occurred during research');
             setJobId(null);
             break;
         }

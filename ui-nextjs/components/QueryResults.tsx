@@ -48,7 +48,7 @@ export default function QueryResults({ answer, sources, query }: QueryResultsPro
                 </div>
                 <p className="text-white font-medium">{source.title}</p>
                 <p className="text-gray-400 mt-1">{source.snippet}</p>
-                {source.url && !source.url.startsWith('job://') && (
+                {source.url && /^https?:\/\//i.test(source.url) && (
                   <a
                     href={source.url}
                     target="_blank"

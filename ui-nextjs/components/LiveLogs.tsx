@@ -8,14 +8,19 @@ interface LiveLogsProps {
 
 export default function LiveLogs({ logs }: LiveLogsProps) {
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const prevLengthRef = useRef(0);
+  const prevRef = useRef<{ length: number; last?: string }>({ length: 0 });
 
   // Auto-scroll to bottom only when new entries are actually added
   useEffect(() => {
-    if (logs.length > prevLengthRef.current && logsEndRef.current) {
+    const prev = prevRef.current;
+    const hasNewEntries =
+      logs.length > prev.length ||
+      (logs.length === prev.length && logs.length > 0 && logs[logs.length - 1] !== prev.last);
+
+    if (hasNewEntries && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-    prevLengthRef.current = logs.length;
+    prevRef.current = { length: logs.length, last: logs[logs.length - 1] };
   }, [logs]);
 
   if (!logs || logs.length === 0) {

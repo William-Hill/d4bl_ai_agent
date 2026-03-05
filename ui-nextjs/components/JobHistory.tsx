@@ -90,6 +90,7 @@ export default function JobHistory({ onSelectJob }: JobHistoryProps) {
       <div className="mb-4 flex gap-2 flex-wrap">
         {STATUS_FILTERS.map(({ value, label }) => (
           <button
+            type="button"
             key={label}
             onClick={() => setStatusFilter(value)}
             className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
