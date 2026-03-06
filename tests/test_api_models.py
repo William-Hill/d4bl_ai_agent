@@ -44,3 +44,21 @@ def test_research_request_model_defaults_none():
     from d4bl.app.schemas import ResearchRequest
     req = ResearchRequest(query="test query")
     assert req.model is None
+
+
+def test_cloud_provider_requires_api_key():
+    """get_llm should raise ValueError for cloud providers without API key."""
+    from d4bl.llm.provider import reset_llm
+
+    reset_llm()
+    with patch.dict("os.environ", {"LLM_PROVIDER": "gemini", "LLM_MODEL": "gemini-2.0-flash"}, clear=False):
+        # Clear LLM_API_KEY if set
+        with patch.dict("os.environ", {"LLM_API_KEY": ""}, clear=False):
+            from d4bl.settings import get_settings
+            get_settings.cache_clear()
+            from d4bl.llm.provider import get_llm
+            reset_llm()
+            with pytest.raises(ValueError, match="LLM_API_KEY is required"):
+                get_llm()
+    get_settings.cache_clear()
+    reset_llm()

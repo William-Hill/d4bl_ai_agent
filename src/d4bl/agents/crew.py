@@ -73,7 +73,7 @@ class D4Bl():
             raise ValueError("Query is required for research")
 
         # Log input validation
-        logger.info("Research query validated: %.100s...", inputs.get('query'))
+        logger.info("Research query validated (length=%d)", len(inputs.get('query', '')))
         return inputs
 
     def _make_simple_agent(self, config_key: str, **kwargs: Any) -> Agent:

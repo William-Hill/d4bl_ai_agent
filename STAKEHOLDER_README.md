@@ -1,8 +1,12 @@
 # D4BL AI Agent - Local Setup Guide
 
 This guide helps you run the D4BL Research and Analysis Tool on your local machine.
-Your research data is stored in a shared cloud database so all network members can
-benefit from each other's work.
+Your research data is stored in a shared cloud database, isolated by your `TENANT_ID`.
+Each organization's data is scoped so only members with the same tenant identifier
+can view each other's research. Other tenants cannot access your data.
+
+> **Important:** Your `.env.stakeholder` file contains database credentials.
+> Do not commit it to version control or share it outside your organization.
 
 ## Prerequisites
 

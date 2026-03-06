@@ -44,8 +44,12 @@ def get_llm() -> LLM:
             os.environ["OLLAMA_API_BASE"] = settings.ollama_base_url
             kwargs["base_url"] = settings.ollama_base_url
         else:
-            if settings.llm_api_key:
-                kwargs["api_key"] = settings.llm_api_key
+            if not settings.llm_api_key:
+                raise ValueError(
+                    f"LLM_API_KEY is required for provider '{provider}'. "
+                    "Set the LLM_API_KEY environment variable."
+                )
+            kwargs["api_key"] = settings.llm_api_key
 
         _llm = LLM(**kwargs)
         logger.info(

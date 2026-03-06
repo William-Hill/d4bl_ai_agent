@@ -51,7 +51,7 @@ class Settings:
     # -- CORS --
     cors_allowed_origins: tuple[str, ...] = field(init=False)
 
-    # -- LLM provider --
+    # -- LLM provider (overrides ollama_model when LLM_PROVIDER != ollama) --
     llm_provider: str = field(init=False)
     llm_model: str = field(init=False)
     llm_api_key: str | None = field(init=False)

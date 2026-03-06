@@ -185,7 +185,7 @@ async def run_research_job(
     query: str,
     summary_format: str,
     selected_agents: list[str] | None = None,
-    model: str | None = None,
+    model: str | None = None,  # TODO: wire model selection into crew LLM config
 ) -> None:
     """Run the research crew and send progress updates via WebSocket."""
     set_job_logs(job_id, [])

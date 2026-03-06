@@ -11,6 +11,14 @@ primary_region = "iad"
   auto_start_machines = true
   min_machines_running = 0
 
+  [http_service.checks]
+    [http_service.checks.health]
+      interval = "15s"
+      timeout = "5s"
+      grace_period = "10s"
+      method = "GET"
+      path = "/"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "256mb"

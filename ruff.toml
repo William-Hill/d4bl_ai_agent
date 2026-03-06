@@ -3,4 +3,5 @@ target-version = "py311"
 
 [lint]
 select = ["E", "F", "W", "I"]
+# E501 ignored: pre-existing long lines in codebase; line-length still used by ruff format
 ignore = ["E501", "W293", "F841"]

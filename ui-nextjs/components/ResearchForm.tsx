@@ -35,7 +35,10 @@ export default function ResearchForm({ onSubmit, disabled }: ResearchFormProps) 
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     fetch(`${apiUrl}/api/models`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data: ModelOption[]) => {
         setModels(data);
         const defaultModel = data.find(m => m.is_default);
@@ -116,7 +119,7 @@ export default function ResearchForm({ onSubmit, disabled }: ResearchFormProps) 
               id="model"
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-black text-black bg-white disabled:bg-gray-50 disabled:text-gray-600"
+              className="w-full px-4 py-3 border border-[#404040] rounded-md focus:outline-none focus:ring-2 focus:ring-[#00ff32] focus:border-[#00ff32] text-white bg-[#292929] disabled:bg-[#1a1a1a] disabled:text-gray-500"
               disabled={disabled}
             >
               {models.map((m) => (

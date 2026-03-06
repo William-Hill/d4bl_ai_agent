@@ -116,6 +116,7 @@ flyctl secrets set \
   LANGFUSE_PUBLIC_KEY=<your-langfuse-public-key> \
   LANGFUSE_SECRET_KEY=<your-langfuse-secret-key> \
   CORS_ALLOWED_ORIGINS=https://d4bl-frontend.fly.dev \
+  TENANT_ID=staging \
   EMBEDDINGS_OLLAMA_BASE_URL=http://d4bl-api.internal:11434 \
   EMBEDDINGS_OLLAMA_MODEL_NAME=mxbai-embed-large \
   --app d4bl-api
@@ -159,17 +160,15 @@ flyctl logs --app d4bl-api
 
 Go to your repo on GitHub: **Settings > Secrets and variables > Actions**
 
-Add these repository secrets:
+Add this repository secret:
 
 | Secret | Value | Source |
 |--------|-------|--------|
 | `FLY_API_TOKEN` | `fo1_...` | `flyctl tokens create deploy -x 999999h` |
-| `GEMINI_API_KEY` | `AI...` | Step 3 |
-| `SUPABASE_URL` | `db.<ref>.supabase.co` | Step 1 |
-| `SUPABASE_ANON_KEY` | `eyJ...` | Supabase dashboard > Settings > API |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Supabase dashboard > Settings > API |
-| `LANGFUSE_PUBLIC_KEY` | `pk-lf-...` | Step 2 |
-| `LANGFUSE_SECRET_KEY` | `sk-lf-...` | Step 2 |
+
+**Note:** Application secrets (API keys, database credentials, Langfuse keys) are
+configured directly on the Fly.io apps via `flyctl secrets set` (Step 4). They do
+not need to be added as GitHub repository secrets.
 
 ### Generate a Fly.io deploy token
 
