@@ -42,6 +42,7 @@ export default function Home() {
         const data: WsMessage = JSON.parse(lastMessage.data);
         console.log('WebSocket message received:', data);
 
+        /* eslint-disable react-hooks/set-state-in-effect -- WebSocket message handler: setState in response to external events is intentional */
         switch (data.type) {
           case 'log':
             setLiveLogs(prev => {
@@ -71,6 +72,7 @@ export default function Home() {
           default:
             console.warn('Unhandled WebSocket message type:', (data as { type?: string }).type);
         }
+        /* eslint-enable react-hooks/set-state-in-effect */
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
       }
