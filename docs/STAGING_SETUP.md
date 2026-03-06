@@ -6,7 +6,7 @@ This guide walks through setting up the staging infrastructure for the D4BL AI A
 
 | Service | Provider | Tier |
 |---------|----------|------|
-| Backend (FastAPI) | Fly.io | shared-cpu-1x, 256MB |
+| Backend (FastAPI) | Fly.io | shared-cpu-1x, 512MB |
 | Frontend (Next.js) | Fly.io | shared-cpu-1x, 256MB |
 | Crawl4AI | Fly.io | shared-cpu-1x, 512MB |
 | Database + Vectors | Supabase Cloud | Free |
