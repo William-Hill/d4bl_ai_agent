@@ -14,11 +14,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - run: pip install -r requirements.txt
-      - run: pip install ruff pytest pytest-asyncio httpx
+      - run: pip install -e ".[test]" ruff
       - name: Lint
         run: ruff check src/
       - name: Tests
         run: pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: src
 
   frontend-checks:
     runs-on: ubuntu-latest
