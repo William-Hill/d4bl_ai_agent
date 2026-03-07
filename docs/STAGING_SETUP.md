@@ -136,9 +136,12 @@ flyctl secrets set \
 ```bash
 # From the repo root:
 flyctl deploy --config fly.api.toml --remote-only
-flyctl deploy --config fly.frontend.toml --remote-only
+cd ui-nextjs && flyctl deploy --remote-only && cd ..
 flyctl deploy --config fly.crawl4ai.toml --remote-only
 ```
+
+**Note:** The frontend `fly.toml` lives inside `ui-nextjs/` so flyctl must run
+from that directory to get the correct Docker build context.
 
 ### Verify deployment
 
