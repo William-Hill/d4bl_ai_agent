@@ -17,21 +17,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.infra import database as _db_mod
-from d4bl.infra.database import (
-    CensusIndicator,
-    EvaluationResult,
-    PolicyBill,
-    ResearchJob,
-    close_db,
-    create_tables,
-    get_db,
-    init_db,
-)
-from d4bl.infra.vector_store import get_vector_store
-from d4bl.query.engine import QueryEngine
-from d4bl.services.research_runner import run_research_job
-from d4bl.settings import get_settings
 from d4bl.app.schemas import (
     EvaluationResultItem,
     IndicatorItem,
@@ -46,6 +31,22 @@ from d4bl.app.schemas import (
     StateSummaryItem,
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
+from d4bl.infra import database as _db_mod
+from d4bl.infra.database import (
+    CensusIndicator,
+    EvaluationResult,
+    PolicyBill,
+    ResearchJob,
+    close_db,
+    create_tables,
+    get_db,
+    init_db,
+)
+from d4bl.infra.vector_store import get_vector_store
+from d4bl.llm import get_available_models
+from d4bl.query.engine import QueryEngine
+from d4bl.services.research_runner import run_research_job
+from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Check Langfuse availability early and unset OTLP endpoint if not available
     try:
         from d4bl.observability.langfuse import (
-            resolve_langfuse_host,
             check_langfuse_service_available,
+            resolve_langfuse_host,
         )
 
         settings = get_settings()
@@ -143,6 +144,12 @@ async def read_root():
     return {"status": "ok", "message": "D4BL AI Agent API"}
 
 
+@app.get("/api/models")
+async def list_models():
+    """Return available LLM models."""
+    return get_available_models()
+
+
 @app.post("/api/research", response_model=ResearchResponse)
 async def create_research(request: ResearchRequest, db: AsyncSession = Depends(get_db)):
     """Create a new research job"""
@@ -152,14 +159,15 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             query=request.query,
             summary_format=request.summary_format,
             status="pending",
-            progress="Job created, waiting to start..."
+            progress="Job created, waiting to start...",
+            tenant_id=_settings.tenant_id,
         )
         db.add(job)
         await db.commit()
         await db.refresh(job)
-        
+
         job_id = str(job.job_id)
-        
+
         # Start the research job in the background (WebSocket will connect separately)
         # Store the task reference to prevent GC from cancelling it prematurely
         task = asyncio.create_task(run_research_job(
@@ -167,10 +175,11 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             request.query,
             request.summary_format,
             request.selected_agents,
+            request.model,
         ))
         _background_tasks.add(task)
         task.add_done_callback(_log_task_exception)
-        
+
         return ResearchResponse(
             job_id=job_id,
             status="pending",
@@ -205,6 +214,8 @@ async def get_job_history(
         filters = []
         if status:
             filters.append(ResearchJob.status == status)
+        if _settings.tenant_id:
+            filters.append(ResearchJob.tenant_id == _settings.tenant_id)
 
         query = select(ResearchJob)
         count_query = select(func.count(ResearchJob.job_id))
@@ -216,15 +227,15 @@ async def get_job_history(
 
         count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
-        
+
         # Apply pagination
         offset = (page - 1) * page_size
         query = query.offset(offset).limit(page_size)
-        
+
         # Execute query
         result = await db.execute(query)
         jobs = result.scalars().all()
-        
+
         return JobHistoryResponse(
             jobs=[JobStatus(**job.to_dict()) for job in jobs],
             total=total,
@@ -274,7 +285,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     """WebSocket endpoint for real-time progress updates"""
     await websocket.accept()
     register_connection(job_id, websocket)
-    
+
     try:
         # Send current status if job exists (in case job already completed)
         # Try to get from database first
@@ -322,7 +333,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                     "status": "unknown",
                     "logs": fallback_logs
                 })
-        
+
         # Keep connection alive and handle messages
         while True:
             try:
@@ -331,7 +342,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                 await websocket.send_json({"type": "pong", "data": data})
             except WebSocketDisconnect:
                 break
-            
+
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -366,9 +377,9 @@ async def search_similar_content(
     try:
         if not query or not query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
+
         job_uuid = parse_job_uuid(job_id) if job_id else None
-        
+
         vector_store = get_vector_store()
         results = await vector_store.search_similar(
             db=db,
@@ -377,7 +388,7 @@ async def search_similar_content(
             limit=limit,
             similarity_threshold=similarity_threshold,
         )
-        
+
         return {
             "query": query,
             "job_id": job_id,
@@ -413,7 +424,7 @@ async def get_scraped_content_by_job(
             job_id=job_uuid,
             limit=limit,
         )
-        
+
         return {
             "job_id": job_id,
             "results": results,

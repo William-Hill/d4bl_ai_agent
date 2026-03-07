@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from d4bl.query.fusion import ResultFusion, QueryResult, SourceReference
+from d4bl.query.fusion import QueryResult, ResultFusion, SourceReference
 from d4bl.query.structured import StructuredResult
 
 

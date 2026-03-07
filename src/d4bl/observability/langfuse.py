@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
 
 from d4bl.settings import get_settings
 

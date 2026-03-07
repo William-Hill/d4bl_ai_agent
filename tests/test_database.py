@@ -1,6 +1,10 @@
 """Tests for database model defaults and helpers."""
 from d4bl.infra.database import (
-    ResearchJob, EvaluationResult, CensusIndicator, PolicyBill, _utc_now,
+    CensusIndicator,
+    EvaluationResult,
+    PolicyBill,
+    ResearchJob,
+    _utc_now,
 )
 
 

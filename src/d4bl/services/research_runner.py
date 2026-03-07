@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import os
 import queue
 import re
@@ -18,8 +19,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.agents.crew import D4Bl
-from d4bl.observability import get_langfuse_client
-from d4bl.infra.database import ResearchJob, get_db
 from d4bl.app.websocket_manager import (
     create_log_queue,
     get_job_logs,
@@ -27,9 +26,10 @@ from d4bl.app.websocket_manager import (
     send_websocket_update,
     set_job_logs,
 )
+from d4bl.infra.database import ResearchJob, get_db
+from d4bl.observability import get_langfuse_client
 from d4bl.services.error_handling import ErrorRecoveryStrategy
 from d4bl.services.langfuse.runner import run_comprehensive_evaluation
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -45,28 +45,28 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
         "query_keywords": [],
         "output_keywords": [],
     }
-    
+
     if not output or len(output.strip()) < 50:
         validation_result["is_relevant"] = False
         validation_result["warnings"].append("Output is too short or empty")
         return validation_result
-    
+
     # Extract key terms from query (simple keyword extraction)
     query_lower = query.lower()
     # Extract meaningful words (3+ characters, not common stop words)
     stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'how', 'what', 'when', 'where', 'why', 'which', 'who'}
     query_words = [w for w in re.findall(r'\b\w{3,}\b', query_lower) if w not in stop_words]
     validation_result["query_keywords"] = query_words[:10]  # Top 10 keywords
-    
+
     output_lower = output.lower()
     output_words = [w for w in re.findall(r'\b\w{3,}\b', output_lower) if w not in stop_words]
     validation_result["output_keywords"] = list(set(output_words))[:20]  # Top 20 unique keywords
-    
+
     # Check for keyword overlap
     if query_words:
         matching_keywords = [w for w in query_words if w in output_lower]
         overlap_ratio = len(matching_keywords) / len(query_words)
-        
+
         if overlap_ratio < 0.2:  # Less than 20% keyword overlap
             validation_result["is_relevant"] = False
             validation_result["warnings"].append(
@@ -76,7 +76,7 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
             validation_result["warnings"].append(
                 f"Moderate keyword overlap ({overlap_ratio:.1%}). Verify output addresses the query."
             )
-    
+
     # Check for common off-topic patterns
     output_lower_short = output_lower[:500]  # Check first 500 chars
     if query_words and not any(word in output_lower_short for word in query_words[:5]):
@@ -84,7 +84,7 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
         validation_result["warnings"].append(
             "Query keywords not found in output. Output may be off-topic."
         )
-    
+
     return validation_result
 
 
@@ -181,10 +181,11 @@ async def update_job_status(
 
 
 async def run_research_job(
-    job_id: str, 
-    query: str, 
+    job_id: str,
+    query: str,
     summary_format: str,
-    selected_agents: list[str] | None = None
+    selected_agents: list[str] | None = None,
+    model: str | None = None,  # TODO: wire model selection into crew LLM config
 ) -> None:
     """Run the research crew and send progress updates via WebSocket."""
     set_job_logs(job_id, [])
@@ -291,11 +292,11 @@ async def run_research_job(
             # sent to Langfuse via OTLP. The trace_id_hex from OpenTelemetry is what Langfuse uses.
             langfuse_trace_id = trace_id_hex
             logger.info(f"Using OpenTelemetry trace_id for Langfuse: {langfuse_trace_id[:16]}...")
-            
+
             try:
                 sys.stdout = output_handler
                 sys.stderr = output_handler
-                
+
                 # Execute crew with error handling
                 def execute_crew():
                     try:
@@ -311,12 +312,12 @@ async def run_research_job(
                             def __init__(self, error_data):
                                 self.raw = error_data
                                 self.tasks_output = []
-                        
+
                         return PartialResult(recovery_result)
-                
+
                 # Execute crew - traces are automatically sent via OpenTelemetry instrumentation
                 result = await asyncio.to_thread(execute_crew)
-                
+
                 # Flush Langfuse client if available to ensure all traces are sent
                 langfuse = get_langfuse_client()
                 if langfuse:
@@ -396,7 +397,7 @@ async def run_research_job(
                                         if source_urls:
                                             research_data_dict["source_urls"].extend(source_urls)
                                             logger.info("Extracted %s source URLs from crawl results", len(source_urls))
-                                        
+
                                         # Also extract URLs from results array
                                         results = crawl_data.get("results", [])
                                         for result in results:
@@ -406,7 +407,7 @@ async def run_research_job(
                                 except (json.JSONDecodeError, KeyError, TypeError):
                                     # Output is not JSON, try regex extraction
                                     pass
-                                
+
                                 # Validate research output relevance
                                 validation = validate_research_relevance(query, output, agent_name)
                                 if not validation["is_relevant"] or validation["warnings"]:
@@ -417,7 +418,7 @@ async def run_research_job(
                                     )
                                     # Add validation info to result
                                     result_dict["tasks_output"][-1]["validation"] = validation
-                                
+
                                 research_data_dict["research_findings"].append(
                                     {"agent": agent_name, "description": description, "content": output}
                                 )
@@ -473,7 +474,7 @@ async def run_research_job(
                             "research_content_length": len(research_output),
                             "tasks_completed": len(result_dict.get("tasks_output", [])),
                         }
-                        
+
                         # Note: For OTLP traces, trace input/output should be set via OpenTelemetry attributes
                         # The Langfuse REST API doesn't support updating traces created via OTLP
                         # The trace input/output will be populated from the root observation
@@ -487,12 +488,12 @@ async def run_research_job(
             evaluation_results = None
             try:
                 sources = []
-                
+
                 # First, use source URLs extracted from crawl results (most reliable)
                 if research_data_dict.get("source_urls"):
                     sources.extend(research_data_dict["source_urls"])
                     logger.info("Using %s source URLs from crawl results", len(research_data_dict["source_urls"]))
-                
+
                 # Also extract URLs from research text (fallback)
                 url_pattern = r'https?://[^\s\)\]\>\"\'\;]+'
 
@@ -511,12 +512,12 @@ async def run_research_job(
                     for url in sources
                     if (cleaned := url.rstrip('.,;:!?)')).startswith(('http://', 'https://'))
                 })
-                
+
                 if not sources:
                     logger.warning("⚠️ No valid URLs found in research output")
                 else:
                     logger.info("Found %s unique source URLs for evaluation", len(sources))
-                
+
                 # Extract content from crawl results for content relevance evaluation
                 extracted_contents = []
                 try:
@@ -541,10 +542,10 @@ async def run_research_job(
                                 pass
                 except Exception as extract_error:
                     logger.warning("Error extracting content from crawl results: %s", extract_error)
-                
+
                 # Get report for report relevance evaluation
                 report_content = result_dict.get("report", "")
-                
+
                 # Use the OpenTelemetry trace_id_hex for evaluations
                 # This links evaluations to the trace that Langfuse receives via OTLP
                 if research_output and langfuse_trace_id:
@@ -553,7 +554,7 @@ async def run_research_job(
                     logger.debug(f"   Sources found: {len(sources)}")
                     logger.debug(f"   Extracted contents: {len(extracted_contents)}")
                     logger.debug(f"   Report available: {bool(report_content)}")
-                    
+
                     try:
                         evaluation_results = run_comprehensive_evaluation(
                             query=query,
@@ -563,10 +564,10 @@ async def run_research_job(
                             extracted_contents=extracted_contents[:10] if extracted_contents else None,  # Limit to 10
                             report=report_content[:5000] if report_content else None,  # Limit size
                         )
-                        
+
                         eval_status = evaluation_results.get('status', 'unknown')
                         elapsed_time = evaluation_results.get('elapsed_time', 0)
-                        
+
                         if eval_status == 'success':
                             overall_score = evaluation_results.get('overall_score', 'N/A')
                             logger.info(f"✅ Evaluations completed successfully in {elapsed_time:.2f}s")
@@ -585,7 +586,7 @@ async def run_research_job(
                             for eval_name, eval_result in evaluation_results.get('evaluations', {}).items():
                                 if eval_result.get('status') != 'success':
                                     logger.error(f"   - {eval_name}: {eval_result.get('error', 'Unknown error')}")
-                    
+
                     except Exception as eval_exec_error:
                         logger.error(f"❌ Exception during evaluation execution: {eval_exec_error}", exc_info=True)
                         evaluation_results = {
@@ -593,7 +594,7 @@ async def run_research_job(
                             "error": str(eval_exec_error),
                             "error_type": type(eval_exec_error).__name__
                         }
-                        
+
                 elif not research_output:
                     logger.warning("No research output available, skipping evaluations")
                     evaluation_results = {"status": "skipped", "reason": "no_research_output"}
@@ -608,13 +609,13 @@ async def run_research_job(
                     "error": str(eval_error),
                     "error_type": type(eval_error).__name__
                 }
-            
+
             final_logs = get_job_logs(job_id)
-            
+
             # Include evaluation results in result dict
             if evaluation_results:
                 result_dict["evaluation_results"] = evaluation_results
-            
+
             await set_status(
                 "Research completed successfully!",
                 status="completed",

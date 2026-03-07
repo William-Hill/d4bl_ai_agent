@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import logging
 import time
-from enum import Enum
 from collections.abc import Callable
+from enum import Enum
 from typing import Any
 
 from d4bl.services.langfuse.llm_runner import call_llm_text

@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from crewai import Agent, Crew, Process, Task
-from crewai.project import CrewBase, agent, crew, task, before_kickoff
-from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai_tools import FirecrawlSearchTool
-from typing import Any
-import os
 import logging
+import os
+from typing import Any
 
-from d4bl.settings import get_settings
+from crewai import Agent, Crew, Process, Task
+from crewai.agents.agent_builder.base_agent import BaseAgent
+from crewai.project import CrewBase, agent, before_kickoff, crew, task
+from crewai_tools import FirecrawlSearchTool
+
 from d4bl.agents.tools import (
     Crawl4AISearchTool,
     FirecrawlSearchWrapper,
     SelfHostedFirecrawlSearchTool,
 )
-from d4bl.llm import get_ollama_llm
+from d4bl.llm import get_llm
+from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class D4Bl():
 
     agents: list[BaseAgent]
     tasks: list[Task]
-    
+
     # Agent to task mapping
     AGENT_TASK_MAP = {
         "researcher": "research_task",
@@ -66,20 +67,20 @@ class D4Bl():
         """Ensure output directory exists before running the crew"""
         os.makedirs('output', exist_ok=True)
         logger.info("Starting D4BL research crew")
-        
+
         # Validate inputs
         if not inputs.get("query"):
             raise ValueError("Query is required for research")
-        
+
         # Log input validation
-        logger.info("Research query validated: %.100s...", inputs.get('query'))
+        logger.info("Research query validated (length=%d)", len(inputs.get('query', '')))
         return inputs
 
     def _make_simple_agent(self, config_key: str, **kwargs: Any) -> Agent:
         """Create a standard agent with common defaults."""
         return Agent(
             config=self.agents_config[config_key],
-            llm=get_ollama_llm(),
+            llm=get_llm(),
             verbose=True,
             allow_delegation=False,
             **kwargs,
@@ -131,7 +132,7 @@ class D4Bl():
 
         return Agent(
             config=self.agents_config['researcher'],
-            llm=get_ollama_llm(),
+            llm=get_llm(),
             tools=[crawl_tool],
             verbose=True,
             allow_delegation=False
@@ -220,7 +221,7 @@ class D4Bl():
         """Creates the D4Bl crew"""
         ollama_base_url = get_settings().ollama_base_url
         embedder_model = "mxbai-embed-large"
-        
+
         # Construct the embedder configuration
         # CrewAI requires explicit embedder config to avoid defaulting to OpenAI
         # Note: Use "url" pointing to /api/embeddings endpoint, not "base_url"
@@ -235,7 +236,7 @@ class D4Bl():
         # Filter agents and tasks if selected_agents is specified
         agents_to_use = self.agents
         tasks_to_use = self.tasks
-        
+
         if self.selected_agents:
             # Deduplicate while preserving order
             selected = list(dict.fromkeys(self.selected_agents))
@@ -248,7 +249,7 @@ class D4Bl():
                     f"Invalid agent names: {invalid_agents}. "
                     f"Valid agents are: {', '.join(sorted(valid_agents))}"
                 )
-            
+
             agent_methods = {
                 name: getattr(self, name) for name in self.AGENT_TASK_MAP
             }
@@ -275,7 +276,7 @@ class D4Bl():
                 for task_name in self.TASK_ORDER
                 if task_name in selected_task_names
             ]
-            
+
             logger.info(
                 "Filtered to %s agent(s) and %s task(s): %s",
                 len(agents_to_use),

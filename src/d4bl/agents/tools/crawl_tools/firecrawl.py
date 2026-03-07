@@ -90,13 +90,13 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
                 "firecrawl-py SDK is required for self-hosted Firecrawl. "
                 "Install with: pip install firecrawl-py"
             )
-        
+
         object.__setattr__(self, "_base_url", base_url.rstrip("/"))
         object.__setattr__(self, "_api_key", api_key)
         object.__setattr__(self, "_max_pages", max_pages)
         object.__setattr__(self, "_max_results", max_results)
         object.__setattr__(self, "_timeout", timeout)
-        
+
         try:
             client = FirecrawlApp(
                 api_key=api_key or "dummy",  # API key may be optional for self-hosted
@@ -135,10 +135,10 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
                 return json.dumps(filtered_result, indent=2)
             except Exception as e:
                 logger.warning("Firecrawl SDK search failed, trying direct HTTP: %s", e)
-        
+
         # Fallback to direct HTTP API calls
         return self._run_http(normalized_query)
-    
+
     def _run_http(self, query: str) -> str:
         """Fallback HTTP implementation for self-hosted Firecrawl."""
         try:
@@ -147,19 +147,19 @@ class SelfHostedFirecrawlSearchTool(BaseTool):
             headers = {"Content-Type": "application/json"}
             if self._api_key:
                 headers["Authorization"] = f"Bearer {self._api_key}"
-            
+
             payload = {
                 "query": query,
                 "pageOptions": self._page_options(),
             }
-            
+
             response = requests.post(
                 search_url,
                 json=payload,
                 headers=headers,
                 timeout=self._timeout,
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 # Filter out problematic URLs

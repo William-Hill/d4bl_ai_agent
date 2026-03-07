@@ -1,8 +1,7 @@
 #!/usr/bin/env python
+import argparse
 import sys
 import warnings
-import argparse
-
 from datetime import datetime
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -39,9 +38,9 @@ def run():
              'Available agents: researcher, data_analyst, writer, fact_checker, '
              'citation_agent, bias_detection_agent, editor, data_visualization_agent'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Example D4BL research topics
     example_topics = [
         "How does algorithmic bias affect criminal justice outcomes for Black communities?",
@@ -49,14 +48,14 @@ def run():
         "How can data science be used to address racial disparities in healthcare?",
         "What role does big data play in perpetuating housing discrimination?"
     ]
-    
+
     # If no query provided, prompt user
     if not args.query:
         print("\nExample Research Topics:")
         for i, topic in enumerate(example_topics, 1):
             print(f"{i}. {topic}")
         print("\n0. Enter custom query")
-        
+
         while True:
             try:
                 choice = input("\nSelect a topic number (0-4): ")
@@ -70,7 +69,7 @@ def run():
                     print("Invalid choice. Please select a number between 0 and 4.")
             except ValueError:
                 print("Invalid input. Please enter a number.")
-    
+
     inputs = {
         'query': args.query,
         'summary_format': args.summary,

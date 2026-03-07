@@ -2,13 +2,23 @@
 Database models and connection for storing research queries and results
 """
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from uuid import UUID, uuid4
-
-from sqlalchemy import JSON, Text, Column, String, DateTime, Float, Integer, Date, Index, UniqueConstraint
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import (
+    JSON,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 from d4bl.settings import get_settings
 
@@ -37,6 +47,7 @@ class ResearchJob(Base):
     created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
     updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
     completed_at = Column(DateTime, nullable=True)
+    tenant_id = Column(String(100), nullable=True, index=True)
 
     def to_dict(self):
         """Convert model to dictionary"""
@@ -54,6 +65,7 @@ class ResearchJob(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "tenant_id": self.tenant_id,
         }
 
 
@@ -240,7 +252,7 @@ async def create_tables():
     """Create all database tables"""
     if engine is None:
         init_db()
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from d4bl.query.structured import StructuredSearcher, StructuredResult
+from d4bl.query.structured import StructuredResult, StructuredSearcher
 
 
 class TestStructuredResult:

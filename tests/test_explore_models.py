@@ -1,8 +1,5 @@
 """Tests for CensusIndicator and PolicyBill ORM models."""
-from datetime import datetime, date
-from uuid import uuid4
 
-import pytest
 
 from d4bl.infra.database import CensusIndicator, PolicyBill
 

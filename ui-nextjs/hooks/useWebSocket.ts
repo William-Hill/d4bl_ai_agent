@@ -10,12 +10,6 @@ export function useWebSocket(jobId: string | null) {
 
   useEffect(() => {
     if (!jobId) {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      setIsConnected(false);
-      setLastMessage(null);
       return;
     }
 
@@ -35,7 +29,6 @@ export function useWebSocket(jobId: string | null) {
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
-      setIsConnected(false);
     };
 
     ws.onclose = () => {
@@ -43,10 +36,10 @@ export function useWebSocket(jobId: string | null) {
     };
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      ws.close();
+      wsRef.current = null;
+      setIsConnected(false);
+      setLastMessage(null);
     };
   }, [jobId]);
 

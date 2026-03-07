@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import d4bl.observability.langfuse as langfuse_mod
 from d4bl.observability.langfuse import (
-    resolve_langfuse_host,
     check_langfuse_service_available,
+    resolve_langfuse_host,
 )
 
 

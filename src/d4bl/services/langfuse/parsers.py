@@ -33,13 +33,13 @@ def default_quality_scores(scores: dict[str, Any], fallback_text: str) -> dict[s
             return float(value)
         except (ValueError, TypeError):
             return default
-    
+
     scores["relevance"] = to_float(scores.get("relevance"), 3.0)
     scores["completeness"] = to_float(scores.get("completeness"), 3.0)
     scores["accuracy"] = to_float(scores.get("accuracy"), 3.0)
     scores["bias"] = to_float(scores.get("bias"), 3.0)
     scores["clarity"] = to_float(scores.get("clarity"), 3.0)
-    
+
     # Calculate overall as average of all scores
     scores["overall"] = (
         scores["relevance"] +
@@ -48,7 +48,7 @@ def default_quality_scores(scores: dict[str, Any], fallback_text: str) -> dict[s
         scores["bias"] +
         scores["clarity"]
     ) / 5.0
-    
+
     scores.setdefault("feedback", fallback_text[:500])
     return scores
 

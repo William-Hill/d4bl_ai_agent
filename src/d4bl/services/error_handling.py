@@ -4,12 +4,12 @@ Provides retry logic, exponential backoff, and graceful error recovery.
 """
 from __future__ import annotations
 
-import time
 import logging
+import time
 from collections.abc import Callable
+from enum import Enum
 from functools import wraps
 from typing import Any, TypeVar
-from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -53,22 +53,22 @@ def retry_with_backoff(
         def wrapper(*args: Any, **kwargs: Any) -> T:
             last_exception = None
             delay = initial_delay
-            
+
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
                 except retry_on as e:
                     last_exception = e
-                    
+
                     if attempt < max_retries:
                         if on_retry:
                             on_retry(e, attempt + 1)
-                        
+
                         logger.warning(
                             f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}: {str(e)}. "
                             f"Retrying in {delay:.2f}s..."
                         )
-                        
+
                         time.sleep(min(delay, max_delay))
                         delay *= exponential_base
                     else:
@@ -78,12 +78,12 @@ def retry_with_backoff(
                         if on_failure:
                             return on_failure(e)
                         raise
-            
+
             # This should never be reached, but type checker needs it
             if last_exception:
                 raise last_exception
             raise RuntimeError("Unexpected error in retry logic")
-        
+
         return wrapper
     return decorator
 
@@ -112,7 +112,7 @@ def safe_execute(
         if log_error:
             msg = error_message or f"Error executing {func.__name__}"
             logger.error(f"{msg}: {str(e)}", exc_info=True)
-        
+
         if default_return is not None:
             return default_return
         raise
@@ -120,7 +120,7 @@ def safe_execute(
 
 class ErrorRecoveryStrategy:
     """Manages error recovery strategies for different failure scenarios."""
-    
+
     @staticmethod
     def fallback_to_firecrawl(error: Exception, context: dict[str, Any]) -> Any | None:
         """Fallback to Firecrawl if Crawl4AI fails."""
@@ -136,7 +136,7 @@ class ErrorRecoveryStrategy:
             except Exception as fallback_error:
                 logger.error(f"Firecrawl fallback also failed: {str(fallback_error)}")
         return None
-    
+
     @staticmethod
     def return_partial_results(error: Exception, context: dict[str, Any]) -> dict[str, Any]:
         """Return partial results when full execution fails."""
@@ -145,7 +145,7 @@ class ErrorRecoveryStrategy:
             "partial_results": context.get("partial_results", []),
             "status": "partial_failure"
         }
-    
+
     @staticmethod
     def retry_with_simplified_query(error: Exception, context: dict[str, Any]) -> Any | None:
         """Retry with a simplified/truncated query."""

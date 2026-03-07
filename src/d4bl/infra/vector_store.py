@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import logging
-
 from typing import Any
 from uuid import UUID
 
@@ -139,7 +138,7 @@ class VectorStore:
 
             # Insert into database
             embedding_str = self._format_embedding(embedding)
-            
+
             query = text("""
                 INSERT INTO scraped_content_vectors
                 (job_id, url, content, content_type, metadata, embedding)
@@ -161,7 +160,7 @@ class VectorStore:
 
             record_id = result.scalar_one()
             await db.commit()
-            
+
             logger.info("Stored scraped content in vector DB: %s (URL: %s)", record_id, url)
             return record_id
 
@@ -188,7 +187,7 @@ class VectorStore:
             Number of successfully stored items
         """
         stored_count = 0
-        
+
         for item in items:
             record_id = await self.store_scraped_content(
                 db=db,

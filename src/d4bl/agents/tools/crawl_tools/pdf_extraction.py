@@ -68,7 +68,7 @@ def is_valid_content(result: dict) -> bool:
             "PDF file %s has no extracted content. PDF extraction may have failed.",
             url
         )
-    
+
     return False
 
 
@@ -80,43 +80,43 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
     if not PDF_EXTRACTION_AVAILABLE:
         logger.warning("PDF extraction library not available, skipping client-side extraction")
         return None
-    
+
     try:
         logger.info("Attempting client-side PDF extraction for: %s", url)
-        
+
         # Download PDF with proper headers to handle various servers
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'application/pdf,application/octet-stream,*/*',
         }
-        
+
         # Download PDF with redirect handling
         response = requests.get(
-            url, 
+            url,
             timeout=timeout * 2,  # PDFs may take longer
             stream=True,
             headers=headers,
             allow_redirects=True
         )
         response.raise_for_status()
-        
+
         # Check content type
         content_type = response.headers.get('Content-Type', '').lower()
         if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
             logger.warning("URL does not appear to be a PDF (Content-Type: %s)", content_type)
             # Continue anyway, might still be a PDF
-        
+
         # Save to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             tmp_file.write(response.content)
             tmp_path = tmp_file.name
-        
+
         try:
             # Extract text from PDF
             reader = PdfReader(tmp_path)
             text_content = []
             metadata = {}
-            
+
             # Extract metadata if available
             if reader.metadata:
                 metadata = {
@@ -125,7 +125,7 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
                     "subject": reader.metadata.get("/Subject", ""),
                     "creator": reader.metadata.get("/Creator", ""),
                 }
-            
+
             # Extract text from all pages
             for page_num, page in enumerate(reader.pages, start=1):
                 try:
@@ -135,19 +135,19 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
                 except Exception as page_error:
                     logger.warning("Error extracting text from page %s: %s", page_num, page_error)
                     continue
-            
+
             extracted_text = "\n\n".join(text_content)
-            
+
             if not extracted_text or len(extracted_text.strip()) < MIN_CONTENT_LENGTH:
                 logger.warning("PDF extraction produced minimal content (%s chars)", len(extracted_text))
                 return None
-            
+
             logger.info(
                 "Successfully extracted %s characters from PDF (%s pages)",
                 len(extracted_text),
                 len(reader.pages)
             )
-            
+
             # Return in Crawl4AI-compatible format
             return {
                 "url": url,
@@ -159,14 +159,14 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
                 "extraction_method": "client_side_pypdf",
                 "page_count": len(reader.pages),
             }
-        
+
         finally:
             # Clean up temporary file
             try:
                 os.unlink(tmp_path)
             except Exception as cleanup_error:
                 logger.warning("Error cleaning up temp PDF file: %s", cleanup_error)
-    
+
     except requests.exceptions.RequestException as e:
         logger.error("Failed to download PDF for client-side extraction: %s", e)
         logger.debug("PDF URL: %s, Error type: %s", url, type(e).__name__)

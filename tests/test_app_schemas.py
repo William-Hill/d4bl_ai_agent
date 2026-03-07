@@ -2,7 +2,7 @@
 import pytest
 from pydantic import ValidationError
 
-from d4bl.app.schemas import ResearchRequest, QueryRequest
+from d4bl.app.schemas import QueryRequest, ResearchRequest
 
 
 class TestResearchRequest:
