@@ -77,7 +77,12 @@ def _parse_atom(root: ET.Element) -> list[dict[str, Any]]:
             title_el.text.strip() if title_el is not None
             and title_el.text else ""
         )
-        link_el = item.find(f"{ATOM_NS}link")
+        # Prefer rel="alternate" link, fall back to first <link>
+        link_el = item.find(
+            f"{ATOM_NS}link[@rel='alternate']"
+        )
+        if link_el is None:
+            link_el = item.find(f"{ATOM_NS}link")
         entry["link"] = (
             link_el.get("href", "").strip() if link_el is not None
             else ""

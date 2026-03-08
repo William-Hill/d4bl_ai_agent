@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import Iterator, List, Tuple
 
 from d4bl_pipelines.assets.files.file_upload import (
     ALLOWED_EXTENSIONS,
@@ -33,7 +33,9 @@ SENSOR_MIN_INTERVAL = 30  # seconds
         "file upload asset materialization."
     ),
 )
-def file_upload_sensor(context: SensorEvaluationContext):
+def file_upload_sensor(
+    context: SensorEvaluationContext,
+) -> Iterator[RunRequest]:
     """Scan upload directories for new files.
 
     Uses a JSON cursor mapping ``filepath -> mtime`` to track
@@ -78,13 +80,17 @@ def file_upload_sensor(context: SensorEvaluationContext):
         source_id = source_dir.name
 
         for filepath in source_dir.iterdir():
-            if not filepath.is_file():
-                continue
-            if _file_extension(filepath.name) not in ALLOWED_EXTENSIONS:
-                continue
+            try:
+                if not filepath.is_file():
+                    continue
+                if _file_extension(filepath.name) not in ALLOWED_EXTENSIONS:
+                    continue
 
-            file_key = str(filepath)
-            file_mtime = filepath.stat().st_mtime
+                file_key = str(filepath)
+                file_mtime = filepath.stat().st_mtime
+            except (FileNotFoundError, OSError):
+                # File may have been moved/deleted between iterdir() and stat()
+                continue
 
             # Skip if we've already seen this file at this mtime
             if seen_files.get(file_key) == file_mtime:
@@ -152,16 +158,17 @@ def _get_recent_completed_runs(
         ORDER BY ir.completed_at ASC
     """)
 
-    with engine.connect() as conn:
-        rows = conn.execute(
-            query,
-            {
-                "since": since_timestamp,
-                "types": list(EMBEDDING_SOURCE_TYPES),
-            },
-        ).fetchall()
-
-    engine.dispose()
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                query,
+                {
+                    "since": since_timestamp,
+                    "types": list(EMBEDDING_SOURCE_TYPES),
+                },
+            ).fetchall()
+    finally:
+        engine.dispose()
     return [
         (str(r[0]), str(r[1]), r[2], r[3].isoformat())
         for r in rows
@@ -176,7 +183,9 @@ def _get_recent_completed_runs(
         "and triggers vector embedding for their content."
     ),
 )
-def vector_embedding_sensor(context: SensorEvaluationContext):
+def vector_embedding_sensor(
+    context: SensorEvaluationContext,
+) -> Iterator[RunRequest | SkipReason]:
     """Yield a :class:`RunRequest` for each new ingestion run that needs
     vector embedding.
 
