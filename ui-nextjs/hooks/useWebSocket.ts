@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { WS_BASE } from '@/lib/api';
+import { WS_BASE, getAuthToken } from '@/lib/api';
 
 export function useWebSocket(jobId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
@@ -13,30 +13,40 @@ export function useWebSocket(jobId: string | null) {
       return;
     }
 
-    // Connect directly to the backend API (Next.js rewrites don't support WebSocket)
-    const wsUrl = `${WS_BASE}/ws/${jobId}`;
+    let ws: WebSocket;
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    async function connect() {
+      const token = await getAuthToken();
+      const wsUrl = token
+        ? `${WS_BASE}/ws/${jobId}?token=${token}`
+        : `${WS_BASE}/ws/${jobId}`;
 
-    ws.onopen = () => {
-      setIsConnected(true);
-    };
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      setLastMessage(event);
-    };
+      ws.onopen = () => {
+        setIsConnected(true);
+      };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+      ws.onmessage = (event) => {
+        setLastMessage(event);
+      };
 
-    ws.onclose = () => {
-      setIsConnected(false);
-    };
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      if (ws) {
+        ws.close();
+      }
       wsRef.current = null;
       setIsConnected(false);
       setLastMessage(null);
@@ -45,4 +55,3 @@ export function useWebSocket(jobId: string | null) {
 
   return { isConnected, lastMessage };
 }
-
