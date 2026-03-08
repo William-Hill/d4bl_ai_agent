@@ -50,7 +50,15 @@ export async function middleware(request: NextRequest) {
     url.pathname = '/login';
     const redirectResponse = NextResponse.redirect(url);
     supabaseResponse.cookies.getAll().forEach(cookie => {
-      redirectResponse.cookies.set(cookie.name, cookie.value);
+      redirectResponse.cookies.set(cookie.name, cookie.value, {
+        path: cookie.path,
+        domain: cookie.domain,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        maxAge: cookie.maxAge,
+        expires: cookie.expires,
+      });
     });
     return redirectResponse;
   }
@@ -60,7 +68,15 @@ export async function middleware(request: NextRequest) {
     url.pathname = '/';
     const redirectResponse = NextResponse.redirect(url);
     supabaseResponse.cookies.getAll().forEach(cookie => {
-      redirectResponse.cookies.set(cookie.name, cookie.value);
+      redirectResponse.cookies.set(cookie.name, cookie.value, {
+        path: cookie.path,
+        domain: cookie.domain,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        maxAge: cookie.maxAge,
+        expires: cookie.expires,
+      });
     });
     return redirectResponse;
   }
