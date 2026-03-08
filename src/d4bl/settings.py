@@ -56,9 +56,6 @@ class Settings:
     llm_model: str = field(init=False)
     llm_api_key: str | None = field(init=False)
 
-    # -- Multi-tenancy --
-    tenant_id: str | None = field(init=False)
-
     # -- Supabase Auth --
     supabase_url: str | None = field(init=False)
     supabase_jwt_secret: str | None = field(init=False)
@@ -144,9 +141,6 @@ class Settings:
         _set("llm_provider", os.getenv("LLM_PROVIDER", "ollama").lower())
         _set("llm_model", os.getenv("LLM_MODEL", "mistral"))
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
-
-        # Multi-tenancy
-        _set("tenant_id", os.getenv("TENANT_ID"))
 
         # Supabase Auth
         _set("supabase_url", os.getenv("SUPABASE_URL"))

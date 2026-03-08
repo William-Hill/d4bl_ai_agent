@@ -221,14 +221,6 @@ class TestFieldDefaults:
         s = _fresh_settings(LLM_API_KEY="sk-test-key")
         assert s.llm_api_key == "sk-test-key"
 
-    def test_tenant_id_default_none(self) -> None:
-        s = _fresh_settings(TENANT_ID=None)
-        assert s.tenant_id is None
-
-    def test_tenant_id_from_env(self) -> None:
-        s = _fresh_settings(TENANT_ID="org-d4bl")
-        assert s.tenant_id == "org-d4bl"
-
     def test_supabase_url_default_none(self) -> None:
         s = _fresh_settings(SUPABASE_URL=None)
         assert s.supabase_url is None
