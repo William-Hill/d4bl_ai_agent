@@ -165,3 +165,72 @@ class UserProfile(BaseModel):
 class UpdateRoleRequest(BaseModel):
     role: Literal["user", "admin"]
 
+
+# --- Data Ingestion models ---
+
+
+class DataSourceCreate(BaseModel):
+    name: str
+    source_type: Literal["api", "file_upload", "web_scrape", "rss_feed", "database", "mcp"]
+    config: dict = {}
+    default_schedule: str | None = None
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class DataSourceUpdate(BaseModel):
+    name: str | None = None
+    config: dict | None = None
+    default_schedule: str | None = None
+    enabled: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class DataSourceResponse(BaseModel):
+    id: str
+    name: str
+    source_type: str
+    config: dict
+    default_schedule: str | None
+    enabled: bool
+    created_by: str | None
+    created_at: str | None
+    updated_at: str | None
+    last_run_status: str | None = None
+    last_run_at: str | None = None
+
+
+class IngestionRunResponse(BaseModel):
+    id: str
+    data_source_id: str
+    dagster_run_id: str | None
+    status: str
+    triggered_by: str | None
+    trigger_type: str
+    records_ingested: int | None
+    started_at: str | None
+    completed_at: str | None
+    error_detail: str | None
+
+
+class DataOverviewResponse(BaseModel):
+    """High-level statistics for the data ingestion dashboard."""
+
+    total_sources: int
+    enabled_sources: int
+    recent_failures: int
+

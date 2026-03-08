@@ -19,6 +19,7 @@ from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
+from d4bl.app.data_routes import router as data_router
 from d4bl.app.schemas import (
     EvaluationResultItem,
     IndicatorItem,
@@ -142,6 +143,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(data_router)
 
 @app.get("/")
 async def read_root():

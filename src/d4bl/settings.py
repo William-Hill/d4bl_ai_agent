@@ -62,6 +62,9 @@ class Settings:
     supabase_service_role_key: str | None = field(init=False)
     admin_email: str | None = field(init=False)
 
+    # -- Dagster orchestration --
+    dagster_graphql_url: str = field(init=False)
+
     def __post_init__(self) -> None:
         def _set(name: str, value: object) -> None:
             object.__setattr__(self, name, value)
@@ -147,6 +150,12 @@ class Settings:
         _set("supabase_jwt_secret", os.getenv("SUPABASE_JWT_SECRET"))
         _set("supabase_service_role_key", os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
         _set("admin_email", os.getenv("ADMIN_EMAIL"))
+
+        # Dagster
+        _set(
+            "dagster_graphql_url",
+            os.getenv("DAGSTER_GRAPHQL_URL", "http://localhost:3003/graphql"),
+        )
 
 
 @lru_cache(maxsize=1)

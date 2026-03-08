@@ -253,6 +253,18 @@ class TestFieldDefaults:
         s = _fresh_settings(ADMIN_EMAIL="admin@example.com")
         assert s.admin_email == "admin@example.com"
 
+    def test_dagster_graphql_url_default(self) -> None:
+        s = _fresh_settings(DAGSTER_GRAPHQL_URL=None)
+        assert s.dagster_graphql_url == "http://localhost:3003/graphql"
+
+    def test_dagster_graphql_url_from_env(self) -> None:
+        s = _fresh_settings(
+            DAGSTER_GRAPHQL_URL="http://dagster-webserver:3003/graphql"
+        )
+        assert (
+            s.dagster_graphql_url == "http://dagster-webserver:3003/graphql"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Supabase auth settings via get_settings

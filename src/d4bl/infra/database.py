@@ -6,15 +6,18 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     Date,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -178,6 +181,190 @@ class PolicyBill(Base):
             name="uq_policy_bill_key",
         ),
     )
+
+
+class DataSource(Base):
+    """Admin-configured data source for ingestion."""
+
+    __tablename__ = "data_sources"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String(255), nullable=False)
+    source_type = Column(
+        String(50),
+        nullable=False,
+        comment="api|file_upload|web_scrape|rss_feed|database|mcp",
+    )
+    config = Column(JSON, nullable=False, default=dict)
+    default_schedule = Column(String(100), nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_data_sources_source_type", "source_type"),
+        Index("ix_data_sources_enabled", "enabled"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "source_type": self.source_type,
+            "config": self.config,
+            "default_schedule": self.default_schedule,
+            "enabled": self.enabled,
+            "created_by": str(self.created_by) if self.created_by else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class IngestionRun(Base):
+    """Audit trail for every ingestion execution."""
+
+    __tablename__ = "ingestion_runs"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    data_source_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dagster_run_id = Column(String(255), nullable=True)
+    status = Column(
+        String(50),
+        nullable=False,
+        default="pending",
+        comment="pending|running|completed|failed",
+    )
+    triggered_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    trigger_type = Column(
+        String(50),
+        nullable=False,
+        default="manual",
+        comment="manual|scheduled|sensor",
+    )
+    records_ingested = Column(Integer, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    error_detail = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_ingestion_runs_data_source_id", "data_source_id"),
+        Index("ix_ingestion_runs_status", "status"),
+        Index("ix_ingestion_runs_started_at", "started_at"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "data_source_id": str(self.data_source_id),
+            "dagster_run_id": self.dagster_run_id,
+            "status": self.status,
+            "triggered_by": str(self.triggered_by) if self.triggered_by else None,
+            "trigger_type": self.trigger_type,
+            "records_ingested": self.records_ingested,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": (
+                self.completed_at.isoformat() if self.completed_at else None
+            ),
+            "error_detail": self.error_detail,
+        }
+
+
+class DataLineage(Base):
+    """Row/asset-level provenance aligned with D4BL methodology."""
+
+    __tablename__ = "data_lineage"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    ingestion_run_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("ingestion_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_table = Column(String(255), nullable=False)
+    record_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    source_url = Column(Text, nullable=True)
+    source_hash = Column(String(128), nullable=True)
+    transformation = Column(JSON, nullable=True)
+    quality_score = Column(Float, nullable=True, comment="1-5 scale")
+    coverage_metadata = Column(JSON, nullable=True)
+    bias_flags = Column(JSON, nullable=True)
+    retrieved_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_data_lineage_ingestion_run_id", "ingestion_run_id"),
+        Index("ix_data_lineage_target_table", "target_table"),
+        Index("ix_data_lineage_record_id", "record_id"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "ingestion_run_id": str(self.ingestion_run_id),
+            "target_table": self.target_table,
+            "record_id": str(self.record_id),
+            "source_url": self.source_url,
+            "source_hash": self.source_hash,
+            "transformation": self.transformation,
+            "quality_score": self.quality_score,
+            "coverage_metadata": self.coverage_metadata,
+            "bias_flags": self.bias_flags,
+            "retrieved_at": (
+                self.retrieved_at.isoformat() if self.retrieved_at else None
+            ),
+        }
+
+
+class KeywordMonitor(Base):
+    """Topic/keyword-based ingestion configuration."""
+
+    __tablename__ = "keyword_monitors"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String(255), nullable=False)
+    keywords = Column(JSON, nullable=False, default=list)
+    source_ids = Column(JSON, nullable=False, default=list)
+    schedule = Column(String(100), nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_keyword_monitors_enabled", "enabled"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "keywords": self.keywords,
+            "source_ids": self.source_ids,
+            "schedule": self.schedule,
+            "enabled": self.enabled,
+            "created_by": str(self.created_by) if self.created_by else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 # Database connection setup
