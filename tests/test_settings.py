@@ -229,6 +229,57 @@ class TestFieldDefaults:
         s = _fresh_settings(TENANT_ID="org-d4bl")
         assert s.tenant_id == "org-d4bl"
 
+    def test_supabase_url_default_none(self) -> None:
+        s = _fresh_settings(SUPABASE_URL=None)
+        assert s.supabase_url is None
+
+    def test_supabase_url_from_env(self) -> None:
+        s = _fresh_settings(SUPABASE_URL="https://test.supabase.co")
+        assert s.supabase_url == "https://test.supabase.co"
+
+    def test_supabase_jwt_secret_default_none(self) -> None:
+        s = _fresh_settings(SUPABASE_JWT_SECRET=None)
+        assert s.supabase_jwt_secret is None
+
+    def test_supabase_jwt_secret_from_env(self) -> None:
+        s = _fresh_settings(SUPABASE_JWT_SECRET="test-jwt-secret")
+        assert s.supabase_jwt_secret == "test-jwt-secret"
+
+    def test_supabase_service_role_key_default_none(self) -> None:
+        s = _fresh_settings(SUPABASE_SERVICE_ROLE_KEY=None)
+        assert s.supabase_service_role_key is None
+
+    def test_supabase_service_role_key_from_env(self) -> None:
+        s = _fresh_settings(SUPABASE_SERVICE_ROLE_KEY="test-service-key")
+        assert s.supabase_service_role_key == "test-service-key"
+
+    def test_admin_email_default_none(self) -> None:
+        s = _fresh_settings(ADMIN_EMAIL=None)
+        assert s.admin_email is None
+
+    def test_admin_email_from_env(self) -> None:
+        s = _fresh_settings(ADMIN_EMAIL="admin@example.com")
+        assert s.admin_email == "admin@example.com"
+
+
+# ---------------------------------------------------------------------------
+# Supabase auth settings via get_settings
+# ---------------------------------------------------------------------------
+
+def test_supabase_auth_settings(monkeypatch):
+    """Settings should expose Supabase auth fields."""
+    get_settings.cache_clear()
+    monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@example.com")
+    s = get_settings()
+    assert s.supabase_url == "https://test.supabase.co"
+    assert s.supabase_jwt_secret == "test-jwt-secret"
+    assert s.supabase_service_role_key == "test-service-key"
+    assert s.admin_email == "admin@example.com"
+    get_settings.cache_clear()
+
 
 # ---------------------------------------------------------------------------
 # Frozen immutability
