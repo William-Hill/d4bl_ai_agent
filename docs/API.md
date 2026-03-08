@@ -35,6 +35,24 @@ All other endpoints require a valid JWT. The token is verified against `SUPABASE
 
 Endpoints that modify system configuration or manage users require the `admin` role. If a non-admin user attempts to access these endpoints, the API returns `403 Forbidden`.
 
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/auth/me` | Get current user's profile and role |
+| POST | `/api/admin/invite` | Invite a new user by email |
+| GET | `/api/admin/users` | List all user profiles |
+| PATCH | `/api/admin/users/{user_id}` | Update a user's role |
+
+### User Management
+
+Users can be added to the system in multiple ways:
+
+- **Supabase Dashboard**: Create or invite users under Authentication > Users. A database trigger automatically creates a `profiles` row with `role = 'user'`.
+- **Admin API**: `POST /api/admin/invite` with `{"email": "user@example.com"}`.
+- **Bootstrap script**: `python scripts/bootstrap_admin.py admin@example.com` for first-time admin setup.
+- **Self-signup**: If enabled in Supabase dashboard (Authentication > Settings).
+
+All methods trigger the `on_auth_user_created` database trigger, which creates the user's profile automatically.
+
 ### Obtaining a Token
 
 Authenticate via Supabase Auth (email/password, OAuth, etc.) to receive a JWT. The frontend uses `@supabase/supabase-js` to manage sessions automatically. For API-only access:

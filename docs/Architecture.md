@@ -299,7 +299,10 @@ graph TB
 
 - API keys stored in `.env` file (not committed)
 - CORS configured for development
-- No authentication (add for production)
+- Supabase Auth with JWT validation on all API endpoints (except health/models)
+- Role-based access control (user/admin) via `profiles` table
+- Row Level Security (RLS) on `research_jobs` and `profiles` tables
+- Invite-only registration; users can also be added via Supabase dashboard
 - Input validation on API endpoints
 - Error messages don't expose sensitive data
 

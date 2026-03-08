@@ -134,11 +134,17 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-### Bootstrap Admin
+### Managing Users
 
-```bash
-python scripts/bootstrap_admin.py admin@example.com
-```
+Users can be added in several ways:
+
+- **Supabase Dashboard**: Invite or create users under Authentication > Users. The database trigger auto-creates a profile with `role = 'user'`.
+- **Admin UI**: Use the `/admin` page to invite users and manage roles.
+- **Admin API**: `POST /api/admin/invite` with `{"email": "..."}` (requires admin JWT).
+- **Bootstrap script**: `python scripts/bootstrap_admin.py admin@example.com` (first admin setup, uses service role key).
+- **Self-signup**: If enabled in Supabase dashboard settings.
+
+To promote a user to admin: use the admin UI, `PATCH /api/admin/users/{id}` with `{"role": "admin"}`, or set the `ADMIN_EMAIL` env var before their first login.
 
 ## Code Style
 
