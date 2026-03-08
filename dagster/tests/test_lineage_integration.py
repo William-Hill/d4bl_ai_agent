@@ -12,12 +12,10 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-
 from d4bl_pipelines.quality.lineage import (
     build_lineage_record,
     write_lineage_batch,
 )
-
 
 # ------------------------------------------------------------------ #
 # 1. Verify imports from every asset module

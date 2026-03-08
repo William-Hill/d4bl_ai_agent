@@ -3,15 +3,13 @@
 No database or network access required.
 """
 
-import pytest
 
 from d4bl_pipelines.assets.databases.external_db import (
-    _slugify,
     _derive_record_key,
     _get_last_run_time,
+    _slugify,
     build_external_db_assets,
 )
-
 
 # ── _slugify tests ───────────────────────────────────────────────
 

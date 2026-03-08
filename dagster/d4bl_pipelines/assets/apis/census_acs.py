@@ -7,12 +7,11 @@ from the Census Bureau API and upserts into census_indicators table.
 
 import hashlib
 import json
-import logging
 import os
 import uuid
-from datetime import datetime, timezone
 
 import aiohttp
+
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -120,8 +119,8 @@ async def census_acs_indicators(
     """Fetch Census ACS data and upsert into census_indicators table."""
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import (
-        create_async_engine,
         AsyncSession,
+        create_async_engine,
     )
     from sqlalchemy.orm import sessionmaker
 
@@ -245,29 +244,30 @@ async def census_acs_indicators(
                 lineage_records = []
                 for fips in states_covered:
                     for metric in METRIC_VARIABLES:
-                        rec_id = uuid.uuid5(
-                            uuid.NAMESPACE_URL,
-                            f"census:lineage:{fips}:{year}:"
-                            f"{metric}",
-                        )
-                        lineage_records.append(
-                            build_lineage_record(
-                                ingestion_run_id=ingestion_run_id,
-                                target_table="census_indicators",
-                                record_id=rec_id,
-                                source_url=(
-                                    f"{CENSUS_BASE_URL}/{year}"
-                                    f"/acs/acs5"
-                                ),
-                                transformation={
-                                    "steps": [
-                                        "fetch_acs_api",
-                                        "compute_rate",
-                                        "upsert",
-                                    ]
-                                },
+                        for race in METRIC_VARIABLES[metric]:
+                            rec_id = uuid.uuid5(
+                                uuid.NAMESPACE_URL,
+                                f"census:lineage:{fips}:{year}:"
+                                f"{metric}:{race}",
                             )
-                        )
+                            lineage_records.append(
+                                build_lineage_record(
+                                    ingestion_run_id=ingestion_run_id,
+                                    target_table="census_indicators",
+                                    record_id=rec_id,
+                                    source_url=(
+                                        f"{CENSUS_BASE_URL}/{year}"
+                                        f"/acs/acs5"
+                                    ),
+                                    transformation={
+                                        "steps": [
+                                            "fetch_acs_api",
+                                            "compute_rate",
+                                            "upsert",
+                                        ]
+                                    },
+                                )
+                            )
                 if lineage_records:
                     await write_lineage_batch(
                         session, lineage_records
@@ -277,9 +277,8 @@ async def census_acs_indicators(
                     f"lineage records"
                 )
             except Exception as lineage_exc:
-                logging.getLogger(__name__).warning(
-                    "Lineage recording failed: %s",
-                    lineage_exc,
+                context.log.warning(
+                    f"Lineage recording failed: {lineage_exc}"
                 )
     finally:
         await engine.dispose()

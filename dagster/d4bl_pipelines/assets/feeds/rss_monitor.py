@@ -7,25 +7,24 @@ ingested_records table.
 """
 
 import json
-import logging
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
-from dagster import (
-    AssetExecutionContext,
-    AssetsDefinition,
-    MaterializeResult,
-    asset,
-)
 
 from d4bl_pipelines.utils import (
     INGESTED_RECORDS_UPSERT_SQL,
     compute_content_hash,
     db_session,
     slugify,
+)
+from dagster import (
+    AssetExecutionContext,
+    AssetsDefinition,
+    MaterializeResult,
+    asset,
 )
 
 # Backward-compatible alias for tests
@@ -34,9 +33,8 @@ _slugify = slugify
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
 
 
-def _parse_rss(xml_text: str) -> list[dict[str, Any]]:
+def _parse_rss(root: ET.Element) -> list[dict[str, Any]]:
     """Parse RSS 2.0 XML into a list of entry dicts."""
-    root = ET.fromstring(xml_text)
     entries: list[dict[str, Any]] = []
     for item in root.iter("item"):
         entry: dict[str, Any] = {}
@@ -69,9 +67,8 @@ def _parse_rss(xml_text: str) -> list[dict[str, Any]]:
     return entries
 
 
-def _parse_atom(xml_text: str) -> list[dict[str, Any]]:
+def _parse_atom(root: ET.Element) -> list[dict[str, Any]]:
     """Parse Atom XML into a list of entry dicts."""
-    root = ET.fromstring(xml_text)
     entries: list[dict[str, Any]] = []
     for item in root.iter(f"{ATOM_NS}entry"):
         entry: dict[str, Any] = {}
@@ -113,9 +110,9 @@ def _parse_feed(xml_text: str) -> list[dict[str, Any]]:
     root = ET.fromstring(xml_text)
     # Atom feeds have a root tag of {namespace}feed
     if root.tag == f"{ATOM_NS}feed":
-        return _parse_atom(xml_text)
+        return _parse_atom(root)
     # RSS feeds typically have <rss> root or <channel> inside
-    return _parse_rss(xml_text)
+    return _parse_rss(root)
 
 
 def _make_asset_fn(source_config: dict[str, Any]):
@@ -271,9 +268,8 @@ def _make_asset_fn(source_config: dict[str, Any]):
                     f"lineage records"
                 )
             except Exception as lineage_exc:
-                logging.getLogger(__name__).warning(
-                    "Lineage recording failed: %s",
-                    lineage_exc,
+                context.log.warning(
+                    f"Lineage recording failed: {lineage_exc}"
                 )
 
         context.log.info(

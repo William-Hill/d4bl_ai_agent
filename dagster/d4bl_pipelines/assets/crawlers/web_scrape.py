@@ -8,13 +8,14 @@ the scraped content in the scraped_content_vectors table.
 
 import hashlib
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
+
+from d4bl_pipelines.utils import slugify
 from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
@@ -22,8 +23,6 @@ from dagster import (
     MetadataValue,
     asset,
 )
-
-from d4bl_pipelines.utils import slugify
 
 # Backward-compatible alias for tests
 _slugify = slugify
@@ -98,9 +97,6 @@ def _make_asset_fn(source_config: dict[str, Any]):
     """Create the async asset function for a single web scrape source."""
     config = source_config["config"]
     urls: list[str] = config.get("urls", [])
-    crawl_provider = config.get(
-        "crawl_provider", os.environ.get("CRAWL_PROVIDER", "firecrawl")
-    )
 
     async def _asset_fn(
         context: AssetExecutionContext,
@@ -260,9 +256,8 @@ def _make_asset_fn(source_config: dict[str, Any]):
                         f"lineage records"
                     )
                 except Exception as lineage_exc:
-                    logging.getLogger(__name__).warning(
-                        "Lineage recording failed: %s",
-                        lineage_exc,
+                    context.log.warning(
+                        f"Lineage recording failed: {lineage_exc}"
                     )
         finally:
             await engine.dispose()

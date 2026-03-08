@@ -9,7 +9,6 @@ from d4bl_pipelines.assets.keyword_monitors.keyword_search import (
     build_keyword_monitor_assets,
 )
 
-
 # ── _slugify tests ───────────────────────────────────────────────
 
 
@@ -81,6 +80,26 @@ def test_build_keyword_query_case_insensitive():
         ["aaaaaaaa-1111-2222-3333-444444444444"],
     )
     assert params["kw_0"] == "%racial justice%"
+
+
+def test_build_keyword_query_empty_keywords():
+    """Empty keywords should return WHERE FALSE."""
+    where, params = _build_keyword_query(
+        [],
+        ["aaaaaaaa-1111-2222-3333-444444444444"],
+    )
+    assert where == "WHERE FALSE"
+    assert params == {}
+
+
+def test_build_keyword_query_empty_source_ids():
+    """Empty source_ids should return WHERE FALSE."""
+    where, params = _build_keyword_query(
+        ["equity"],
+        [],
+    )
+    assert where == "WHERE FALSE"
+    assert params == {}
 
 
 def test_build_keyword_query_uses_cast_not_double_colon():

@@ -1,6 +1,6 @@
 """Unit tests for the RSS/Atom feed asset factory."""
 
-import pytest
+import xml.etree.ElementTree as ET
 
 from d4bl_pipelines.assets.feeds.rss_monitor import (
     _parse_atom,
@@ -60,68 +60,68 @@ SAMPLE_ATOM = """\
 
 class TestParseRss:
     def test_extracts_all_items(self):
-        entries = _parse_rss(SAMPLE_RSS)
+        entries = _parse_rss(ET.fromstring(SAMPLE_RSS))
         assert len(entries) == 2
 
     def test_extracts_title(self):
-        entries = _parse_rss(SAMPLE_RSS)
+        entries = _parse_rss(ET.fromstring(SAMPLE_RSS))
         assert entries[0]["title"] == "First Post"
         assert entries[1]["title"] == "Second Post"
 
     def test_extracts_link(self):
-        entries = _parse_rss(SAMPLE_RSS)
+        entries = _parse_rss(ET.fromstring(SAMPLE_RSS))
         assert entries[0]["link"] == "https://example.com/first"
 
     def test_extracts_description(self):
-        entries = _parse_rss(SAMPLE_RSS)
+        entries = _parse_rss(ET.fromstring(SAMPLE_RSS))
         assert entries[0]["description"] == "Description of first post"
 
     def test_extracts_published(self):
-        entries = _parse_rss(SAMPLE_RSS)
+        entries = _parse_rss(ET.fromstring(SAMPLE_RSS))
         assert entries[0]["published"] == (
             "Mon, 01 Jan 2024 00:00:00 GMT"
         )
 
     def test_extracts_guid(self):
-        entries = _parse_rss(SAMPLE_RSS)
+        entries = _parse_rss(ET.fromstring(SAMPLE_RSS))
         assert entries[0]["guid"] == "https://example.com/first"
 
 
 class TestParseAtom:
     def test_extracts_all_entries(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert len(entries) == 2
 
     def test_extracts_title(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[0]["title"] == "Atom Entry One"
 
     def test_extracts_link_from_href(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[0]["link"] == "https://example.com/atom-one"
 
     def test_extracts_summary_as_description(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[0]["description"] == (
             "Summary of atom entry one"
         )
 
     def test_falls_back_to_content(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[1]["description"] == (
             "Content of atom entry two"
         )
 
     def test_extracts_updated_as_published(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[0]["published"] == "2024-01-01T00:00:00Z"
 
     def test_falls_back_to_published_date(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[1]["published"] == "2024-01-02T00:00:00Z"
 
     def test_extracts_id_as_guid(self):
-        entries = _parse_atom(SAMPLE_ATOM)
+        entries = _parse_atom(ET.fromstring(SAMPLE_ATOM))
         assert entries[0]["guid"] == "urn:uuid:entry-one"
 
 

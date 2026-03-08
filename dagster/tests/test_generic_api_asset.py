@@ -4,15 +4,13 @@ No database or network access required.
 """
 
 import pytest
-
 from d4bl_pipelines.assets.apis.generic_api import (
+    _build_headers,
+    _derive_record_key,
     _extract_path,
     _slugify,
-    _derive_record_key,
-    _build_headers,
     build_api_assets,
 )
-
 
 # ── _extract_path tests ──────────────────────────────────────────
 

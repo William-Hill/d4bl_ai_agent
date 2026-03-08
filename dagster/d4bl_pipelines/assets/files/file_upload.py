@@ -7,12 +7,18 @@ database via raw SQL.
 """
 
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from d4bl_pipelines.utils import (
+    INGESTED_RECORDS_UPSERT_SQL,
+    compute_content_hash,
+    db_session,
+    derive_record_key,
+    slugify,
+)
 from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
@@ -20,8 +26,6 @@ from dagster import (
     MetadataValue,
     asset,
 )
-
-from d4bl_pipelines.utils import compute_content_hash, db_session
 
 UPLOAD_ROOT = os.environ.get(
     "D4BL_UPLOAD_DIR", "/tmp/d4bl_uploads"
@@ -122,8 +126,8 @@ def build_file_upload_assets(
             os.path.join(UPLOAD_ROOT, source_id),
         )
 
-        # Sanitize the asset name (Dagster requires [A-Za-z0-9_])
-        asset_key = f"file_upload_{source_id.replace('-', '_')}"
+        # Use slugified source name for asset key (matches schedules/triggers)
+        asset_key = slugify(source_name)
 
         @asset(
             name=asset_key,
@@ -183,39 +187,29 @@ def build_file_upload_assets(
             db_url = context.resources.db_url
 
             records_ingested = 0
+            upsert_sql = text(INGESTED_RECORDS_UPSERT_SQL)
+            now = datetime.now(timezone.utc)
+
             async with db_session(db_url) as session:
-                for row in rows:
+                for idx, row in enumerate(rows):
+                    record_key = derive_record_key(
+                        row, idx, _source_id
+                    )
                     record_id = uuid.uuid5(
                         uuid.NAMESPACE_URL,
-                        f"file:{_source_id}:{content_hash}:"
-                        f"{records_ingested}",
+                        f"file:{_source_id}:{record_key}",
                     )
-                    upsert_sql = text("""
-                        INSERT INTO ingested_records
-                            (id, data_source_id, content_hash,
-                             raw_data, ingested_at)
-                        VALUES
-                            (CAST(:id AS UUID),
-                             CAST(:source_id AS UUID),
-                             :content_hash,
-                             CAST(:raw_data AS JSONB),
-                             :ingested_at)
-                        ON CONFLICT (id) DO UPDATE SET
-                            raw_data = CAST(:raw_data AS JSONB),
-                            ingested_at = :ingested_at
-                    """)
                     await session.execute(
                         upsert_sql,
                         {
                             "id": str(record_id),
                             "source_id": _source_id,
-                            "content_hash": content_hash,
-                            "raw_data": json.dumps(
+                            "record_key": record_key,
+                            "data": json.dumps(
                                 row, default=str
                             ),
-                            "ingested_at": datetime.now(
-                                timezone.utc
-                            ).isoformat(),
+                            "content_hash": content_hash,
+                            "ingested_at": now,
                         },
                     )
                     records_ingested += 1
@@ -231,11 +225,13 @@ def build_file_upload_assets(
 
                     ingestion_run_id = uuid.uuid4()
                     lineage_records = []
-                    for row_idx in range(records_ingested):
+                    for row_idx, row in enumerate(rows):
+                        rk = derive_record_key(
+                            row, row_idx, _source_id
+                        )
                         rid = uuid.uuid5(
                             uuid.NAMESPACE_URL,
-                            f"file:{_source_id}:"
-                            f"{content_hash}:{row_idx}",
+                            f"file:{_source_id}:{rk}",
                         )
                         lineage_records.append(
                             build_lineage_record(
@@ -264,9 +260,8 @@ def build_file_upload_assets(
                         f"lineage records"
                     )
                 except Exception as lineage_exc:
-                    logging.getLogger(__name__).warning(
-                        "Lineage recording failed: %s",
-                        lineage_exc,
+                    context.log.warning(
+                        f"Lineage recording failed: {lineage_exc}"
                     )
 
             context.log.info(

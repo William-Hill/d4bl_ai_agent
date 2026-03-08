@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 
 import sqlalchemy
-from dagster import AssetSelection, DefaultScheduleStatus, ScheduleDefinition
 
 from d4bl_pipelines.utils import slugify
+from dagster import AssetSelection, DefaultScheduleStatus, ScheduleDefinition
 
 logger = logging.getLogger(__name__)
 

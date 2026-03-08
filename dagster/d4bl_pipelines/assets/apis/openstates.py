@@ -7,12 +7,12 @@ for D4BL focus subjects and upserts into policy_bills table.
 
 import hashlib
 import json
-import logging
 import os
 import uuid
 from typing import Optional
 
 import aiohttp
+
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -431,9 +431,8 @@ async def openstates_bills(
                         f"lineage records"
                     )
                 except Exception as lineage_exc:
-                    logging.getLogger(__name__).warning(
-                        "Lineage recording failed: %s",
-                        lineage_exc,
+                    context.log.warning(
+                        f"Lineage recording failed: {lineage_exc}"
                     )
     finally:
         await engine.dispose()

@@ -9,14 +9,13 @@ LIKE queries on the ingested_records table.
 from functools import partial
 from typing import Any
 
+from d4bl_pipelines.utils import db_session, slugify
 from dagster import (
     AssetExecutionContext,
     AssetsDefinition,
     MaterializeResult,
     asset,
 )
-
-from d4bl_pipelines.utils import db_session, slugify
 
 # Backward-compatible alias for tests (keyword monitors use
 # "unnamed_monitor" as fallback)
@@ -32,6 +31,9 @@ def _build_keyword_query(
     ``data`` JSONB column (cast to text) for any keyword match using
     case-insensitive LIKE, scoped to the given source_ids.
     """
+    if not keywords or not source_ids:
+        return "WHERE FALSE", {}
+
     keyword_conditions = []
     params: dict[str, Any] = {}
 

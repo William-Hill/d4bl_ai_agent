@@ -4,14 +4,12 @@ No database or network access required.
 """
 
 import pytest
-
 from d4bl_pipelines.assets.mcp.mcp_source import (
     _build_jsonrpc_request,
     _extract_results,
     _slugify,
     build_mcp_assets,
 )
-
 
 # ── _slugify tests ───────────────────────────────────────────────
 

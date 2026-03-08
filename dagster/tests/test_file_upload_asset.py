@@ -3,12 +3,9 @@
 import csv
 import json
 import os
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
 from d4bl_pipelines.assets.files.file_upload import (
     ALLOWED_EXTENSIONS,
     _file_extension,
@@ -17,7 +14,6 @@ from d4bl_pipelines.assets.files.file_upload import (
     build_file_upload_assets,
 )
 from d4bl_pipelines.sensors import file_upload_sensor
-
 
 # ── helpers ──────────────────────────────────────────────────
 

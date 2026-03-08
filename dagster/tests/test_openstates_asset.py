@@ -1,9 +1,8 @@
 from d4bl_pipelines.assets.apis.openstates import (
-    openstates_bills,
     FOCUS_SUBJECTS,
     STATE_MAP,
-    STATUS_MAP,
     _map_status,
+    openstates_bills,
 )
 
 

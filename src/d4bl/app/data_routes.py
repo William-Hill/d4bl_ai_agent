@@ -5,7 +5,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import and_, desc, func, select
@@ -266,9 +266,14 @@ async def upload_file(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
+    # Sanitize filename - take only the basename, strip path components
+    raw_filename = file.filename or "upload"
+    safe_name = PurePosixPath(raw_filename).name
+    if not safe_name or safe_name.startswith('.'):
+        raise HTTPException(status_code=422, detail="Invalid filename")
+
     # Validate file extension
-    filename = file.filename or "upload"
-    ext = Path(filename).suffix.lstrip(".").lower()
+    ext = Path(safe_name).suffix.lstrip(".").lower()
     if ext not in ALLOWED_UPLOAD_EXTENSIONS:
         raise HTTPException(
             status_code=422,
@@ -283,11 +288,11 @@ async def upload_file(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     # Save file
-    dest = upload_dir / filename
+    dest = upload_dir / safe_name
     contents = await file.read()
     dest.write_bytes(contents)
 
-    return {"status": "uploaded", "filename": filename}
+    return {"status": "uploaded", "filename": safe_name}
 
 
 # ---------------------------------------------------------------------------
@@ -333,10 +338,10 @@ async def trigger_source(
     await db.flush()  # get the id
 
     try:
-        client = DagsterClient()
-        dagster_result = await client.trigger_run(asset_key)
-        run.dagster_run_id = dagster_result["run_id"]
-        run.status = "running"
+        async with DagsterClient() as client:
+            dagster_result = await client.trigger_run(asset_key)
+            run.dagster_run_id = dagster_result["run_id"]
+            run.status = "running"
     except DagsterClientError as exc:
         logger.error("Dagster trigger failed for source %s: %s", source_id, exc)
         run.status = "failed"
@@ -383,11 +388,13 @@ async def source_run_status(
 
     if last_run.dagster_run_id:
         try:
-            client = DagsterClient()
-            status_info = await client.get_run_status(last_run.dagster_run_id)
-            dagster_status = status_info["status"]
-            start_time = status_info.get("start_time")
-            end_time = status_info.get("end_time")
+            async with DagsterClient() as client:
+                status_info = await client.get_run_status(
+                    last_run.dagster_run_id
+                )
+                dagster_status = status_info["status"]
+                start_time = status_info.get("start_time")
+                end_time = status_info.get("end_time")
         except DagsterClientError as exc:
             logger.warning(
                 "Could not fetch Dagster status for run %s: %s",
@@ -411,8 +418,8 @@ async def reload_dagster(
 ):
     """Reload the Dagster repository location."""
     try:
-        client = DagsterClient()
-        result = await client.reload_repository()
+        async with DagsterClient() as client:
+            result = await client.reload_repository()
     except DagsterClientError as exc:
         logger.error("Dagster reload failed: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc))

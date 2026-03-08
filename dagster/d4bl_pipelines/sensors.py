@@ -4,22 +4,22 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Tuple
-
-from dagster import (
-    DefaultSensorStatus,
-    RunRequest,
-    SensorEvaluationContext,
-    SkipReason,
-    sensor,
-)
 
 from d4bl_pipelines.assets.files.file_upload import (
     ALLOWED_EXTENSIONS,
     UPLOAD_ROOT,
     _file_extension,
+)
+from d4bl_pipelines.utils import slugify
+from dagster import (
+    AssetKey,
+    DefaultSensorStatus,
+    RunRequest,
+    SensorEvaluationContext,
+    SkipReason,
+    sensor,
 )
 
 SENSOR_MIN_INTERVAL = 30  # seconds
@@ -77,9 +77,7 @@ def file_upload_sensor(context: SensorEvaluationContext):
             if seen_files.get(file_key) == file_mtime:
                 continue
 
-            asset_key = (
-                f"file_upload_{source_id.replace('-', '_')}"
-            )
+            asset_key = slugify(source_id)
             context.log.info(
                 f"New file detected: {filepath.name} "
                 f"for source {source_id}"
@@ -87,7 +85,7 @@ def file_upload_sensor(context: SensorEvaluationContext):
 
             yield RunRequest(
                 run_key=f"{file_key}:{file_mtime}",
-                asset_selection=[asset_key],
+                asset_selection=[AssetKey(asset_key)],
                 tags={
                     "source_id": source_id,
                     "file_name": filepath.name,
@@ -194,17 +192,11 @@ def vector_embedding_sensor(context: SensorEvaluationContext):
             f"(source_type={source_type})"
         )
         yield RunRequest(
-            run_key=f"embed:{run_id}",
+            run_key=f"embed_{run_id}_{completed_at}",
             run_config={
-                "ops": {
-                    "vector_embed": {
-                        "config": {
-                            "ingestion_run_id": run_id,
-                            "data_source_id": source_id,
-                            "source_type": source_type,
-                        }
-                    }
-                }
+                "ingestion_run_id": run_id,
+                "data_source_id": source_id,
+                "source_type": source_type,
             },
             tags={
                 "source_type": source_type,

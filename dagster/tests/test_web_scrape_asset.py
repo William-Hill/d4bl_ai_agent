@@ -3,13 +3,11 @@
 No database or network access required.
 """
 
-import pytest
 
 from d4bl_pipelines.assets.crawlers.web_scrape import (
     _slugify,
     build_web_scrape_assets,
 )
-
 
 # ── Sample data sources ─────────────────────────────────────────
 

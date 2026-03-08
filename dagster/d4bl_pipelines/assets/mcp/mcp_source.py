@@ -7,20 +7,12 @@ ingested_records table.
 """
 
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
-from dagster import (
-    AssetExecutionContext,
-    AssetsDefinition,
-    MaterializeResult,
-    MetadataValue,
-    asset,
-)
 
 from d4bl_pipelines.utils import (
     INGESTED_RECORDS_UPSERT_SQL,
@@ -28,6 +20,13 @@ from d4bl_pipelines.utils import (
     db_session,
     derive_record_key,
     slugify,
+)
+from dagster import (
+    AssetExecutionContext,
+    AssetsDefinition,
+    MaterializeResult,
+    MetadataValue,
+    asset,
 )
 
 # Backward-compatible aliases for tests
@@ -206,9 +205,8 @@ def _make_asset_fn(source_config: dict[str, Any]):
                     f"lineage records"
                 )
             except Exception as lineage_exc:
-                logging.getLogger(__name__).warning(
-                    "Lineage recording failed: %s",
-                    lineage_exc,
+                context.log.warning(
+                    f"Lineage recording failed: {lineage_exc}"
                 )
 
         context.log.info(

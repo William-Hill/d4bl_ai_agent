@@ -117,6 +117,12 @@ class DagsterClient:
             self._session = aiohttp.ClientSession()
         return self._session
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
     async def close(self) -> None:
         """Close the underlying HTTP session."""
         if self._session and not self._session.closed:

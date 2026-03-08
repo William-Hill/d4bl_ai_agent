@@ -8,25 +8,23 @@ results into the local ingested_records table.
 
 import hashlib
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-
-from dagster import (
-    AssetExecutionContext,
-    AssetsDefinition,
-    MaterializeResult,
-    MetadataValue,
-    asset,
-)
 
 from d4bl_pipelines.utils import (
     INGESTED_RECORDS_UPSERT_SQL,
     compute_content_hash,
     derive_record_key,
     slugify,
+)
+from dagster import (
+    AssetExecutionContext,
+    AssetsDefinition,
+    MaterializeResult,
+    MetadataValue,
+    asset,
 )
 
 # Backward-compatible aliases for tests
@@ -98,7 +96,7 @@ def _make_asset_fn(source_config: dict[str, Any]):
 
         try:
             # Resolve incremental placeholder
-            resolved_query = query
+            last_run = None
             if incremental and ":last_run" in query:
                 async with local_session_factory() as session:
                     last_run = await _get_last_run_time(
@@ -107,10 +105,6 @@ def _make_asset_fn(source_config: dict[str, Any]):
                 if last_run is None:
                     # No prior run -- use epoch as fallback
                     last_run = datetime(1970, 1, 1, tzinfo=timezone.utc)
-                resolved_query = query.replace(
-                    ":last_run",
-                    f"'{last_run.isoformat()}'",
-                )
 
             context.log.info(
                 f"Executing query on external DB for source "
@@ -119,8 +113,14 @@ def _make_asset_fn(source_config: dict[str, Any]):
             )
 
             # --- Execute query on external database ---
+            stmt = text(query)
             async with external_engine.connect() as conn:
-                result = await conn.execute(text(resolved_query))
+                if incremental and last_run is not None:
+                    result = await conn.execute(
+                        stmt, {"last_run": last_run}
+                    )
+                else:
+                    result = await conn.execute(stmt)
                 columns = list(result.keys())
                 rows = result.fetchall()
 
@@ -137,7 +137,7 @@ def _make_asset_fn(source_config: dict[str, Any]):
             now = datetime.now(timezone.utc)
             content_hash = compute_content_hash(records)
             query_hash = hashlib.sha256(
-                resolved_query.encode()
+                query.encode()
             ).hexdigest()[:32]
 
             upsert_sql = text(INGESTED_RECORDS_UPSERT_SQL)
@@ -210,9 +210,8 @@ def _make_asset_fn(source_config: dict[str, Any]):
                         f"lineage records"
                     )
                 except Exception as lineage_exc:
-                    logging.getLogger(__name__).warning(
-                        "Lineage recording failed: %s",
-                        lineage_exc,
+                    context.log.warning(
+                        f"Lineage recording failed: {lineage_exc}"
                     )
 
         finally:
