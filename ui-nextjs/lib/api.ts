@@ -1,7 +1,8 @@
 import { ResearchResult } from './types';
+import { createClient } from './supabase';
 
 // API base URL
-// Strategy: 
+// Strategy:
 // - Client-side (browser): Use NEXT_PUBLIC_API_URL to call API directly (browser can access localhost:8000)
 // - Server-side (SSR): Use API_INTERNAL_URL for Docker internal networking
 const getApiBase = () => {
@@ -21,6 +22,31 @@ const getApiBase = () => {
 
 export const API_BASE = getApiBase();
 export const WS_BASE = API_BASE.replace(/^http/, 'ws');
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (typeof window !== 'undefined') {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        };
+      }
+    } catch {
+      // Supabase not configured; proceed without auth headers
+    }
+  }
+  return { 'Content-Type': 'application/json' };
+}
+
+function handle401(response: Response): void {
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.location.href = '/login';
+    throw new Error('Authentication required');
+  }
+}
 
 export interface ResearchRequest {
   query: string;
@@ -76,11 +102,10 @@ export async function createResearchJob(
   selectedAgents?: string[],
   model?: string
 ): Promise<ResearchResponse> {
+  const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE}/api/research`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       query,
       summary_format: summaryFormat,
@@ -88,6 +113,8 @@ export async function createResearchJob(
       model,
     }),
   });
+
+  handle401(response);
 
   if (!response.ok) {
     const error = await response.json();
@@ -114,7 +141,11 @@ export async function getEvaluations(params?: {
   const queryString = search.toString();
   const url = queryString ? `${API_BASE}/api/evaluations?${queryString}` : `${API_BASE}/api/evaluations`;
 
-  const response = await fetch(url);
+  const headers = await getAuthHeaders();
+  const response = await fetch(url, { headers });
+
+  handle401(response);
+
   if (!response.ok) {
     throw new Error('Failed to fetch evaluations');
   }
@@ -123,7 +154,10 @@ export async function getEvaluations(params?: {
 }
 
 export async function getJobStatus(jobId: string): Promise<JobStatus> {
-  const response = await fetch(`${API_BASE}/api/jobs/${jobId}`);
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE}/api/jobs/${jobId}`, { headers });
+
+  handle401(response);
 
   if (!response.ok) {
     throw new Error('Failed to fetch job status');
@@ -141,12 +175,15 @@ export async function getJobHistory(
     page: page.toString(),
     page_size: pageSize.toString(),
   });
-  
+
   if (status) {
     params.append('status', status);
   }
 
-  const response = await fetch(`${API_BASE}/api/jobs?${params.toString()}`);
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE}/api/jobs?${params.toString()}`, { headers });
+
+  handle401(response);
 
   if (!response.ok) {
     throw new Error('Failed to fetch job history');
@@ -155,3 +192,13 @@ export async function getJobHistory(
   return response.json();
 }
 
+export async function getAuthToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
