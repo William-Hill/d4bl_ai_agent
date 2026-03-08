@@ -66,37 +66,41 @@ async def write_lineage_batch(
     from sqlalchemy import text
 
     count = 0
-    for rec in records:
-        await session.execute(
-            text("""
-                INSERT INTO data_lineage
-                    (id, ingestion_run_id, target_table, record_id,
-                     source_url, source_hash, transformation,
-                     quality_score, coverage_metadata, bias_flags, retrieved_at)
-                VALUES
-                    (CAST(:id AS UUID), CAST(:ingestion_run_id AS UUID),
-                     :target_table, CAST(:record_id AS UUID),
-                     :source_url, :source_hash,
-                     CAST(:transformation AS JSONB),
-                     :quality_score,
-                     CAST(:coverage_metadata AS JSONB),
-                     CAST(:bias_flags AS JSONB),
-                     :retrieved_at)
-            """),
-            {
-                "id": str(rec["id"]),
-                "ingestion_run_id": str(rec["ingestion_run_id"]),
-                "target_table": rec["target_table"],
-                "record_id": str(rec["record_id"]),
-                "source_url": rec["source_url"],
-                "source_hash": rec["source_hash"],
-                "transformation": json.dumps(rec["transformation"]) if rec["transformation"] is not None else None,
-                "quality_score": rec["quality_score"],
-                "coverage_metadata": json.dumps(rec["coverage_metadata"]) if rec["coverage_metadata"] is not None else None,
-                "bias_flags": json.dumps(rec["bias_flags"]) if rec["bias_flags"] is not None else None,
-                "retrieved_at": rec["retrieved_at"],
-            },
-        )
-        count += 1
-    await session.commit()
+    try:
+        for rec in records:
+            await session.execute(
+                text("""
+                    INSERT INTO data_lineage
+                        (id, ingestion_run_id, target_table, record_id,
+                         source_url, source_hash, transformation,
+                         quality_score, coverage_metadata, bias_flags, retrieved_at)
+                    VALUES
+                        (CAST(:id AS UUID), CAST(:ingestion_run_id AS UUID),
+                         :target_table, CAST(:record_id AS UUID),
+                         :source_url, :source_hash,
+                         CAST(:transformation AS JSONB),
+                         :quality_score,
+                         CAST(:coverage_metadata AS JSONB),
+                         CAST(:bias_flags AS JSONB),
+                         :retrieved_at)
+                """),
+                {
+                    "id": str(rec["id"]),
+                    "ingestion_run_id": str(rec["ingestion_run_id"]),
+                    "target_table": rec["target_table"],
+                    "record_id": str(rec["record_id"]),
+                    "source_url": rec["source_url"],
+                    "source_hash": rec["source_hash"],
+                    "transformation": json.dumps(rec["transformation"]) if rec["transformation"] is not None else None,
+                    "quality_score": rec["quality_score"],
+                    "coverage_metadata": json.dumps(rec["coverage_metadata"]) if rec["coverage_metadata"] is not None else None,
+                    "bias_flags": json.dumps(rec["bias_flags"]) if rec["bias_flags"] is not None else None,
+                    "retrieved_at": rec["retrieved_at"],
+                },
+            )
+            count += 1
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     return count
