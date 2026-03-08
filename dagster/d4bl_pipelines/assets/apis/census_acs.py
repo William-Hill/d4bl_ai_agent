@@ -7,6 +7,7 @@ from the Census Bureau API and upserts into census_indicators table.
 
 import hashlib
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -232,6 +233,54 @@ async def census_acs_indicators(
                         records_ingested += 1
 
             await session.commit()
+
+            # --- Lineage recording ---
+            try:
+                from d4bl_pipelines.quality.lineage import (
+                    build_lineage_record,
+                    write_lineage_batch,
+                )
+
+                ingestion_run_id = uuid.uuid4()
+                lineage_records = []
+                for fips in states_covered:
+                    for metric in METRIC_VARIABLES:
+                        rec_id = uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"census:lineage:{fips}:{year}:"
+                            f"{metric}",
+                        )
+                        lineage_records.append(
+                            build_lineage_record(
+                                ingestion_run_id=ingestion_run_id,
+                                target_table="census_indicators",
+                                record_id=rec_id,
+                                source_url=(
+                                    f"{CENSUS_BASE_URL}/{year}"
+                                    f"/acs/acs5"
+                                ),
+                                transformation={
+                                    "steps": [
+                                        "fetch_acs_api",
+                                        "compute_rate",
+                                        "upsert",
+                                    ]
+                                },
+                            )
+                        )
+                if lineage_records:
+                    await write_lineage_batch(
+                        session, lineage_records
+                    )
+                context.log.info(
+                    f"Wrote {len(lineage_records)} "
+                    f"lineage records"
+                )
+            except Exception as lineage_exc:
+                logging.getLogger(__name__).warning(
+                    "Lineage recording failed: %s",
+                    lineage_exc,
+                )
     finally:
         await engine.dispose()
 
