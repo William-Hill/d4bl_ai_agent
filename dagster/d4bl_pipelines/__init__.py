@@ -12,7 +12,10 @@ all_assets = load_assets_from_modules([asset_modules])
 try:
     schedules = load_schedules_from_db(get_db_url())
 except Exception:
-    logger.warning("Failed to load schedules from DB; starting with none")
+    logger.warning(
+        "Failed to load schedules from DB; starting with none",
+        exc_info=True,
+    )
     schedules = []
 
 defs = Definitions(

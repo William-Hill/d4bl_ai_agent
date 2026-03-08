@@ -163,9 +163,10 @@ def _make_asset_fn(source_config: dict[str, Any]):
         else:
             quality_score = 0.0
 
-        # Look up existing GUIDs to avoid duplicates
+        # Look up existing keys to avoid duplicates
         guids = [
-            e["guid"] or e.get("link", "") for e in entries
+            e.get("guid") or e.get("link") or f"_idx_{i}_{e.get('title', '')}"
+            for i, e in enumerate(entries)
         ]
         async with db_session(db_url) as session:
             if guids:
@@ -187,19 +188,23 @@ def _make_asset_fn(source_config: dict[str, Any]):
             else:
                 existing_keys = set()
 
+            # Build stable dedupe keys per entry — fall back to
+            # title+index when guid and link are both absent.
+            def _entry_key(entry: dict, idx: int) -> str:
+                key = entry.get("guid") or entry.get("link") or ""
+                if not key:
+                    key = f"_idx_{idx}_{entry.get('title', '')}"
+                return key
+
             new_entries = [
-                e for e in entries
-                if (e["guid"] or e.get("link", ""))
-                not in existing_keys
+                (e, _entry_key(e, i)) for i, e in enumerate(entries)
+                if _entry_key(e, i) not in existing_keys
             ]
 
             upsert_sql = text(INGESTED_RECORDS_UPSERT_SQL)
 
             now = datetime.now(timezone.utc)
-            for entry in new_entries:
-                record_key = entry["guid"] or entry.get(
-                    "link", ""
-                )
+            for entry, record_key in new_entries:
                 record_id = uuid.uuid5(
                     uuid.NAMESPACE_URL,
                     f"rss_feed:{source_id}:{record_key}",

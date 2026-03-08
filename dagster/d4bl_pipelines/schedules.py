@@ -59,7 +59,8 @@ def build_monitor_schedules(
         if not monitor.get("enabled", True):
             continue
 
-        slug = slugify(monitor["name"])
+        # Use "unnamed_monitor" fallback to match keyword_search asset builder
+        slug = slugify(monitor["name"], fallback="unnamed_monitor")
         schedules.append(
             ScheduleDefinition(
                 name=f"monitor_{slug}",
@@ -92,7 +93,7 @@ def load_schedules_from_db(db_url: str) -> list[ScheduleDefinition]:
                     sqlalchemy.text("SELECT * FROM data_sources")
                 )
                 data_sources = [dict(r._mapping) for r in rows]
-            except Exception:
+            except sqlalchemy.exc.ProgrammingError:
                 logger.info(
                     "data_sources table not found; skipping source schedules"
                 )
@@ -104,7 +105,7 @@ def load_schedules_from_db(db_url: str) -> list[ScheduleDefinition]:
                     sqlalchemy.text("SELECT * FROM keyword_monitors")
                 )
                 monitors = [dict(r._mapping) for r in rows]
-            except Exception:
+            except sqlalchemy.exc.ProgrammingError:
                 logger.info(
                     "keyword_monitors table not found; "
                     "skipping monitor schedules"

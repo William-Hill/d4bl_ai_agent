@@ -58,6 +58,18 @@ def file_upload_sensor(context: SensorEvaluationContext):
 
     new_seen = dict(seen_files)
 
+    # Build a mapping from source_id (directory name) to asset key.
+    # The sensor scans UUID-named directories, but file_upload assets
+    # are keyed by slugify(source_name).  We read asset metadata to
+    # find the correct mapping.  Fallback: use slugify(source_id).
+    source_id_to_asset_key: dict[str, str] = {}
+    for asset_def in context.repository_def.get_all_assets() if hasattr(context, "repository_def") else []:
+        for spec in getattr(asset_def, "specs_by_key", {}).values():
+            meta = spec.metadata or {}
+            sid = meta.get("source_id")
+            if sid and spec.group_name == "files":
+                source_id_to_asset_key[str(sid)] = spec.key.path[-1]
+
     for source_dir in upload_root.iterdir():
         if not source_dir.is_dir():
             continue
@@ -77,7 +89,10 @@ def file_upload_sensor(context: SensorEvaluationContext):
             if seen_files.get(file_key) == file_mtime:
                 continue
 
-            asset_key = slugify(source_id)
+            # Use metadata mapping when available, fall back to slugify
+            asset_key = source_id_to_asset_key.get(
+                source_id, slugify(source_id)
+            )
             context.log.info(
                 f"New file detected: {filepath.name} "
                 f"for source {source_id}"
@@ -125,7 +140,7 @@ def _get_recent_completed_runs(
         SELECT ir.id, ir.data_source_id, ds.source_type, ir.completed_at
         FROM ingestion_runs ir
         JOIN data_sources ds ON ds.id = ir.data_source_id
-        WHERE ir.status = 'success'
+        WHERE ir.status = 'completed'
           AND ir.completed_at > CAST(:since AS TIMESTAMPTZ)
           AND ds.source_type = ANY(CAST(:types AS VARCHAR[]))
         ORDER BY ir.completed_at ASC

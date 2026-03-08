@@ -58,18 +58,20 @@ def _parse_file(filepath: Path) -> tuple[list[dict], str]:
         import openpyxl
 
         wb = openpyxl.load_workbook(filepath, read_only=True)
-        ws = wb.active
-        data = list(ws.iter_rows(values_only=True))
-        if not data:
-            return [], "xlsx"
-        headers = [str(h) if h is not None else f"col_{i}"
-                   for i, h in enumerate(data[0])]
-        rows = [
-            dict(zip(headers, row))
-            for row in data[1:]
-        ]
-        wb.close()
-        return rows, "xlsx"
+        try:
+            ws = wb.active
+            data = list(ws.iter_rows(values_only=True))
+            if not data:
+                return [], "xlsx"
+            headers = [str(h) if h is not None else f"col_{i}"
+                       for i, h in enumerate(data[0])]
+            rows = [
+                dict(zip(headers, row))
+                for row in data[1:]
+            ]
+            return rows, "xlsx"
+        finally:
+            wb.close()
 
     elif ext == "json":
         with open(filepath, encoding="utf-8") as f:
@@ -77,7 +79,8 @@ def _parse_file(filepath: Path) -> tuple[list[dict], str]:
         if isinstance(payload, list):
             rows = payload
         elif isinstance(payload, dict) and "data" in payload:
-            rows = payload["data"]
+            data_val = payload["data"]
+            rows = data_val if isinstance(data_val, list) else [data_val]
         else:
             rows = [payload]
         return rows, "json"

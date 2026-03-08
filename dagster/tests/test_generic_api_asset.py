@@ -150,7 +150,8 @@ def test_build_headers_api_key_default_header(monkeypatch):
     assert headers["X-API-Key"] == "key789"
 
 
-def test_build_headers_missing_env_var():
+def test_build_headers_missing_env_var(monkeypatch):
+    monkeypatch.delenv("NONEXISTENT_VAR_XYZ", raising=False)
     config = {
         "auth": {
             "type": "bearer",
