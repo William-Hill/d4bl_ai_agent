@@ -1,8 +1,11 @@
 """Lineage record builder for D4BL data ingestion assets."""
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def build_lineage_record(
@@ -16,6 +19,22 @@ def build_lineage_record(
     coverage_metadata: dict[str, Any] | None = None,
     bias_flags: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build a lineage record dict for a single ingested row.
+
+    Args:
+        ingestion_run_id: UUID of the current ingestion run.
+        target_table: Name of the destination table (e.g. "census_indicators").
+        record_id: Primary-key UUID of the row being tracked.
+        source_url: URL the data was fetched from, if applicable.
+        source_hash: SHA-256 hex digest of the raw source payload.
+        transformation: Freeform dict describing transforms applied to the data.
+        quality_score: Numeric quality score (0.0 - 1.0) from quality checks.
+        coverage_metadata: Dict with demographic/geographic coverage details.
+        bias_flags: Dict with any detected bias or representativeness warnings.
+
+    Returns:
+        A dict ready to be passed to ``write_lineage_batch``.
+    """
     return {
         "id": uuid.uuid4(),
         "ingestion_run_id": ingestion_run_id,
@@ -32,7 +51,7 @@ def build_lineage_record(
 
 
 async def write_lineage_batch(
-    session,
+    session: AsyncSession,
     records: list[dict[str, Any]],
 ) -> int:
     """Write a batch of lineage records to the data_lineage table.
@@ -71,10 +90,10 @@ async def write_lineage_batch(
                 "record_id": str(rec["record_id"]),
                 "source_url": rec["source_url"],
                 "source_hash": rec["source_hash"],
-                "transformation": str(rec["transformation"]) if rec["transformation"] else None,
+                "transformation": json.dumps(rec["transformation"]) if rec["transformation"] else None,
                 "quality_score": rec["quality_score"],
-                "coverage_metadata": str(rec["coverage_metadata"]) if rec["coverage_metadata"] else None,
-                "bias_flags": str(rec["bias_flags"]) if rec["bias_flags"] else None,
+                "coverage_metadata": json.dumps(rec["coverage_metadata"]) if rec["coverage_metadata"] else None,
+                "bias_flags": json.dumps(rec["bias_flags"]) if rec["bias_flags"] else None,
                 "retrieved_at": rec["retrieved_at"],
             },
         )

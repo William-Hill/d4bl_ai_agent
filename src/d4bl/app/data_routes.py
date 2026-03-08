@@ -1,10 +1,12 @@
 """Data ingestion management endpoints — admin only."""
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from d4bl.app.auth import require_admin
 from d4bl.app.schemas import (
@@ -23,22 +25,35 @@ async def list_sources(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(DataSource).order_by(desc(DataSource.created_at))
+    # Subquery: latest started_at per data_source_id
+    latest_sub = (
+        select(
+            IngestionRun.data_source_id,
+            func.max(IngestionRun.started_at).label("max_started"),
+        )
+        .group_by(IngestionRun.data_source_id)
+        .subquery()
     )
-    sources = result.scalars().all()
+
+    lr = aliased(IngestionRun)
+    query = (
+        select(DataSource, lr)
+        .outerjoin(
+            latest_sub,
+            DataSource.id == latest_sub.c.data_source_id,
+        )
+        .outerjoin(
+            lr,
+            (lr.data_source_id == latest_sub.c.data_source_id)
+            & (lr.started_at == latest_sub.c.max_started),
+        )
+        .order_by(desc(DataSource.created_at))
+    )
+    result = await db.execute(query)
+    rows = result.all()
 
     responses = []
-    for source in sources:
-        # Get last run info
-        last_run_result = await db.execute(
-            select(IngestionRun)
-            .where(IngestionRun.data_source_id == source.id)
-            .order_by(desc(IngestionRun.started_at))
-            .limit(1)
-        )
-        last_run = last_run_result.scalar_one_or_none()
-
+    for source, last_run in rows:
         resp = DataSourceResponse(
             **source.to_dict(),
             last_run_status=last_run.status if last_run else None,
@@ -130,7 +145,24 @@ async def update_source(
 
     await db.commit()
     await db.refresh(source)
-    return DataSourceResponse(**source.to_dict())
+
+    last_run_result = await db.execute(
+        select(IngestionRun)
+        .where(IngestionRun.data_source_id == source.id)
+        .order_by(desc(IngestionRun.started_at))
+        .limit(1)
+    )
+    last_run = last_run_result.scalar_one_or_none()
+
+    return DataSourceResponse(
+        **source.to_dict(),
+        last_run_status=last_run.status if last_run else None,
+        last_run_at=(
+            last_run.started_at.isoformat()
+            if last_run and last_run.started_at
+            else None
+        ),
+    )
 
 
 @router.delete("/sources/{source_id}", status_code=204)
@@ -158,6 +190,11 @@ async def list_runs(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    if not 1 <= limit <= 100:
+        raise HTTPException(
+            status_code=422, detail="limit must be between 1 and 100"
+        )
+
     query = (
         select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(limit)
     )
@@ -180,9 +217,11 @@ async def data_overview(
     enabled = await db.execute(
         select(func.count(DataSource.id)).where(DataSource.enabled.is_(True))
     )
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
     recent_failures = await db.execute(
         select(func.count(IngestionRun.id)).where(
-            IngestionRun.status == "failed"
+            IngestionRun.status == "failed",
+            IngestionRun.started_at >= seven_days_ago,
         )
     )
 

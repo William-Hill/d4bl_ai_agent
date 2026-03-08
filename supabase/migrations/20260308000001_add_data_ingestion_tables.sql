@@ -40,6 +40,13 @@ CREATE POLICY "Admins can manage data sources"
             WHERE profiles.id = auth.uid()
             AND profiles.role = 'admin'
         )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
     );
 
 -- Ingestion Runs table
@@ -66,6 +73,13 @@ CREATE POLICY "Admins can manage ingestion runs"
     ON ingestion_runs
     FOR ALL
     USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    )
+    WITH CHECK (
         EXISTS (
             SELECT 1 FROM profiles
             WHERE profiles.id = auth.uid()
@@ -103,6 +117,13 @@ CREATE POLICY "Admins can manage data lineage"
             WHERE profiles.id = auth.uid()
             AND profiles.role = 'admin'
         )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
     );
 
 -- Keyword Monitors table
@@ -125,6 +146,13 @@ CREATE POLICY "Admins can manage keyword monitors"
     ON keyword_monitors
     FOR ALL
     USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    )
+    WITH CHECK (
         EXISTS (
             SELECT 1 FROM profiles
             WHERE profiles.id = auth.uid()

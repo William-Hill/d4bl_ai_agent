@@ -20,7 +20,7 @@ async def client():
 @pytest.mark.asyncio
 async def test_list_sources_requires_auth(client):
     resp = await client.get("/api/data/sources")
-    assert resp.status_code == 401 or resp.status_code == 403
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

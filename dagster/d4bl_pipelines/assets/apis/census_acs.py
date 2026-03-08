@@ -6,6 +6,7 @@ from the Census Bureau API and upserts into census_indicators table.
 """
 
 import hashlib
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -95,7 +96,8 @@ async def _fetch_acs(
     if api_key:
         params["key"] = api_key
 
-    async with session.get(url, params=params) as resp:
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with session.get(url, params=params, timeout=timeout) as resp:
         resp.raise_for_status()
         return await resp.json()
 
@@ -154,6 +156,7 @@ async def census_acs_indicators(
 
     if not rows or len(rows) < 2:
         context.log.warning("No data returned from Census API")
+        await engine.dispose()
         return MaterializeResult(
             metadata={
                 "records_ingested": 0,
@@ -165,66 +168,69 @@ async def census_acs_indicators(
     data_rows = rows[1:]
     state_col = headers.index("state")
 
-    async with async_session() as session:
-        for row in data_rows:
-            state_fips = row[state_col]
-            state_name = STATE_FIPS.get(
-                state_fips, f"Unknown ({state_fips})"
-            )
-            states_covered.append(state_fips)
+    try:
+        async with async_session() as session:
+            for row in data_rows:
+                state_fips = row[state_col]
+                state_name = STATE_FIPS.get(
+                    state_fips, f"Unknown ({state_fips})"
+                )
+                states_covered.append(state_fips)
 
-            for metric, race_vars in METRIC_VARIABLES.items():
-                for race, var_map in race_vars.items():
-                    races_covered.add(race)
-                    if "val" in var_map:
-                        val_idx = headers.index(var_map["val"])
-                        raw_val = row[val_idx]
-                        try:
-                            value = float(raw_val)
-                        except (ValueError, TypeError):
-                            continue
-                    else:
-                        num_idx = headers.index(var_map["num"])
-                        den_idx = headers.index(var_map["den"])
-                        value = _compute_rate(
-                            row[num_idx], row[den_idx]
+                for metric, race_vars in METRIC_VARIABLES.items():
+                    for race, var_map in race_vars.items():
+                        races_covered.add(race)
+                        if "val" in var_map:
+                            val_idx = headers.index(var_map["val"])
+                            raw_val = row[val_idx]
+                            try:
+                                value = float(raw_val)
+                            except (ValueError, TypeError):
+                                continue
+                        else:
+                            num_idx = headers.index(var_map["num"])
+                            den_idx = headers.index(var_map["den"])
+                            value = _compute_rate(
+                                row[num_idx], row[den_idx]
+                            )
+                            if value is None:
+                                continue
+
+                        record_id = uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"census:{state_fips}:{year}:{race}:{metric}",
                         )
-                        if value is None:
-                            continue
 
-                    record_id = uuid.uuid5(
-                        uuid.NAMESPACE_URL,
-                        f"census:{state_fips}:{year}:{race}:{metric}",
-                    )
+                        upsert_sql = text("""
+                            INSERT INTO census_indicators
+                                (id, fips_code, geography_type,
+                                 geography_name, state_fips, year,
+                                 race, metric, value)
+                            VALUES
+                                (CAST(:id AS UUID), :fips, 'state',
+                                 :name, :state_fips, :year,
+                                 :race, :metric, :value)
+                            ON CONFLICT (fips_code, year, race, metric)
+                            DO UPDATE SET value = :value
+                        """)
+                        await session.execute(
+                            upsert_sql,
+                            {
+                                "id": str(record_id),
+                                "fips": state_fips,
+                                "name": state_name,
+                                "state_fips": state_fips,
+                                "year": year,
+                                "race": race,
+                                "metric": metric,
+                                "value": value,
+                            },
+                        )
+                        records_ingested += 1
 
-                    upsert_sql = text("""
-                        INSERT INTO census_indicators
-                            (id, fips_code, geography_type,
-                             geography_name, state_fips, year,
-                             race, metric, value)
-                        VALUES
-                            (CAST(:id AS UUID), :fips, 'state',
-                             :name, :state_fips, :year,
-                             :race, :metric, :value)
-                        ON CONFLICT (fips_code, year, race, metric)
-                        DO UPDATE SET value = :value
-                    """)
-                    await session.execute(
-                        upsert_sql,
-                        {
-                            "id": str(record_id),
-                            "fips": state_fips,
-                            "name": state_name,
-                            "state_fips": state_fips,
-                            "year": year,
-                            "race": race,
-                            "metric": metric,
-                            "value": value,
-                        },
-                    )
-                    records_ingested += 1
-
-        await session.commit()
+            await session.commit()
+    finally:
+        await engine.dispose()
 
     # Compute coverage metadata
     all_fips = set(STATE_FIPS.keys())
@@ -237,13 +243,30 @@ async def census_acs_indicators(
     missing_races = all_races - races_covered
 
     content_hash = hashlib.sha256(
-        f"{year}:{sorted(states_covered)}:{records_ingested}"
+        f"{year}:{sorted(states_covered)}:{records_ingested}:"
+        f"{json.dumps(data_rows, sort_keys=True)}"
         .encode()
     ).hexdigest()[:32]
 
     context.log.info(
         f"Ingested {records_ingested} records "
         f"for {len(covered_fips)} states"
+    )
+
+    # Compute bias flags from coverage data
+    bias_flags = []
+    if missing_fips:
+        bias_flags.append(
+            f"missing_states: {len(missing_fips)} of "
+            f"{len(all_fips)} states not covered"
+        )
+    if missing_races:
+        bias_flags.append(
+            f"missing_races: {sorted(missing_races)}"
+        )
+    # Single-source concentration: all data comes from one API
+    bias_flags.append(
+        "single_source: all data from Census ACS 5-Year only"
     )
 
     return MaterializeResult(
@@ -263,6 +286,9 @@ async def census_acs_indicators(
             ),
             "source_url": (
                 f"{CENSUS_BASE_URL}/{year}/acs/acs5"
+            ),
+            "bias_flags": MetadataValue.json_serializable(
+                bias_flags
             ),
         }
     )

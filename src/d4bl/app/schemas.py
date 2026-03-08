@@ -190,6 +190,15 @@ class DataSourceUpdate(BaseModel):
     default_schedule: str | None = None
     enabled: bool | None = None
 
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
 
 class DataSourceResponse(BaseModel):
     id: str

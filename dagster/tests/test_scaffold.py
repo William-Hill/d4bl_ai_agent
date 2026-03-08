@@ -1,5 +1,4 @@
 # dagster/tests/test_scaffold.py
-from dagster import validate_run_config
 from d4bl_pipelines import defs
 
 

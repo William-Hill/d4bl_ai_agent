@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -9,12 +8,14 @@ from d4bl.infra.database import (
     IngestionRun,
     DataLineage,
     KeywordMonitor,
+    create_tables,
     get_db,
 )
 
 
 @pytest.fixture
 async def db_session():
+    await create_tables()
     async for session in get_db():
         yield session
 
@@ -40,8 +41,8 @@ async def test_data_source_create(db_session):
 
 
 @pytest.mark.asyncio
-async def test_data_source_types_enum(db_session):
-    """source_type must be one of the allowed values."""
+async def test_data_source_valid_types_persist(db_session):
+    """Valid source_type values can be persisted."""
     for stype in ["api", "file_upload", "web_scrape", "rss_feed", "database", "mcp"]:
         source = DataSource(
             name=f"Test {stype}",
