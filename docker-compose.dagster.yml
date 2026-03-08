@@ -1,0 +1,40 @@
+# docker-compose.dagster.yml
+# Usage: docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
+services:
+  dagster-webserver:
+    build:
+      context: ./dagster
+      dockerfile: Dockerfile
+    command: dagster-webserver -h 0.0.0.0 -p 3003
+    ports:
+      - "3003:3003"
+    environment:
+      DAGSTER_POSTGRES_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_DB:-postgres}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - d4bl-network
+
+  dagster-daemon:
+    build:
+      context: ./dagster
+      dockerfile: Dockerfile
+    command: dagster-daemon run
+    environment:
+      DAGSTER_POSTGRES_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_DB:-postgres}"
+    depends_on:
+      dagster-webserver:
+        condition: service_started
+    networks:
+      - d4bl-network
