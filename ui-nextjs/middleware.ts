@@ -1,6 +1,20 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+function copyCookies(source: NextResponse, target: NextResponse): void {
+  source.cookies.getAll().forEach(cookie => {
+    target.cookies.set(cookie.name, cookie.value, {
+      path: cookie.path,
+      domain: cookie.domain,
+      secure: cookie.secure,
+      httpOnly: cookie.httpOnly,
+      sameSite: cookie.sameSite,
+      maxAge: cookie.maxAge,
+      expires: cookie.expires,
+    });
+  });
+}
+
 export async function middleware(request: NextRequest) {
   // Skip auth if Supabase is not configured
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -49,17 +63,7 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     const redirectResponse = NextResponse.redirect(url);
-    supabaseResponse.cookies.getAll().forEach(cookie => {
-      redirectResponse.cookies.set(cookie.name, cookie.value, {
-        path: cookie.path,
-        domain: cookie.domain,
-        secure: cookie.secure,
-        httpOnly: cookie.httpOnly,
-        sameSite: cookie.sameSite,
-        maxAge: cookie.maxAge,
-        expires: cookie.expires,
-      });
-    });
+    copyCookies(supabaseResponse, redirectResponse);
     return redirectResponse;
   }
 
@@ -67,17 +71,7 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     const redirectResponse = NextResponse.redirect(url);
-    supabaseResponse.cookies.getAll().forEach(cookie => {
-      redirectResponse.cookies.set(cookie.name, cookie.value, {
-        path: cookie.path,
-        domain: cookie.domain,
-        secure: cookie.secure,
-        httpOnly: cookie.httpOnly,
-        sameSite: cookie.sameSite,
-        maxAge: cookie.maxAge,
-        expires: cookie.expires,
-      });
-    });
+    copyCookies(supabaseResponse, redirectResponse);
     return redirectResponse;
   }
 
