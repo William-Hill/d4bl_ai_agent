@@ -1,10 +1,23 @@
 """Shared test fixtures for D4BL tests."""
 
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from d4bl.app.auth import CurrentUser, get_current_user
+
+
+TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
+TEST_ADMIN_ID = "00000000-0000-0000-0000-000000000002"
+
+MOCK_USER = CurrentUser(
+    id=UUID(TEST_USER_ID), email="user@test.com", role="user"
+)
+MOCK_ADMIN = CurrentUser(
+    id=UUID(TEST_ADMIN_ID), email="admin@test.com", role="admin"
+)
 
 
 @pytest.fixture
@@ -65,3 +78,27 @@ def mock_ollama_embedding(sample_embedding):
     mock_response.status_code = 200
     mock_response.json.return_value = {"embedding": sample_embedding}
     return mock_response
+
+
+@pytest.fixture
+def override_auth():
+    """Override get_current_user dependency to bypass JWT auth in tests.
+
+    Yields the app so tests can add further overrides before making requests.
+    Clears all dependency overrides on teardown.
+    """
+    from d4bl.app.api import app
+
+    app.dependency_overrides[get_current_user] = lambda: MOCK_USER
+    yield app
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def override_admin_auth():
+    """Override get_current_user with an admin user for tests."""
+    from d4bl.app.api import app
+
+    app.dependency_overrides[get_current_user] = lambda: MOCK_ADMIN
+    yield app
+    app.dependency_overrides.pop(get_current_user, None)
