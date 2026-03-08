@@ -239,10 +239,7 @@ def _make_asset_fn(source_config: dict[str, Any]):
 
                 ingestion_run_id = uuid.uuid4()
                 lineage_records = []
-                for entry in new_entries:
-                    rk = entry["guid"] or entry.get(
-                        "link", ""
-                    )
+                for entry, rk in new_entries:
                     rid = uuid.uuid5(
                         uuid.NAMESPACE_URL,
                         f"rss_feed:{source_id}:{rk}",

@@ -63,7 +63,8 @@ def file_upload_sensor(context: SensorEvaluationContext):
     # are keyed by slugify(source_name).  We read asset metadata to
     # find the correct mapping.  Fallback: use slugify(source_id).
     source_id_to_asset_key: dict[str, str] = {}
-    for asset_def in context.repository_def.get_all_assets() if hasattr(context, "repository_def") else []:
+    repo_def = getattr(context, "repository_def", None)
+    for asset_def in (repo_def.get_all_assets() if repo_def is not None else []):
         for spec in getattr(asset_def, "specs_by_key", {}).values():
             meta = spec.metadata or {}
             sid = meta.get("source_id")
@@ -208,6 +209,7 @@ def vector_embedding_sensor(context: SensorEvaluationContext):
         )
         yield RunRequest(
             run_key=f"embed_{run_id}_{completed_at}",
+            job_name="vector_embedding_job",
             run_config={
                 "ingestion_run_id": run_id,
                 "data_source_id": source_id,
