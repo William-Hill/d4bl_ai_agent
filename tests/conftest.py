@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user
 
-
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_ADMIN_ID = "00000000-0000-0000-0000-000000000002"
 
@@ -85,20 +84,31 @@ def override_auth():
     """Override get_current_user dependency to bypass JWT auth in tests.
 
     Yields the app so tests can add further overrides before making requests.
-    Clears all dependency overrides on teardown.
+    Saves and restores the full override map on teardown to avoid leaks.
     """
     from d4bl.app.api import app
 
+    original_overrides = app.dependency_overrides.copy()
     app.dependency_overrides[get_current_user] = lambda: MOCK_USER
-    yield app
-    app.dependency_overrides.pop(get_current_user, None)
+    try:
+        yield app
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
 
 
 @pytest.fixture
 def override_admin_auth():
-    """Override get_current_user with an admin user for tests."""
+    """Override get_current_user with an admin user for tests.
+
+    Saves and restores the full override map on teardown to avoid leaks.
+    """
     from d4bl.app.api import app
 
+    original_overrides = app.dependency_overrides.copy()
     app.dependency_overrides[get_current_user] = lambda: MOCK_ADMIN
-    yield app
-    app.dependency_overrides.pop(get_current_user, None)
+    try:
+        yield app
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)

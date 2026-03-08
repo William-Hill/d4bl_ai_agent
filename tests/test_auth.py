@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import jwt
 import pytest
+from fastapi import HTTPException
 
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 
@@ -70,8 +70,6 @@ async def test_get_current_user_valid_token(mock_db):
 @pytest.mark.asyncio
 async def test_get_current_user_missing_header(mock_db):
     """Missing Authorization header raises 401."""
-    from fastapi import HTTPException
-
     request = _make_request(None)
     with pytest.raises(HTTPException) as exc_info:
         await get_current_user(request, mock_db)
@@ -81,8 +79,6 @@ async def test_get_current_user_missing_header(mock_db):
 @pytest.mark.asyncio
 async def test_get_current_user_expired_token(mock_db):
     """Expired JWT raises 401."""
-    from fastapi import HTTPException
-
     token = _make_token(exp_offset=-3600)
     request = _make_request(token)
     with pytest.raises(HTTPException) as exc_info:
@@ -101,9 +97,18 @@ async def test_require_admin_with_admin_user():
 @pytest.mark.asyncio
 async def test_require_admin_with_regular_user():
     """require_admin raises 403 for non-admin users."""
-    from fastapi import HTTPException
-
     user = CurrentUser(id=uuid4(), email="user@test.com", role="user")
     with pytest.raises(HTTPException) as exc_info:
         await require_admin(user)
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_missing_sub(mock_db):
+    """Token without sub claim raises 401."""
+    payload = {"email": "test@test.com", "exp": int(time.time()) + 3600, "aud": "authenticated"}
+    token = jwt.encode(payload, TEST_SECRET, algorithm="HS256")
+    request = _make_request(token)
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(request, mock_db)
+    assert exc_info.value.status_code == 401

@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 CREATE INDEX IF NOT EXISTS ix_profiles_role ON public.profiles(role);
 
 -- Auto-create profile on new auth.users signup
+-- Note: app.admin_email must be set as a PostgreSQL config variable
+-- (e.g., ALTER DATABASE yourdb SET app.admin_email = 'admin@example.com')
+-- for automatic admin detection. Otherwise, use scripts/bootstrap_admin.py
+-- to manually promote the first admin after invite.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -110,3 +114,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER set_profiles_updated_at
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- Drop legacy tenant_id column (replaced by user_id)
+ALTER TABLE public.research_jobs DROP COLUMN IF EXISTS tenant_id;

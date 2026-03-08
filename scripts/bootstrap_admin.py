@@ -24,7 +24,7 @@ async def main(email: str) -> None:
         sys.exit(1)
 
     # Invite the user
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{settings.supabase_url}/auth/v1/invite",
             json={"email": email},
@@ -44,8 +44,8 @@ async def main(email: str) -> None:
 
     # Set the user as admin in profiles
     if user_id:
-        async with httpx.AsyncClient() as client:
-            response = await client.patch(
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            patch_response = await client.patch(
                 f"{settings.supabase_url}/rest/v1/profiles?id=eq.{user_id}",
                 json={"role": "admin"},
                 headers={
@@ -55,6 +55,13 @@ async def main(email: str) -> None:
                     "Prefer": "return=minimal",
                 },
             )
+            if patch_response.status_code >= 400:
+                print(f"Warning: Failed to set admin role: {patch_response.text}")
+                print("User was invited but may need manual role assignment.")
+                sys.exit(1)
+    else:
+        print("Warning: No user ID returned from invite; cannot set admin role.")
+        sys.exit(1)
 
     print(f"Admin invitation sent to {email}")
     print("The user will receive an email with a link to set their password.")

@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 TEST_SECRET = "test-jwt-secret"
 TEST_USER_ID = str(uuid4())
-ADMIN_USER_ID = str(uuid4())
 
 
 def _make_token(sub: str, email: str = "test@example.com") -> str:

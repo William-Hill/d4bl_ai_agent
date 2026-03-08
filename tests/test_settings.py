@@ -265,12 +265,14 @@ def test_supabase_auth_settings(monkeypatch):
     monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-jwt-secret")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
     monkeypatch.setenv("ADMIN_EMAIL", "admin@example.com")
-    s = get_settings()
-    assert s.supabase_url == "https://test.supabase.co"
-    assert s.supabase_jwt_secret == "test-jwt-secret"
-    assert s.supabase_service_role_key == "test-service-key"
-    assert s.admin_email == "admin@example.com"
-    get_settings.cache_clear()
+    try:
+        s = get_settings()
+        assert s.supabase_url == "https://test.supabase.co"
+        assert s.supabase_jwt_secret == "test-jwt-secret"
+        assert s.supabase_service_role_key == "test-service-key"
+        assert s.admin_email == "admin@example.com"
+    finally:
+        get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------

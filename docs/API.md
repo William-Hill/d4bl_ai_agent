@@ -136,18 +136,34 @@ Check if the API is running.
 
 ## WebSocket API
 
+### WebSocket Authentication
+
+WebSocket connections require a valid Supabase JWT passed as a `token` query parameter.
+Unlike REST endpoints which use the `Authorization` header, WebSockets cannot easily
+send custom headers during the handshake, so the token is provided in the URL:
+
+```
+ws://localhost:8000/ws/{job_id}?token=<your-supabase-jwt-token>
+```
+
+If the token is missing or invalid, the server closes the connection with code `1008`.
+The server also verifies job ownership: non-admin users can only connect to their own jobs.
+
 ### Connect to Job Updates
 
 Connect to real-time updates for a specific job.
 
-**Endpoint**: `ws://localhost:8000/ws/{job_id}`
+**Endpoint**: `ws://localhost:8000/ws/{job_id}?token=<jwt>`
 
 **Path Parameters**:
 - `job_id` (string, required): Job identifier
 
+**Query Parameters**:
+- `token` (string, required): Valid Supabase JWT token
+
 **Connection**:
 ```javascript
-const ws = new WebSocket(`ws://localhost:8000/ws/${jobId}`);
+const ws = new WebSocket(`ws://localhost:8000/ws/${jobId}?token=${accessToken}`);
 
 ws.onopen = () => {
   console.log('Connected');

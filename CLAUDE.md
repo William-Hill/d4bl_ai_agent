@@ -108,7 +108,7 @@ User Browser → Next.js Frontend (3000)
 
 All configuration via environment variables. Key settings in `src/d4bl/settings.py`:
 
-```
+```bash
 OLLAMA_BASE_URL=http://localhost:11434
 CRAWL_PROVIDER=firecrawl|crawl4ai
 FIRECRAWL_API_KEY=...

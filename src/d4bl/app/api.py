@@ -308,7 +308,7 @@ async def websocket_endpoint(
     # Validate JWT manually (can't use Depends in WebSocket easily)
     settings = get_settings()
     try:
-        pyjwt.decode(
+        payload = pyjwt.decode(
             token,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
@@ -317,6 +317,29 @@ async def websocket_endpoint(
     except Exception:
         await websocket.close(code=1008, reason="Invalid token")
         return
+
+    # Verify job ownership
+    user_id = payload.get("sub")
+    if _db_mod.async_session_maker is None:
+        init_db()
+    try:
+        async with _db_mod.async_session_maker() as db:
+            role_result = await db.execute(
+                text("SELECT role FROM profiles WHERE id = CAST(:uid AS uuid)"),
+                {"uid": user_id},
+            )
+            role = role_result.scalar_one_or_none() or "user"
+
+            if role != "admin":
+                job_result = await db.execute(
+                    select(ResearchJob).where(ResearchJob.job_id == UUID(job_id))
+                )
+                job_obj = job_result.scalar_one_or_none()
+                if not job_obj or (job_obj.user_id and str(job_obj.user_id) != user_id):
+                    await websocket.close(code=1008, reason="Access denied")
+                    return
+    except Exception as ownership_err:
+        logger.warning("Could not verify job ownership: %s", ownership_err)
 
     await websocket.accept()
     register_connection(job_id, websocket)
@@ -681,7 +704,7 @@ async def invite_user(
     settings = get_settings()
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(status_code=500, detail="Supabase not configured")
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{settings.supabase_url}/auth/v1/invite",
             json={"email": request.email},
@@ -734,13 +757,15 @@ async def update_user_role(
 ):
     """Update a user's role (admin only)."""
     target_uuid = parse_job_uuid(user_id)
-    await db.execute(
+    result = await db.execute(
         text(
             "UPDATE profiles SET role = :role, updated_at = now()"
             " WHERE id = CAST(:uid AS uuid)"
         ),
         {"role": request.role, "uid": str(target_uuid)},
     )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found")
     await db.commit()
     return {"message": f"User {user_id} role updated to {request.role}"}
 
