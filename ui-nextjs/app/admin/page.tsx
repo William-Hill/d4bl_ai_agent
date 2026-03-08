@@ -35,6 +35,9 @@ export default function AdminPage() {
       });
       if (response.ok) {
         setUsers(await response.json());
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setError(data.detail || 'Failed to load users');
       }
     } catch {
       setError('Failed to load users');
@@ -114,7 +117,9 @@ export default function AdminPage() {
         <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
           <h2 className="text-lg font-semibold text-white mb-4">Invite User</h2>
           <form onSubmit={handleInvite} className="flex gap-3">
+            <label htmlFor="invite-email" className="sr-only">Email address</label>
             <input
+              id="invite-email"
               type="email"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
@@ -151,7 +156,9 @@ export default function AdminPage() {
                 <tr key={u.id} className="border-b border-[#404040] last:border-0">
                   <td className="px-4 py-3 text-white text-sm">{u.email}</td>
                   <td className="px-4 py-3">
+                    <label htmlFor={`role-${u.id}`} className="sr-only">Role for {u.email}</label>
                     <select
+                      id={`role-${u.id}`}
                       value={u.role}
                       onChange={(e) => handleRoleChange(u.id, e.target.value)}
                       className="bg-[#292929] border border-[#404040] rounded px-2 py-1
