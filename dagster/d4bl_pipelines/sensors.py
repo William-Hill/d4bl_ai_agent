@@ -121,6 +121,11 @@ EMBEDDING_SOURCE_TYPES = ("web_scrape", "rss_feed")
 
 EMBEDDING_SENSOR_INTERVAL = 60  # seconds
 
+# Job name that the vector embedding sensor targets.
+# This job must be defined separately (e.g. via define_asset_job)
+# before enabling the sensor.
+VECTOR_EMBEDDING_JOB = "vector_embedding_job"
+
 
 def _get_recent_completed_runs(
     db_url: str,
@@ -209,7 +214,7 @@ def vector_embedding_sensor(context: SensorEvaluationContext):
         )
         yield RunRequest(
             run_key=f"embed_{run_id}_{completed_at}",
-            job_name="vector_embedding_job",
+            job_name=VECTOR_EMBEDDING_JOB,
             run_config={
                 "ingestion_run_id": run_id,
                 "data_source_id": source_id,

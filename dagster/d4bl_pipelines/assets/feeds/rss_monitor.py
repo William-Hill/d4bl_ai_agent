@@ -196,9 +196,12 @@ def _make_asset_fn(source_config: dict[str, Any]):
                     key = f"_idx_{idx}_{entry.get('title', '')}"
                 return key
 
-            new_entries = [
+            keyed_entries = [
                 (e, _entry_key(e, i)) for i, e in enumerate(entries)
-                if _entry_key(e, i) not in existing_keys
+            ]
+            new_entries = [
+                (e, key) for e, key in keyed_entries
+                if key not in existing_keys
             ]
 
             upsert_sql = text(INGESTED_RECORDS_UPSERT_SQL)
