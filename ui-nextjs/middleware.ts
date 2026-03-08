@@ -8,10 +8,11 @@ export async function middleware(request: NextRequest) {
     if (process.env.NODE_ENV === 'development') {
       return NextResponse.next({ request });
     }
-    // In production, redirect to login page
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
+    // In production, return an error response to avoid redirect loops
+    return new NextResponse(
+      'Supabase authentication is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.',
+      { status: 503, headers: { 'Content-Type': 'text/plain' } }
+    );
   }
 
   let supabaseResponse = NextResponse.next({ request });

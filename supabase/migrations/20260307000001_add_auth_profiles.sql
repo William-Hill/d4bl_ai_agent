@@ -115,5 +115,7 @@ CREATE TRIGGER set_profiles_updated_at
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
--- Drop legacy tenant_id column (replaced by user_id)
-ALTER TABLE public.research_jobs DROP COLUMN IF EXISTS tenant_id;
+-- Note: tenant_id is kept for now. A separate data migration should backfill
+-- user_id from tenant_id for existing rows before tenant_id is dropped.
+-- Once all rows have user_id populated, run:
+--   ALTER TABLE public.research_jobs DROP COLUMN IF EXISTS tenant_id;

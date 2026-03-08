@@ -24,16 +24,20 @@ async def main(email: str) -> None:
         sys.exit(1)
 
     # Invite the user
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{settings.supabase_url}/auth/v1/invite",
-            json={"email": email},
-            headers={
-                "apikey": settings.supabase_service_role_key,
-                "Authorization": f"Bearer {settings.supabase_service_role_key}",
-                "Content-Type": "application/json",
-            },
-        )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{settings.supabase_url}/auth/v1/invite",
+                json={"email": email},
+                headers={
+                    "apikey": settings.supabase_service_role_key,
+                    "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+    except httpx.RequestError as exc:
+        print(f"Error connecting to Supabase: {exc}")
+        sys.exit(1)
 
     if response.status_code >= 400:
         print(f"Error inviting user: {response.text}")
@@ -42,8 +46,12 @@ async def main(email: str) -> None:
     user_data = response.json()
     user_id = user_data.get("id")
 
+    if not user_id:
+        print("Warning: No user ID returned from invite; cannot set admin role.")
+        sys.exit(1)
+
     # Set the user as admin in profiles
-    if user_id:
+    try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             patch_response = await client.patch(
                 f"{settings.supabase_url}/rest/v1/profiles?id=eq.{user_id}",
@@ -55,12 +63,14 @@ async def main(email: str) -> None:
                     "Prefer": "return=minimal",
                 },
             )
-            if patch_response.status_code >= 400:
-                print(f"Warning: Failed to set admin role: {patch_response.text}")
-                print("User was invited but may need manual role assignment.")
-                sys.exit(1)
-    else:
-        print("Warning: No user ID returned from invite; cannot set admin role.")
+    except httpx.RequestError as exc:
+        print(f"Error connecting to Supabase: {exc}")
+        print("User was invited but may need manual role assignment.")
+        sys.exit(1)
+
+    if patch_response.status_code >= 400:
+        print(f"Warning: Failed to set admin role: {patch_response.text}")
+        print("User was invited but may need manual role assignment.")
         sys.exit(1)
 
     print(f"Admin invitation sent to {email}")

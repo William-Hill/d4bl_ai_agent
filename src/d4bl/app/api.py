@@ -335,11 +335,13 @@ async def websocket_endpoint(
                     select(ResearchJob).where(ResearchJob.job_id == UUID(job_id))
                 )
                 job_obj = job_result.scalar_one_or_none()
-                if not job_obj or (job_obj.user_id and str(job_obj.user_id) != user_id):
+                if not job_obj or str(job_obj.user_id or "") != user_id:
                     await websocket.close(code=1008, reason="Access denied")
                     return
     except Exception as ownership_err:
         logger.warning("Could not verify job ownership: %s", ownership_err)
+        await websocket.close(code=1008, reason="Access denied")
+        return
 
     await websocket.accept()
     register_connection(job_id, websocket)
@@ -757,6 +759,28 @@ async def update_user_role(
 ):
     """Update a user's role (admin only)."""
     target_uuid = parse_job_uuid(user_id)
+
+    # Prevent demoting the last admin
+    if request.role != "admin":
+        count_result = await db.execute(
+            text("SELECT count(*) FROM profiles WHERE role = 'admin'")
+        )
+        admin_count = count_result.scalar_one()
+        if admin_count <= 1:
+            # Check if target is currently an admin
+            target_result = await db.execute(
+                text(
+                    "SELECT role FROM profiles WHERE id = CAST(:uid AS uuid)"
+                ),
+                {"uid": str(target_uuid)},
+            )
+            target_role = target_result.scalar_one_or_none()
+            if target_role == "admin":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Cannot demote the last admin",
+                )
+
     result = await db.execute(
         text(
             "UPDATE profiles SET role = :role, updated_at = now()"
