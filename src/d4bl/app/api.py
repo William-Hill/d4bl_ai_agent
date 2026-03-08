@@ -12,14 +12,17 @@ from datetime import datetime
 from functools import lru_cache
 from uuid import UUID
 
+import jwt as pyjwt
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.schemas import (
     EvaluationResultItem,
     IndicatorItem,
+    InviteRequest,
     JobHistoryResponse,
     JobStatus,
     PolicyBillItem,
@@ -29,6 +32,8 @@ from d4bl.app.schemas import (
     ResearchRequest,
     ResearchResponse,
     StateSummaryItem,
+    UpdateRoleRequest,
+    UserProfile,
 )
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 from d4bl.infra import database as _db_mod
@@ -151,7 +156,11 @@ async def list_models():
 
 
 @app.post("/api/research", response_model=ResearchResponse)
-async def create_research(request: ResearchRequest, db: AsyncSession = Depends(get_db)):
+async def create_research(
+    request: ResearchRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Create a new research job"""
     try:
         # Create job in database
@@ -160,7 +169,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             summary_format=request.summary_format,
             status="pending",
             progress="Job created, waiting to start...",
-            tenant_id=_settings.tenant_id,
+            user_id=user.id,
         )
         db.add(job)
         await db.commit()
@@ -194,10 +203,16 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
+async def get_job_status(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get the status of a research job"""
     job_uuid = parse_job_uuid(job_id)
     job = await fetch_research_job(db, job_uuid)
+    if not user.is_admin and job.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
     return JobStatus(**job.to_dict())
 
 
@@ -206,7 +221,8 @@ async def get_job_history(
     page: int = 1,
     page_size: int = 20,
     status: str | None = None,
-    db: AsyncSession = Depends(get_db)
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get paginated job history"""
     try:
@@ -214,8 +230,8 @@ async def get_job_history(
         filters = []
         if status:
             filters.append(ResearchJob.status == status)
-        if _settings.tenant_id:
-            filters.append(ResearchJob.tenant_id == _settings.tenant_id)
+        if not user.is_admin:
+            filters.append(ResearchJob.user_id == user.id)
 
         query = select(ResearchJob)
         count_query = select(func.count(ResearchJob.job_id))
@@ -254,6 +270,7 @@ async def get_evaluations(
     span_id: str | None = None,
     eval_name: str | None = None,
     limit: int = 100,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Return recent evaluation results for display in the UI."""
@@ -281,8 +298,51 @@ async def get_evaluations(
 
 
 @app.websocket("/ws/{job_id}")
-async def websocket_endpoint(websocket: WebSocket, job_id: str):
+async def websocket_endpoint(
+    websocket: WebSocket, job_id: str, token: str | None = None
+):
     """WebSocket endpoint for real-time progress updates"""
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+    # Validate JWT manually (can't use Depends in WebSocket easily)
+    settings = get_settings()
+    try:
+        payload = pyjwt.decode(
+            token,
+            settings.supabase_jwt_secret,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    # Verify job ownership
+    user_id = payload.get("sub")
+    if _db_mod.async_session_maker is None:
+        init_db()
+    try:
+        async with _db_mod.async_session_maker() as db:
+            role_result = await db.execute(
+                text("SELECT role FROM profiles WHERE id = CAST(:uid AS uuid)"),
+                {"uid": user_id},
+            )
+            role = role_result.scalar_one_or_none() or "user"
+
+            if role != "admin":
+                job_result = await db.execute(
+                    select(ResearchJob).where(ResearchJob.job_id == UUID(job_id))
+                )
+                job_obj = job_result.scalar_one_or_none()
+                if not job_obj or str(job_obj.user_id or "") != user_id:
+                    await websocket.close(code=1008, reason="Access denied")
+                    return
+    except Exception as ownership_err:
+        logger.warning("Could not verify job ownership: %s", ownership_err)
+        await websocket.close(code=1008, reason="Access denied")
+        return
+
     await websocket.accept()
     register_connection(job_id, websocket)
 
@@ -363,6 +423,7 @@ async def search_similar_content(
     job_id: str | None = Body(None, embed=True, description="Optional job ID to filter results"),
     limit: int = Body(10, embed=True, ge=1, le=50, description="Maximum number of results"),
     similarity_threshold: float = Body(0.7, embed=True, ge=0.0, le=1.0, description="Minimum cosine similarity score"),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -406,6 +467,7 @@ async def search_similar_content(
 async def get_scraped_content_by_job(
     job_id: str,
     limit: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -438,6 +500,7 @@ async def get_scraped_content_by_job(
 @app.post("/api/query", response_model=QueryResponse)
 async def natural_language_query(
     request: QueryRequest,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Query research data using natural language.
@@ -481,6 +544,7 @@ async def get_indicators(
     race: str | None = None,
     year: int | None = None,
     limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get Census ACS indicators, optionally filtered."""
@@ -525,6 +589,7 @@ async def get_policies(
     topic: str | None = None,
     session: str | None = None,
     limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get policy bills, optionally filtered."""
@@ -565,7 +630,10 @@ async def get_policies(
 
 
 @app.get("/api/explore/states", response_model=list[StateSummaryItem])
-async def get_states_summary(db: AsyncSession = Depends(get_db)):
+async def get_states_summary(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Summarize available data per state for choropleth coloring."""
     try:
         # Aggregate metrics available per state
@@ -619,6 +687,111 @@ async def get_states_summary(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error("Error fetching state summary: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching state summary") from e
+
+
+@app.get("/api/auth/me")
+async def get_me(user: CurrentUser = Depends(get_current_user)):
+    """Return the authenticated user's profile info."""
+    return {"id": str(user.id), "email": user.email, "role": user.role}
+
+
+@app.post("/api/admin/invite")
+async def invite_user(
+    request: InviteRequest,
+    user: CurrentUser = Depends(require_admin),
+):
+    """Invite a new user by email (admin only)."""
+    import httpx
+
+    settings = get_settings()
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{settings.supabase_url}/auth/v1/invite",
+            json={"email": request.email},
+            headers={
+                "apikey": settings.supabase_service_role_key,
+                "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                "Content-Type": "application/json",
+            },
+        )
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code, detail="Failed to invite user"
+        )
+    return {"message": f"Invitation sent to {request.email}"}
+
+
+@app.get("/api/admin/users", response_model=list[UserProfile])
+async def list_users(
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all user profiles (admin only)."""
+    result = await db.execute(
+        text(
+            "SELECT id, email, role, display_name, created_at"
+            " FROM profiles ORDER BY created_at"
+        )
+    )
+    rows = result.mappings().all()
+    return [
+        UserProfile(
+            id=str(row["id"]),
+            email=row["email"],
+            role=row["role"],
+            display_name=row["display_name"],
+            created_at=(
+                row["created_at"].isoformat() if row["created_at"] else None
+            ),
+        )
+        for row in rows
+    ]
+
+
+@app.patch("/api/admin/users/{user_id}")
+async def update_user_role(
+    user_id: str,
+    request: UpdateRoleRequest,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a user's role (admin only)."""
+    target_uuid = parse_job_uuid(user_id)
+
+    # Prevent demoting the last admin
+    if request.role != "admin":
+        count_result = await db.execute(
+            text("SELECT count(*) FROM profiles WHERE role = 'admin'")
+        )
+        admin_count = count_result.scalar_one()
+        if admin_count <= 1:
+            # Check if target is currently an admin
+            target_result = await db.execute(
+                text(
+                    "SELECT role FROM profiles WHERE id = CAST(:uid AS uuid)"
+                ),
+                {"uid": str(target_uuid)},
+            )
+            target_role = target_result.scalar_one_or_none()
+            if target_role == "admin":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Cannot demote the last admin",
+                )
+
+    result = await db.execute(
+        text(
+            "UPDATE profiles SET role = :role, updated_at = now()"
+            " WHERE id = CAST(:uid AS uuid)"
+        ),
+        {"role": request.role, "uid": str(target_uuid)},
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.commit()
+    return {"message": f"User {user_id} role updated to {request.role}"}
 
 
 if __name__ == "__main__":

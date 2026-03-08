@@ -9,7 +9,45 @@ This document describes the REST API and WebSocket endpoints for the D4BL Resear
 
 ## Authentication
 
-Currently, no authentication is required. For production deployments, implement authentication.
+All API endpoints require a valid Supabase JWT token, except for public endpoints listed below.
+
+### Auth Header
+
+Include a Bearer token in the `Authorization` header for all protected requests:
+
+```
+Authorization: Bearer <your-supabase-jwt-token>
+```
+
+### Public Endpoints (No Auth Required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Root / welcome |
+| GET | `/api/health` | Health check |
+| GET | `/api/models` | List available models |
+
+### Protected Endpoints (Auth Required)
+
+All other endpoints require a valid JWT. The token is verified against `SUPABASE_JWT_SECRET`. If the token is missing or invalid, the API returns `401 Unauthorized`.
+
+### Admin Endpoints
+
+Endpoints that modify system configuration or manage users require the `admin` role. If a non-admin user attempts to access these endpoints, the API returns `403 Forbidden`.
+
+### Obtaining a Token
+
+Authenticate via Supabase Auth (email/password, OAuth, etc.) to receive a JWT. The frontend uses `@supabase/supabase-js` to manage sessions automatically. For API-only access:
+
+```bash
+# Example: get a token via Supabase REST API
+curl -X POST 'https://your-project.supabase.co/auth/v1/token?grant_type=password' \
+  -H 'apikey: your-anon-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "user@example.com", "password": "your-password"}'
+```
+
+The response includes an `access_token` to use as the Bearer token.
 
 ## REST API Endpoints
 
@@ -98,18 +136,34 @@ Check if the API is running.
 
 ## WebSocket API
 
+### WebSocket Authentication
+
+WebSocket connections require a valid Supabase JWT passed as a `token` query parameter.
+Unlike REST endpoints which use the `Authorization` header, WebSockets cannot easily
+send custom headers during the handshake, so the token is provided in the URL:
+
+```
+ws://localhost:8000/ws/{job_id}?token=<your-supabase-jwt-token>
+```
+
+If the token is missing or invalid, the server closes the connection with code `1008`.
+The server also verifies job ownership: non-admin users can only connect to their own jobs.
+
 ### Connect to Job Updates
 
 Connect to real-time updates for a specific job.
 
-**Endpoint**: `ws://localhost:8000/ws/{job_id}`
+**Endpoint**: `ws://localhost:8000/ws/{job_id}?token=<jwt>`
 
 **Path Parameters**:
 - `job_id` (string, required): Job identifier
 
+**Query Parameters**:
+- `token` (string, required): Valid Supabase JWT token
+
 **Connection**:
 ```javascript
-const ws = new WebSocket(`ws://localhost:8000/ws/${jobId}`);
+const ws = new WebSocket(`ws://localhost:8000/ws/${jobId}?token=${accessToken}`);
 
 ws.onopen = () => {
   console.log('Connected');
@@ -560,7 +614,6 @@ Common HTTP status codes:
 ## Future API Enhancements
 
 See [Future Work](FUTURE_WORK.md) for planned API improvements including:
-- Authentication and authorization
 - Rate limiting
 - Webhook support
 - Batch job processing

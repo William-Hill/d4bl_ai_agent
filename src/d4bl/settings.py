@@ -56,8 +56,11 @@ class Settings:
     llm_model: str = field(init=False)
     llm_api_key: str | None = field(init=False)
 
-    # -- Multi-tenancy --
-    tenant_id: str | None = field(init=False)
+    # -- Supabase Auth --
+    supabase_url: str | None = field(init=False)
+    supabase_jwt_secret: str | None = field(init=False)
+    supabase_service_role_key: str | None = field(init=False)
+    admin_email: str | None = field(init=False)
 
     def __post_init__(self) -> None:
         def _set(name: str, value: object) -> None:
@@ -139,8 +142,11 @@ class Settings:
         _set("llm_model", os.getenv("LLM_MODEL", "mistral"))
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
 
-        # Multi-tenancy
-        _set("tenant_id", os.getenv("TENANT_ID"))
+        # Supabase Auth
+        _set("supabase_url", os.getenv("SUPABASE_URL"))
+        _set("supabase_jwt_secret", os.getenv("SUPABASE_JWT_SECRET"))
+        _set("supabase_service_role_key", os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+        _set("admin_email", os.getenv("ADMIN_EMAIL"))
 
 
 @lru_cache(maxsize=1)

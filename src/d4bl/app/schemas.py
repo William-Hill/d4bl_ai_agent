@@ -139,3 +139,29 @@ class StateSummaryItem(BaseModel):
     bill_count: int
     latest_year: int | None = None
 
+
+# --- Admin models ---
+
+
+class InviteRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def email_not_blank(cls, v: str) -> str:
+        if not v or not v.strip() or "@" not in v:
+            raise ValueError("Valid email required")
+        return v.strip()
+
+
+class UserProfile(BaseModel):
+    id: str
+    email: str
+    role: str
+    display_name: str | None = None
+    created_at: str | None = None
+
+
+class UpdateRoleRequest(BaseModel):
+    role: Literal["user", "admin"]
+

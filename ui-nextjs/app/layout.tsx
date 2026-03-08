@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthProvider } from "@/lib/auth-context";
+import NavBar from "@/components/NavBar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,24 +40,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#292929]`}
       >
-        <nav className="border-b border-[#404040] bg-[#1a1a1a] px-6 py-3 flex items-center gap-8">
-          <span className="font-bold text-[#00ff32] text-lg tracking-tight">
-            D4BL
-          </span>
-          <Link
-            href="/"
-            className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors"
-          >
-            Research
-          </Link>
-          <Link
-            href="/explore"
-            className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors"
-          >
-            Explore Data
-          </Link>
-        </nav>
-        {children}
+        <AuthProvider>
+          <NavBar />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

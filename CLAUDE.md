@@ -60,6 +60,7 @@ python scripts/run_vector_migration.py       # Run migrations
 python scripts/ingest_census_acs.py          # Ingest Census ACS indicator data
 python scripts/ingest_openstates.py          # Ingest OpenStates legislative bills
 python scripts/run_evals.py                  # Run LLM evaluations on completed jobs
+python scripts/bootstrap_admin.py admin@example.com  # Bootstrap first admin user
 ```
 
 ## Architecture
@@ -107,7 +108,7 @@ User Browser → Next.js Frontend (3000)
 
 All configuration via environment variables. Key settings in `src/d4bl/settings.py`:
 
-```
+```bash
 OLLAMA_BASE_URL=http://localhost:11434
 CRAWL_PROVIDER=firecrawl|crawl4ai
 FIRECRAWL_API_KEY=...
@@ -116,6 +117,27 @@ CRAWL4AI_BASE_URL=http://crawl4ai:11235
 LANGFUSE_HOST=http://localhost:3002
 CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres
+```
+
+## Authentication
+
+All API endpoints (except `/`, `/api/health`, `/api/models`) require a valid Supabase JWT in the `Authorization: Bearer <token>` header.
+
+### Auth Environment Variables
+
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_JWT_SECRET=your-jwt-secret
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+ADMIN_EMAIL=first-admin@example.com
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+### Bootstrap Admin
+
+```bash
+python scripts/bootstrap_admin.py admin@example.com
 ```
 
 ## Code Style
