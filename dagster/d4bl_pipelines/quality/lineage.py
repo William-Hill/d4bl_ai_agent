@@ -28,7 +28,7 @@ def build_lineage_record(
         source_url: URL the data was fetched from, if applicable.
         source_hash: SHA-256 hex digest of the raw source payload.
         transformation: Freeform dict describing transforms applied to the data.
-        quality_score: Numeric quality score (0.0 - 1.0) from quality checks.
+        quality_score: Numeric quality score (1-5 scale) from quality checks.
         coverage_metadata: Dict with demographic/geographic coverage details.
         bias_flags: Dict with any detected bias or representativeness warnings.
 
@@ -90,10 +90,10 @@ async def write_lineage_batch(
                 "record_id": str(rec["record_id"]),
                 "source_url": rec["source_url"],
                 "source_hash": rec["source_hash"],
-                "transformation": json.dumps(rec["transformation"]) if rec["transformation"] else None,
+                "transformation": json.dumps(rec["transformation"]) if rec["transformation"] is not None else None,
                 "quality_score": rec["quality_score"],
-                "coverage_metadata": json.dumps(rec["coverage_metadata"]) if rec["coverage_metadata"] else None,
-                "bias_flags": json.dumps(rec["bias_flags"]) if rec["bias_flags"] else None,
+                "coverage_metadata": json.dumps(rec["coverage_metadata"]) if rec["coverage_metadata"] is not None else None,
+                "bias_flags": json.dumps(rec["bias_flags"]) if rec["bias_flags"] is not None else None,
                 "retrieved_at": rec["retrieved_at"],
             },
         )

@@ -5,6 +5,7 @@ from dagster import ResourceDefinition
 
 
 def get_db_url() -> str:
+    """Build async PostgreSQL connection URL from environment variables."""
     host = os.environ.get("POSTGRES_HOST", "localhost")
     port = os.environ.get("POSTGRES_PORT", "5432")
     user = os.environ.get("POSTGRES_USER", "postgres")

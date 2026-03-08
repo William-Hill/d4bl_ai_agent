@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy import select
 
 from d4bl.infra.database import (
+    DataLineage,
     DataSource,
     IngestionRun,
-    DataLineage,
     KeywordMonitor,
     create_tables,
     get_db,

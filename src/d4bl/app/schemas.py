@@ -226,3 +226,11 @@ class IngestionRunResponse(BaseModel):
     completed_at: str | None
     error_detail: str | None
 
+
+class DataOverviewResponse(BaseModel):
+    """High-level statistics for the data ingestion dashboard."""
+
+    total_sources: int
+    enabled_sources: int
+    recent_failures: int
+

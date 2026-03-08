@@ -6,10 +6,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
-from d4bl.app.auth import require_admin
+from d4bl.app.auth import CurrentUser, require_admin
 from d4bl.app.schemas import (
+    DataOverviewResponse,
     DataSourceCreate,
     DataSourceResponse,
     DataSourceUpdate,
@@ -20,50 +20,49 @@ from d4bl.infra.database import DataSource, IngestionRun, get_db
 router = APIRouter(prefix="/api/data", tags=["data"])
 
 
+async def _last_run_for_source(
+    db: AsyncSession, source_id: uuid.UUID
+) -> IngestionRun | None:
+    """Return the most recent ingestion run for a given data source."""
+    result = await db.execute(
+        select(IngestionRun)
+        .where(IngestionRun.data_source_id == source_id)
+        .order_by(desc(IngestionRun.started_at))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def _source_response(
+    source: DataSource, last_run: IngestionRun | None
+) -> DataSourceResponse:
+    """Build a DataSourceResponse from a source and its optional last run."""
+    return DataSourceResponse(
+        **source.to_dict(),
+        last_run_status=last_run.status if last_run else None,
+        last_run_at=(
+            last_run.started_at.isoformat()
+            if last_run and last_run.started_at
+            else None
+        ),
+    )
+
+
 @router.get("/sources", response_model=list[DataSourceResponse])
 async def list_sources(
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # Subquery: latest started_at per data_source_id
-    latest_sub = (
-        select(
-            IngestionRun.data_source_id,
-            func.max(IngestionRun.started_at).label("max_started"),
-        )
-        .group_by(IngestionRun.data_source_id)
-        .subquery()
+    """List all data sources with their latest ingestion run status."""
+    result = await db.execute(
+        select(DataSource).order_by(desc(DataSource.created_at))
     )
-
-    lr = aliased(IngestionRun)
-    query = (
-        select(DataSource, lr)
-        .outerjoin(
-            latest_sub,
-            DataSource.id == latest_sub.c.data_source_id,
-        )
-        .outerjoin(
-            lr,
-            (lr.data_source_id == latest_sub.c.data_source_id)
-            & (lr.started_at == latest_sub.c.max_started),
-        )
-        .order_by(desc(DataSource.created_at))
-    )
-    result = await db.execute(query)
-    rows = result.all()
+    sources = result.scalars().all()
 
     responses = []
-    for source, last_run in rows:
-        resp = DataSourceResponse(
-            **source.to_dict(),
-            last_run_status=last_run.status if last_run else None,
-            last_run_at=(
-                last_run.started_at.isoformat()
-                if last_run and last_run.started_at
-                else None
-            ),
-        )
-        responses.append(resp)
+    for source in sources:
+        last_run = await _last_run_for_source(db, source.id)
+        responses.append(_source_response(source, last_run))
 
     return responses
 
@@ -71,9 +70,10 @@ async def list_sources(
 @router.post("/sources", response_model=DataSourceResponse, status_code=201)
 async def create_source(
     body: DataSourceCreate,
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Create a new data source configuration."""
     source = DataSource(
         name=body.name,
         source_type=body.source_type,
@@ -91,9 +91,10 @@ async def create_source(
 @router.get("/sources/{source_id}", response_model=DataSourceResponse)
 async def get_source(
     source_id: uuid.UUID,
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Retrieve a single data source by ID."""
     result = await db.execute(
         select(DataSource).where(DataSource.id == source_id)
     )
@@ -101,32 +102,18 @@ async def get_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    last_run_result = await db.execute(
-        select(IngestionRun)
-        .where(IngestionRun.data_source_id == source.id)
-        .order_by(desc(IngestionRun.started_at))
-        .limit(1)
-    )
-    last_run = last_run_result.scalar_one_or_none()
-
-    return DataSourceResponse(
-        **source.to_dict(),
-        last_run_status=last_run.status if last_run else None,
-        last_run_at=(
-            last_run.started_at.isoformat()
-            if last_run and last_run.started_at
-            else None
-        ),
-    )
+    last_run = await _last_run_for_source(db, source.id)
+    return _source_response(source, last_run)
 
 
 @router.patch("/sources/{source_id}", response_model=DataSourceResponse)
 async def update_source(
     source_id: uuid.UUID,
     body: DataSourceUpdate,
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Update fields on an existing data source."""
     result = await db.execute(
         select(DataSource).where(DataSource.id == source_id)
     )
@@ -146,31 +133,17 @@ async def update_source(
     await db.commit()
     await db.refresh(source)
 
-    last_run_result = await db.execute(
-        select(IngestionRun)
-        .where(IngestionRun.data_source_id == source.id)
-        .order_by(desc(IngestionRun.started_at))
-        .limit(1)
-    )
-    last_run = last_run_result.scalar_one_or_none()
-
-    return DataSourceResponse(
-        **source.to_dict(),
-        last_run_status=last_run.status if last_run else None,
-        last_run_at=(
-            last_run.started_at.isoformat()
-            if last_run and last_run.started_at
-            else None
-        ),
-    )
+    last_run = await _last_run_for_source(db, source.id)
+    return _source_response(source, last_run)
 
 
 @router.delete("/sources/{source_id}", status_code=204)
 async def delete_source(
     source_id: uuid.UUID,
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Delete a data source and its associated runs."""
     result = await db.execute(
         select(DataSource).where(DataSource.id == source_id)
     )
@@ -187,9 +160,10 @@ async def list_runs(
     source_id: uuid.UUID | None = None,
     status: str | None = None,
     limit: int = 20,
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """List ingestion runs, optionally filtered by source or status."""
     if not 1 <= limit <= 100:
         raise HTTPException(
             status_code=422, detail="limit must be between 1 and 100"
@@ -208,11 +182,12 @@ async def list_runs(
     return [IngestionRunResponse(**r.to_dict()) for r in runs]
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=DataOverviewResponse)
 async def data_overview(
-    user=Depends(require_admin),
+    user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Return high-level statistics about data sources and recent runs."""
     total = await db.execute(select(func.count(DataSource.id)))
     enabled = await db.execute(
         select(func.count(DataSource.id)).where(DataSource.enabled.is_(True))

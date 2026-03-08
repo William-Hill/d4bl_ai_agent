@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS data_sources (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE data_sources ADD CONSTRAINT chk_data_sources_source_type
+    CHECK (source_type IN ('api', 'file_upload', 'web_scrape', 'rss_feed', 'database', 'mcp'));
+
 CREATE INDEX IF NOT EXISTS ix_data_sources_source_type ON data_sources(source_type);
 CREATE INDEX IF NOT EXISTS ix_data_sources_enabled ON data_sources(enabled);
 

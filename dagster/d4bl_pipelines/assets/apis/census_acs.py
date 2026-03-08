@@ -211,7 +211,10 @@ async def census_acs_indicators(
                                  :name, :state_fips, :year,
                                  :race, :metric, :value)
                             ON CONFLICT (fips_code, year, race, metric)
-                            DO UPDATE SET value = :value
+                            DO UPDATE SET value = :value,
+                                geography_name = :name,
+                                geography_type = 'state',
+                                state_fips = :state_fips
                         """)
                         await session.execute(
                             upsert_sql,

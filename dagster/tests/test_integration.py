@@ -53,3 +53,13 @@ def test_lineage_integrates_with_asset_metadata():
     assert record["quality_score"] == 3.8
     assert record["target_table"] == "census_indicators"
     assert "source_concentration" in record["bias_flags"]
+
+
+def test_census_acs_asset_has_expected_metadata():
+    """Census ACS asset should declare source and methodology metadata."""
+    specs = census_acs_indicators.specs_by_key
+    key = next(iter(specs))
+    spec = specs[key]
+    assert spec.metadata is not None
+    assert "source" in spec.metadata
+    assert "methodology" in spec.metadata
