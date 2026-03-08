@@ -160,7 +160,7 @@ async def create_research(request: ResearchRequest, db: AsyncSession = Depends(g
             summary_format=request.summary_format,
             status="pending",
             progress="Job created, waiting to start...",
-            tenant_id=_settings.tenant_id,
+            # user_id will be set from auth context in a future task
         )
         db.add(job)
         await db.commit()
@@ -214,8 +214,7 @@ async def get_job_history(
         filters = []
         if status:
             filters.append(ResearchJob.status == status)
-        if _settings.tenant_id:
-            filters.append(ResearchJob.tenant_id == _settings.tenant_id)
+        # user_id filtering will be added via auth middleware in a future task
 
         query = select(ResearchJob)
         count_query = select(func.count(ResearchJob.job_id))
