@@ -9,6 +9,7 @@ dependencies = [
     "firecrawl-py>=4.8.0",
     "python-dotenv>=1.0.0",
     "litellm>=1.0.0",
+    "PyJWT>=2.8.0",
 ]
 
 [project.scripts]
