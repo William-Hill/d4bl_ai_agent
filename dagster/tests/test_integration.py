@@ -2,7 +2,6 @@
 
 import uuid
 
-from dagster import validate_run_config
 from d4bl_pipelines import defs
 from d4bl_pipelines.assets.apis.census_acs import census_acs_indicators
 from d4bl_pipelines.quality.lineage import build_lineage_record
