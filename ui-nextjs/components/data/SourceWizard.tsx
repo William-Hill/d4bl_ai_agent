@@ -206,8 +206,9 @@ export default function SourceWizard() {
       <h2 className="text-lg font-semibold text-white mb-4">Configuration</h2>
       <div className="space-y-4">
         <div>
-          <label className={labelClass}>Name *</label>
+          <label htmlFor="source-name" className={labelClass}>Name *</label>
           <input
+            id="source-name"
             type="text"
             value={config.name}
             onChange={(e) => updateConfig('name', e.target.value)}
@@ -219,8 +220,9 @@ export default function SourceWizard() {
         {sourceType === 'api' && (
           <>
             <div>
-              <label className={labelClass}>URL</label>
+              <label htmlFor="source-url" className={labelClass}>URL</label>
               <input
+                id="source-url"
                 type="text"
                 value={config.url ?? ''}
                 onChange={(e) => updateConfig('url', e.target.value)}
@@ -229,8 +231,9 @@ export default function SourceWizard() {
               />
             </div>
             <div>
-              <label className={labelClass}>Method</label>
+              <label htmlFor="source-method" className={labelClass}>Method</label>
               <select
+                id="source-method"
                 value={config.method ?? 'GET'}
                 onChange={(e) => updateConfig('method', e.target.value)}
                 className={inputClass}
@@ -240,8 +243,9 @@ export default function SourceWizard() {
               </select>
             </div>
             <div>
-              <label className={labelClass}>Headers (JSON)</label>
+              <label htmlFor="source-headers" className={labelClass}>Headers (JSON)</label>
               <textarea
+                id="source-headers"
                 value={config.headers ?? ''}
                 onChange={(e) => updateConfig('headers', e.target.value)}
                 placeholder='{"Authorization": "Bearer ..."}'
@@ -253,8 +257,9 @@ export default function SourceWizard() {
               )}
             </div>
             <div>
-              <label className={labelClass}>Response Path (JSONPath)</label>
+              <label htmlFor="source-response-path" className={labelClass}>Response Path (JSONPath)</label>
               <input
+                id="source-response-path"
                 type="text"
                 value={config.response_path ?? ''}
                 onChange={(e) => updateConfig('response_path', e.target.value)}
@@ -274,8 +279,9 @@ export default function SourceWizard() {
         {sourceType === 'web_scrape' && (
           <>
             <div>
-              <label className={labelClass}>URLs (one per line)</label>
+              <label htmlFor="source-urls" className={labelClass}>URLs (one per line)</label>
               <textarea
+                id="source-urls"
                 value={config.urls ?? ''}
                 onChange={(e) => updateConfig('urls', e.target.value)}
                 placeholder={'https://example.com/page1\nhttps://example.com/page2'}
@@ -284,8 +290,9 @@ export default function SourceWizard() {
               />
             </div>
             <div>
-              <label className={labelClass}>Depth</label>
+              <label htmlFor="source-depth" className={labelClass}>Depth</label>
               <input
+                id="source-depth"
                 type="number"
                 value={config.depth ?? 1}
                 onChange={(e) => updateConfig('depth', parseInt(e.target.value) || 0)}
@@ -295,8 +302,9 @@ export default function SourceWizard() {
               />
             </div>
             <div>
-              <label className={labelClass}>CSS Selectors</label>
+              <label htmlFor="source-css-selectors" className={labelClass}>CSS Selectors</label>
               <input
+                id="source-css-selectors"
                 type="text"
                 value={config.css_selectors ?? ''}
                 onChange={(e) => updateConfig('css_selectors', e.target.value)}
@@ -309,8 +317,9 @@ export default function SourceWizard() {
 
         {sourceType === 'rss_feed' && (
           <div>
-            <label className={labelClass}>Feed URL</label>
+            <label htmlFor="source-feed-url" className={labelClass}>Feed URL</label>
             <input
+              id="source-feed-url"
               type="text"
               value={config.feed_url ?? ''}
               onChange={(e) => updateConfig('feed_url', e.target.value)}
@@ -323,8 +332,9 @@ export default function SourceWizard() {
         {sourceType === 'database' && (
           <>
             <div>
-              <label className={labelClass}>Connection String</label>
+              <label htmlFor="source-connection-string" className={labelClass}>Connection String</label>
               <input
+                id="source-connection-string"
                 type="text"
                 value={config.connection_string ?? ''}
                 onChange={(e) => updateConfig('connection_string', e.target.value)}
@@ -333,8 +343,9 @@ export default function SourceWizard() {
               />
             </div>
             <div>
-              <label className={labelClass}>Query</label>
+              <label htmlFor="source-query" className={labelClass}>Query</label>
               <textarea
+                id="source-query"
                 value={config.query ?? ''}
                 onChange={(e) => updateConfig('query', e.target.value)}
                 placeholder="SELECT * FROM table LIMIT 1000"
@@ -348,8 +359,9 @@ export default function SourceWizard() {
         {sourceType === 'mcp' && (
           <>
             <div>
-              <label className={labelClass}>Server Name</label>
+              <label htmlFor="source-server-name" className={labelClass}>Server Name</label>
               <input
+                id="source-server-name"
                 type="text"
                 value={config.server_name ?? ''}
                 onChange={(e) => updateConfig('server_name', e.target.value)}
@@ -358,8 +370,9 @@ export default function SourceWizard() {
               />
             </div>
             <div>
-              <label className={labelClass}>Tool Name</label>
+              <label htmlFor="source-tool-name" className={labelClass}>Tool Name</label>
               <input
+                id="source-tool-name"
                 type="text"
                 value={config.tool_name ?? ''}
                 onChange={(e) => updateConfig('tool_name', e.target.value)}
@@ -368,8 +381,9 @@ export default function SourceWizard() {
               />
             </div>
             <div>
-              <label className={labelClass}>Tool Params (JSON)</label>
+              <label htmlFor="source-tool-params" className={labelClass}>Tool Params (JSON)</label>
               <textarea
+                id="source-tool-params"
                 value={config.tool_params ?? ''}
                 onChange={(e) => updateConfig('tool_params', e.target.value)}
                 placeholder='{"param1": "value1"}'

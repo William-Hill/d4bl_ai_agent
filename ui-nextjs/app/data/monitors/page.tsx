@@ -326,8 +326,9 @@ export default function MonitorsPage() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Name</label>
+                  <label htmlFor="monitor-name" className="block text-sm text-gray-400 mb-1">Name</label>
                   <input
+                    id="monitor-name"
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -336,14 +337,14 @@ export default function MonitorsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Keywords</label>
+                  <label id="monitor-keywords-label" className="block text-sm text-gray-400 mb-1">Keywords</label>
                   <KeywordTagInput
                     value={form.keywords}
                     onChange={(keywords) => setForm({ ...form, keywords })}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Sources</label>
+                  <label id="monitor-sources-label" className="block text-sm text-gray-400 mb-2">Sources</label>
                   {sources.length === 0 ? (
                     <p className="text-gray-500 text-sm">No sources available.</p>
                   ) : (
@@ -366,7 +367,7 @@ export default function MonitorsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Schedule</label>
+                  <label id="monitor-schedule-label" className="block text-sm text-gray-400 mb-2">Schedule</label>
                   <CronBuilder
                     value={form.schedule}
                     onChange={(schedule) => setForm({ ...form, schedule })}

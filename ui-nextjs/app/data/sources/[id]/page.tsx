@@ -250,8 +250,9 @@ export default function SourceDetailPage() {
           {editing ? (
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Name</label>
+                <label htmlFor="edit-name" className="block text-sm text-gray-400 mb-1">Name</label>
                 <input
+                  id="edit-name"
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
@@ -259,8 +260,9 @@ export default function SourceDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Config (JSON)</label>
+                <label htmlFor="edit-config" className="block text-sm text-gray-400 mb-1">Config (JSON)</label>
                 <textarea
+                  id="edit-config"
                   value={editConfig}
                   onChange={(e) => setEditConfig(e.target.value)}
                   rows={8}
@@ -268,7 +270,7 @@ export default function SourceDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Schedule</label>
+                <label id="edit-schedule-label" className="block text-sm text-gray-400 mb-2">Schedule</label>
                 <CronBuilder value={editSchedule} onChange={setEditSchedule} />
               </div>
               <div className="flex gap-3 pt-2">

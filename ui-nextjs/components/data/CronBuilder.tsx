@@ -60,9 +60,10 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
 
       {/* Custom cron input */}
       <div>
-        <label className="block text-sm text-gray-400 mb-1">Custom cron expression</label>
+        <label htmlFor="custom-cron" className="block text-sm text-gray-400 mb-1">Custom cron expression</label>
         <div className="flex gap-2">
           <input
+            id="custom-cron"
             type="text"
             value={displayValue}
             onFocus={() => {
