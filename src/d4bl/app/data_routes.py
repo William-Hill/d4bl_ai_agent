@@ -1,10 +1,14 @@
 """Data ingestion management endpoints — admin only."""
 
+import logging
+import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path, PurePosixPath
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, func, select
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, require_admin
@@ -14,8 +18,22 @@ from d4bl.app.schemas import (
     DataSourceResponse,
     DataSourceUpdate,
     IngestionRunResponse,
+    KeywordMonitorCreate,
+    KeywordMonitorResponse,
+    KeywordMonitorUpdate,
+    ReloadResponse,
+    RunStatusResponse,
+    TriggerResponse,
 )
-from d4bl.infra.database import DataSource, IngestionRun, get_db
+from d4bl.infra.database import DataSource, IngestionRun, KeywordMonitor, get_db
+from d4bl.services.dagster_client import DagsterClient, DagsterClientError
+
+logger = logging.getLogger(__name__)
+
+UPLOAD_ROOT = os.environ.get(
+    "D4BL_UPLOAD_DIR", "/tmp/d4bl_uploads"
+)
+ALLOWED_UPLOAD_EXTENSIONS = {"csv", "xlsx", "json"}
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -54,17 +72,35 @@ async def list_sources(
     db: AsyncSession = Depends(get_db),
 ):
     """List all data sources with their latest ingestion run status."""
-    result = await db.execute(
-        select(DataSource).order_by(desc(DataSource.created_at))
+    # Subquery for latest run per source (avoids N+1)
+    latest_run_subq = (
+        select(
+            IngestionRun.data_source_id,
+            func.max(IngestionRun.started_at).label("max_started"),
+        )
+        .group_by(IngestionRun.data_source_id)
+        .subquery()
     )
-    sources = result.scalars().all()
 
-    responses = []
-    for source in sources:
-        last_run = await _last_run_for_source(db, source.id)
-        responses.append(_source_response(source, last_run))
-
-    return responses
+    result = await db.execute(
+        select(DataSource, IngestionRun)
+        .outerjoin(
+            latest_run_subq,
+            DataSource.id == latest_run_subq.c.data_source_id,
+        )
+        .outerjoin(
+            IngestionRun,
+            and_(
+                IngestionRun.data_source_id
+                == latest_run_subq.c.data_source_id,
+                IngestionRun.started_at
+                == latest_run_subq.c.max_started,
+            ),
+        )
+        .order_by(desc(DataSource.created_at))
+    )
+    rows = result.all()
+    return [_source_response(source, run) for source, run in rows]
 
 
 @router.post("/sources", response_model=DataSourceResponse, status_code=201)
@@ -205,3 +241,297 @@ async def data_overview(
         "enabled_sources": enabled.scalar_one(),
         "recent_failures": recent_failures.scalar_one(),
     }
+
+
+@router.post(
+    "/sources/{source_id}/upload",
+    status_code=202,
+)
+async def upload_file(
+    source_id: uuid.UUID,
+    file: UploadFile,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a file upload for a data source.
+
+    Validates file type and saves the file to the upload directory
+    for later processing by the Dagster file_upload asset.
+    """
+    # Verify the source exists
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == source_id)
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    # Sanitize filename - take only the basename, strip path components
+    raw_filename = file.filename or "upload"
+    safe_name = PurePosixPath(raw_filename).name
+    if not safe_name or safe_name.startswith('.'):
+        raise HTTPException(status_code=422, detail="Invalid filename")
+
+    # Validate file extension
+    ext = Path(safe_name).suffix.lstrip(".").lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unsupported file type: .{ext}. "
+                f"Allowed: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}"
+            ),
+        )
+
+    # Create upload directory
+    upload_dir = Path(UPLOAD_ROOT) / str(source_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save file
+    dest = upload_dir / safe_name
+    contents = await file.read()
+    dest.write_bytes(contents)
+
+    return {"status": "uploaded", "filename": safe_name}
+
+
+# ---------------------------------------------------------------------------
+# Dagster integration endpoints
+# ---------------------------------------------------------------------------
+
+def _slugify(name: str) -> str:
+    """Convert a source name into a Dagster-compatible asset key."""
+    slug = name.lower().strip()
+    slug = re.sub(r"[^a-z0-9]+", "_", slug)
+    return slug.strip("_")
+
+
+@router.post(
+    "/sources/{source_id}/trigger",
+    response_model=TriggerResponse,
+    status_code=202,
+)
+async def trigger_source(
+    source_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger a Dagster run to materialise a data source's asset."""
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == source_id)
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    asset_key = _slugify(source.name)
+
+    # Create a pending ingestion run record
+    run = IngestionRun(
+        data_source_id=source.id,
+        status="pending",
+        trigger_type="manual",
+        triggered_by=user.id,
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    await db.flush()  # get the id
+
+    try:
+        async with DagsterClient() as client:
+            dagster_result = await client.trigger_run(asset_key)
+            run.dagster_run_id = dagster_result["run_id"]
+            run.status = "running"
+    except DagsterClientError as exc:
+        logger.error("Dagster trigger failed for source %s: %s", source_id, exc)
+        run.status = "failed"
+        run.error_detail = str(exc)
+        await db.commit()
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    await db.commit()
+    await db.refresh(run)
+
+    return TriggerResponse(
+        run_id=run.dagster_run_id or "",
+        ingestion_run_id=str(run.id),
+        status="triggered",
+    )
+
+
+@router.get(
+    "/sources/{source_id}/status",
+    response_model=RunStatusResponse,
+)
+async def source_run_status(
+    source_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the status of the latest ingestion run for a data source."""
+    # Verify source exists
+    src_result = await db.execute(
+        select(DataSource).where(DataSource.id == source_id)
+    )
+    if not src_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    last_run = await _last_run_for_source(db, source_id)
+    if not last_run:
+        raise HTTPException(
+            status_code=404, detail="No runs found for this source"
+        )
+
+    dagster_status = None
+    start_time = None
+    end_time = None
+
+    if last_run.dagster_run_id:
+        try:
+            async with DagsterClient() as client:
+                status_info = await client.get_run_status(
+                    last_run.dagster_run_id
+                )
+                dagster_status = status_info["status"]
+                start_time = status_info.get("start_time")
+                end_time = status_info.get("end_time")
+        except DagsterClientError as exc:
+            logger.warning(
+                "Could not fetch Dagster status for run %s: %s",
+                last_run.dagster_run_id,
+                exc,
+            )
+
+    return RunStatusResponse(
+        ingestion_run_id=str(last_run.id),
+        dagster_run_id=last_run.dagster_run_id,
+        local_status=last_run.status,
+        dagster_status=dagster_status,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+
+@router.post("/reload", response_model=ReloadResponse)
+async def reload_dagster(
+    user: CurrentUser = Depends(require_admin),
+):
+    """Reload the Dagster repository location."""
+    try:
+        async with DagsterClient() as client:
+            result = await client.reload_repository()
+    except DagsterClientError as exc:
+        logger.error("Dagster reload failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return ReloadResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# Keyword monitor CRUD endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/monitors", response_model=list[KeywordMonitorResponse])
+async def list_monitors(
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all keyword monitors."""
+    result = await db.execute(
+        select(KeywordMonitor).order_by(desc(KeywordMonitor.created_at))
+    )
+    monitors = result.scalars().all()
+    return [KeywordMonitorResponse(**m.to_dict()) for m in monitors]
+
+
+@router.post(
+    "/monitors", response_model=KeywordMonitorResponse, status_code=201
+)
+async def create_monitor(
+    body: KeywordMonitorCreate,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new keyword monitor."""
+    monitor = KeywordMonitor(
+        name=body.name,
+        keywords=body.keywords,
+        source_ids=body.source_ids,
+        schedule=body.schedule,
+        enabled=body.enabled,
+        created_by=user.id,
+    )
+    db.add(monitor)
+    await db.commit()
+    await db.refresh(monitor)
+    return KeywordMonitorResponse(**monitor.to_dict())
+
+
+@router.get(
+    "/monitors/{monitor_id}", response_model=KeywordMonitorResponse
+)
+async def get_monitor(
+    monitor_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve a single keyword monitor by ID."""
+    result = await db.execute(
+        select(KeywordMonitor).where(KeywordMonitor.id == monitor_id)
+    )
+    monitor = result.scalar_one_or_none()
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    return KeywordMonitorResponse(**monitor.to_dict())
+
+
+@router.patch(
+    "/monitors/{monitor_id}", response_model=KeywordMonitorResponse
+)
+async def update_monitor(
+    monitor_id: uuid.UUID,
+    body: KeywordMonitorUpdate,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update fields on an existing keyword monitor."""
+    result = await db.execute(
+        select(KeywordMonitor).where(KeywordMonitor.id == monitor_id)
+    )
+    monitor = result.scalar_one_or_none()
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+
+    if body.name is not None:
+        monitor.name = body.name
+    if body.keywords is not None:
+        monitor.keywords = body.keywords
+    if body.source_ids is not None:
+        monitor.source_ids = body.source_ids
+    if body.schedule is not None:
+        monitor.schedule = body.schedule
+    if body.enabled is not None:
+        monitor.enabled = body.enabled
+
+    await db.commit()
+    await db.refresh(monitor)
+    return KeywordMonitorResponse(**monitor.to_dict())
+
+
+@router.delete("/monitors/{monitor_id}", status_code=204)
+async def delete_monitor(
+    monitor_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a keyword monitor."""
+    result = await db.execute(
+        select(KeywordMonitor).where(KeywordMonitor.id == monitor_id)
+    )
+    monitor = result.scalar_one_or_none()
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+
+    await db.delete(monitor)
+    await db.commit()

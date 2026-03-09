@@ -234,3 +234,79 @@ class DataOverviewResponse(BaseModel):
     enabled_sources: int
     recent_failures: int
 
+
+# --- Dagster integration models ---
+
+
+class TriggerResponse(BaseModel):
+    """Returned when a Dagster run is triggered for a data source."""
+
+    run_id: str
+    ingestion_run_id: str
+    status: str  # "triggered"
+
+
+class RunStatusResponse(BaseModel):
+    """Combined local + Dagster status for the latest ingestion run."""
+
+    ingestion_run_id: str
+    dagster_run_id: str | None
+    local_status: str
+    dagster_status: str | None = None
+    start_time: float | None = None
+    end_time: float | None = None
+
+
+class ReloadResponse(BaseModel):
+    """Result of reloading the Dagster repository."""
+
+    status: str
+    location: str | None = None
+    load_status: str | None = None
+
+
+# --- Keyword Monitor models ---
+
+
+class KeywordMonitorCreate(BaseModel):
+    name: str
+    keywords: list[str]
+    source_ids: list[str]
+    schedule: str | None = None
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class KeywordMonitorUpdate(BaseModel):
+    name: str | None = None
+    keywords: list[str] | None = None
+    source_ids: list[str] | None = None
+    schedule: str | None = None
+    enabled: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class KeywordMonitorResponse(BaseModel):
+    id: str
+    name: str
+    keywords: list[str]
+    source_ids: list[str]
+    schedule: str | None
+    enabled: bool
+    created_by: str | None
+    created_at: str | None
+
