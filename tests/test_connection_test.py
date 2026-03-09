@@ -42,7 +42,7 @@ async def test_database_no_dsn():
 async def test_mcp_no_url():
     result = await _test_connection("mcp", {})
     assert result.success is False
-    assert "No MCP server URL" in result.message
+    assert "No URL" in result.message
 
 
 @pytest.mark.asyncio

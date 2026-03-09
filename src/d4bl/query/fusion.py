@@ -51,6 +51,21 @@ class QueryResult:
     query: str
 
 
+def _summarize_provenance(
+    provenance: list,
+) -> tuple[str | None, float | None, str | None]:
+    """Summarize a list of ProvenanceInfo into (name, quality, notes)."""
+    if not provenance:
+        return None, None, None
+
+    name = ", ".join(p.data_source_name for p in provenance)
+    scores = [p.quality_score for p in provenance if p.quality_score is not None]
+    quality = round(sum(scores) / len(scores), 2) if scores else None
+    all_gaps = [g for p in provenance for g in p.coverage_gaps]
+    notes = "; ".join(all_gaps) if all_gaps else None
+    return name, quality, notes
+
+
 class ResultFusion:
     """Merge, rank, and synthesize results from multiple data sources."""
 
@@ -94,26 +109,9 @@ class ResultFusion:
                 continue
             seen_job_ids.add(job_key)
 
-            # Build provenance metadata from lineage info if available
-            prov_name = None
-            prov_quality = None
-            prov_notes = None
-            if sr.provenance:
-                prov_name = ", ".join(
-                    p.data_source_name for p in sr.provenance
-                )
-                scores = [
-                    p.quality_score
-                    for p in sr.provenance
-                    if p.quality_score is not None
-                ]
-                if scores:
-                    prov_quality = round(sum(scores) / len(scores), 2)
-                all_gaps = []
-                for p in sr.provenance:
-                    all_gaps.extend(p.coverage_gaps)
-                if all_gaps:
-                    prov_notes = "; ".join(all_gaps)
+            prov_name, prov_quality, prov_notes = _summarize_provenance(
+                sr.provenance
+            )
 
             sources.append(
                 SourceReference(

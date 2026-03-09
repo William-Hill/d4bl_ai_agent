@@ -145,14 +145,14 @@ class StructuredSearcher:
         """Fetch aggregated provenance info for a target table.
 
         Returns one ProvenanceInfo per data source that contributed records
-        to the given table, including average quality score and coverage gaps.
+        to the given table, including average quality score.
         """
         try:
+            # Group by source only — don't group on JSON column
             result = await db.execute(
                 select(
                     DataSource.name,
                     func.avg(DataLineage.quality_score).label("avg_quality"),
-                    DataLineage.coverage_metadata,
                 )
                 .join(
                     IngestionRun,
@@ -163,23 +163,19 @@ class StructuredSearcher:
                     IngestionRun.data_source_id == DataSource.id,
                 )
                 .where(DataLineage.target_table == target_table)
-                .group_by(DataSource.name, DataLineage.coverage_metadata)
+                .group_by(DataSource.name)
                 .limit(limit)
             )
             rows = result.all()
 
             provenance_list = []
-            for source_name, avg_quality, coverage_meta in rows:
-                gaps = []
-                if coverage_meta and isinstance(coverage_meta, dict):
-                    gaps = coverage_meta.get("gaps", [])
+            for source_name, avg_quality in rows:
                 provenance_list.append(
                     ProvenanceInfo(
                         data_source_name=source_name,
                         quality_score=(
                             round(avg_quality, 2) if avg_quality else None
                         ),
-                        coverage_gaps=gaps,
                     )
                 )
             return provenance_list

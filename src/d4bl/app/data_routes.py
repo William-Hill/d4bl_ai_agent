@@ -592,42 +592,45 @@ async def test_source_connection(
         )
 
 
+async def _check_url_reachable(
+    session: aiohttp.ClientSession, url: str, label: str = ""
+) -> ConnectionTestResponse:
+    """HEAD-request a URL and return success/failure."""
+    async with session.head(
+        url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True
+    ) as resp:
+        prefix = f"{label} " if label else ""
+        return ConnectionTestResponse(
+            success=resp.status < 400,
+            message=f"{prefix}(HTTP {resp.status})".strip(),
+            details={"status_code": resp.status},
+        )
+
+
+# URL config keys per source type for _test_connection
+_URL_KEYS: dict[str, list[str]] = {
+    "api": ["url", "base_url"],
+    "web_scrape": ["url"],
+    "mcp": ["server_url"],
+    "rss_feed": ["feed_url", "url"],
+}
+
+
 async def _test_connection(
     source_type: str, config: dict
 ) -> ConnectionTestResponse:
     """Run a lightweight connectivity check based on source type."""
 
-    if source_type == "api":
-        url = config.get("url") or config.get("base_url")
+    # URL-based source types (api, web_scrape, mcp) share the same pattern
+    if source_type in ("api", "web_scrape", "mcp"):
+        url_keys = _URL_KEYS[source_type]
+        url = next((config.get(k) for k in url_keys if config.get(k)), None)
         if not url:
             return ConnectionTestResponse(
                 success=False, message="No URL configured"
             )
         async with aiohttp.ClientSession() as session:
-            async with session.head(
-                url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True
-            ) as resp:
-                return ConnectionTestResponse(
-                    success=resp.status < 400,
-                    message=f"HTTP {resp.status}",
-                    details={"status_code": resp.status},
-                )
-
-    elif source_type == "web_scrape":
-        url = config.get("url")
-        if not url:
-            return ConnectionTestResponse(
-                success=False, message="No URL configured"
-            )
-        async with aiohttp.ClientSession() as session:
-            async with session.head(
-                url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True
-            ) as resp:
-                return ConnectionTestResponse(
-                    success=resp.status < 400,
-                    message=f"URL reachable (HTTP {resp.status})",
-                    details={"status_code": resp.status},
-                )
+            return await _check_url_reachable(session, url, label=source_type)
 
     elif source_type == "rss_feed":
         url = config.get("feed_url") or config.get("url")
@@ -669,29 +672,15 @@ async def _test_connection(
         finally:
             await test_engine.dispose()
 
-    elif source_type == "mcp":
-        server_url = config.get("server_url")
-        if not server_url:
-            return ConnectionTestResponse(
-                success=False, message="No MCP server URL configured"
-            )
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                server_url, timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                return ConnectionTestResponse(
-                    success=resp.status < 400,
-                    message=f"MCP server reachable (HTTP {resp.status})",
-                    details={"status_code": resp.status},
-                )
-
     elif source_type == "file_upload":
         upload_dir = Path(UPLOAD_ROOT) / str(config.get("source_id", ""))
-        if upload_dir.exists() and any(upload_dir.iterdir()):
-            return ConnectionTestResponse(
-                success=True,
-                message=f"Upload directory exists with {sum(1 for _ in upload_dir.iterdir())} file(s)",
-            )
+        if upload_dir.exists():
+            files = list(upload_dir.iterdir())
+            if files:
+                return ConnectionTestResponse(
+                    success=True,
+                    message=f"Upload directory exists with {len(files)} file(s)",
+                )
         return ConnectionTestResponse(
             success=False, message="No files found in upload directory"
         )

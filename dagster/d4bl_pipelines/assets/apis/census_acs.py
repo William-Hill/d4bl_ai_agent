@@ -146,7 +146,7 @@ async def census_acs_indicators(
     )
 
     records_ingested = 0
-    states_covered = []
+    states_covered = set()
     races_covered = set()
     all_variables = set()
     for metric_vars in METRIC_VARIABLES.values():
@@ -189,7 +189,7 @@ async def census_acs_indicators(
                 state_name = STATE_FIPS.get(
                     state_fips, f"Unknown ({state_fips})"
                 )
-                states_covered.append(state_fips)
+                states_covered.add(state_fips)
 
                 for metric, race_vars in METRIC_VARIABLES.items():
                     for race, var_map in race_vars.items():
@@ -301,7 +301,7 @@ async def census_acs_indicators(
 
     # Compute coverage metadata
     all_fips = set(STATE_FIPS.keys())
-    covered_fips = set(states_covered)
+    covered_fips = states_covered
     missing_fips = all_fips - covered_fips
     all_races = {
         "total", "black", "white", "hispanic",
