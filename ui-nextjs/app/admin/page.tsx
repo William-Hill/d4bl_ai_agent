@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
+import DataStatusCard from '@/components/data/DataStatusCard';
 
 interface UserProfile {
   id: string;
@@ -140,6 +141,9 @@ export default function AdminPage() {
           {message && <p className="mt-3 text-green-400 text-sm">{message}</p>}
           {error && <p className="mt-3 text-red-400 text-sm">{error}</p>}
         </div>
+
+        {/* Data status */}
+        <DataStatusCard />
 
         {/* Users table */}
         <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg overflow-hidden">
