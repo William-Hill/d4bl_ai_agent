@@ -40,18 +40,17 @@ export default function RunDetailPage() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/data/runs?limit=100`, {
+      const res = await fetch(`${API_BASE}/api/data/runs/${params.id}`, {
         headers: getHeaders(),
       });
+      if (res.status === 404) {
+        setError('Run not found');
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const runs: IngestionRun[] = await res.json();
-      const found = runs.find((r) => r.id === params.id);
-      if (found) {
-        setRun(found);
-      } else {
-        setError('Run not found');
-      }
+      const found: IngestionRun = await res.json();
+      setRun(found);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load run');
     } finally {

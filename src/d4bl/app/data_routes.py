@@ -191,6 +191,20 @@ async def delete_source(
     await db.commit()
 
 
+@router.get("/runs/{run_id}", response_model=IngestionRunResponse)
+async def get_run(
+    run_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single ingestion run by ID."""
+    result = await db.execute(select(IngestionRun).where(IngestionRun.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return IngestionRunResponse(**run.to_dict())
+
+
 @router.get("/runs", response_model=list[IngestionRunResponse])
 async def list_runs(
     source_id: uuid.UUID | None = None,

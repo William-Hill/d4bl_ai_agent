@@ -87,9 +87,12 @@ export default function SourceTable({ sources, onToggleEnabled }: SourceTablePro
                 <td className="px-4 py-3">
                   <button
                     type="button"
+                    role="switch"
+                    aria-checked={source.enabled}
+                    aria-label={`Toggle ${source.name}`}
                     disabled={togglingIds.has(source.id)}
                     onClick={() => handleToggle(source.id, source.enabled)}
-                    className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none ${
+                    className={`relative w-10 h-5 rounded-full transition-colors focus:ring-2 focus:ring-[#00ff32] focus:ring-offset-1 focus:ring-offset-[#1a1a1a] focus:outline-none ${
                       source.enabled ? 'bg-[#00ff32]/60' : 'bg-[#404040]'
                     } ${togglingIds.has(source.id) ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
                   >

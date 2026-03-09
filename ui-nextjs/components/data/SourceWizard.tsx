@@ -50,14 +50,31 @@ export default function SourceWizard() {
   const [schedule, setSchedule] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   const updateConfig = (field: string, value: string | number) => {
     setConfig((prev) => ({ ...prev, [field]: value }));
+    if (field === 'headers' || field === 'tool_params') {
+      const str = String(value).trim();
+      if (!str) {
+        setJsonError(null);
+      } else {
+        try { JSON.parse(str); setJsonError(null); } catch { setJsonError(`Invalid JSON in ${field === 'headers' ? 'Headers' : 'Tool Params'}`); }
+      }
+    }
   };
 
   const canProceed = (): boolean => {
     if (step === 0) return sourceType !== null;
-    if (step === 1) return config.name.trim().length > 0;
+    if (step === 1) {
+      if (!config.name.trim()) return false;
+      if (jsonError) return false;
+      if (sourceType === 'api' && !config.url?.trim()) return false;
+      if (sourceType === 'rss_feed' && !config.feed_url?.trim()) return false;
+      if (sourceType === 'database' && !config.connection_string?.trim()) return false;
+      if (sourceType === 'web_scrape' && !config.urls?.trim()) return false;
+      return true;
+    }
     return true;
   };
 
@@ -68,7 +85,7 @@ export default function SourceWizard() {
       if (config.url) typeConfig.url = config.url;
       if (config.method) typeConfig.method = config.method;
       if (config.headers) {
-        try { typeConfig.headers = JSON.parse(config.headers); } catch { typeConfig.headers = config.headers; }
+        try { typeConfig.headers = JSON.parse(config.headers); } catch { /* validated in canProceed */ }
       }
       if (config.response_path) typeConfig.response_path = config.response_path;
     } else if (sourceType === 'web_scrape') {
@@ -84,7 +101,7 @@ export default function SourceWizard() {
       if (config.server_name) typeConfig.server_name = config.server_name;
       if (config.tool_name) typeConfig.tool_name = config.tool_name;
       if (config.tool_params) {
-        try { typeConfig.tool_params = JSON.parse(config.tool_params); } catch { typeConfig.tool_params = config.tool_params; }
+        try { typeConfig.tool_params = JSON.parse(config.tool_params); } catch { /* validated in canProceed */ }
       }
     }
 
@@ -231,6 +248,9 @@ export default function SourceWizard() {
                 rows={3}
                 className={inputClass}
               />
+              {jsonError && config.headers?.trim() && (
+                <p className="text-red-400 text-xs mt-1">{jsonError}</p>
+              )}
             </div>
             <div>
               <label className={labelClass}>Response Path (JSONPath)</label>

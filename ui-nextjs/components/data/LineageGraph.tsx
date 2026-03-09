@@ -5,6 +5,8 @@ import {
   ReactFlow,
   Controls,
   Background,
+  Handle,
+  Position,
   type Node,
   type Edge,
   type NodeTypes,
@@ -24,6 +26,7 @@ function SourceNode({ data, selected }: NodeProps) {
       <p className="text-xs text-blue-300 uppercase tracking-wide mb-1">Source</p>
       <p className="text-sm font-semibold text-white">{data.label as string}</p>
       <p className="text-xs text-gray-400 mt-1">{data.sourceType as string}</p>
+      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
@@ -36,9 +39,11 @@ function AssetNode({ data, selected }: NodeProps) {
       className={`px-4 py-3 rounded-lg border bg-yellow-900/60 border-yellow-500 min-w-[160px]
         ${selected ? 'ring-2 ring-yellow-400' : ''}`}
     >
+      <Handle type="target" position={Position.Left} />
       <p className="text-xs text-yellow-300 uppercase tracking-wide mb-1">Asset</p>
       <p className="text-sm font-semibold text-white">{data.label as string}</p>
       <p className={`text-xs mt-1 ${statusColor}`}>{status}</p>
+      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
@@ -49,6 +54,7 @@ function TableNode({ data, selected }: NodeProps) {
       className={`px-4 py-3 rounded-lg border bg-green-900/60 border-green-500 min-w-[160px]
         ${selected ? 'ring-2 ring-green-400' : ''}`}
     >
+      <Handle type="target" position={Position.Left} />
       <p className="text-xs text-green-300 uppercase tracking-wide mb-1">Table</p>
       <p className="text-sm font-semibold text-white">{data.label as string}</p>
       <p className="text-xs text-gray-400 mt-1">{(data.records as number).toLocaleString()} records</p>

@@ -184,6 +184,18 @@ export default function MonitorsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!modalOpen && !deletingId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (deletingId) setDeletingId(null);
+        else if (modalOpen) closeModal();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalOpen, deletingId]);
+
   const toggleSourceId = (sourceId: string) => {
     setForm((prev) => ({
       ...prev,
@@ -269,9 +281,12 @@ export default function MonitorsPage() {
                     </button>
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={monitor.enabled}
+                      aria-label={`Toggle ${monitor.name}`}
                       disabled={togglingIds.has(monitor.id)}
                       onClick={() => handleToggleEnabled(monitor)}
-                      className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none ${
+                      className={`relative w-10 h-5 rounded-full transition-colors focus:ring-2 focus:ring-[#00ff32] focus:ring-offset-1 focus:ring-offset-[#1a1a1a] focus:outline-none ${
                         monitor.enabled ? 'bg-[#00ff32]/60' : 'bg-[#404040]'
                       } ${togglingIds.has(monitor.id) ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
                     >

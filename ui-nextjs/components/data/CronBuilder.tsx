@@ -14,6 +14,10 @@ const PRESETS = [
   { label: 'Monthly on 1st', cron: '0 2 1 * *', description: 'Runs on the 1st of every month at 2:00 AM' },
 ];
 
+function isPreset(cron: string | null): boolean {
+  return cron === null || PRESETS.some((p) => p.cron === cron);
+}
+
 export function describeCron(cron: string | null): string {
   if (!cron) return 'No schedule set';
   const preset = PRESETS.find((p) => p.cron === cron);
@@ -22,8 +26,12 @@ export function describeCron(cron: string | null): string {
 }
 
 export default function CronBuilder({ value, onChange }: CronBuilderProps) {
-  const isCustomValue = value !== null && !PRESETS.some((p) => p.cron === value);
-  const [customInput, setCustomInput] = useState(isCustomValue ? value : '');
+  // Track whether the user is actively typing a custom value
+  const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  // Display: if user is typing, show draft; otherwise show current custom value or empty
+  const displayValue = editing ? draft : (!isPreset(value) && value != null ? value : '');
 
   return (
     <div className="space-y-4">
@@ -35,7 +43,8 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
             type="button"
             onClick={() => {
               onChange(preset.cron);
-              setCustomInput('');
+              setDraft('');
+              setEditing(false);
             }}
             className={`px-4 py-3 rounded-lg border text-left transition-colors ${
               value === preset.cron
@@ -55,16 +64,28 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
         <div className="flex gap-2">
           <input
             type="text"
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
+            value={displayValue}
+            onFocus={() => {
+              if (!editing) {
+                setDraft(!isPreset(value) && value != null ? value : '');
+                setEditing(true);
+              }
+            }}
+            onBlur={() => setEditing(false)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setEditing(true);
+            }}
             placeholder="e.g. */15 * * * *"
             className="flex-1 px-3 py-2 bg-[#1a1a1a] border border-[#404040] rounded text-white text-sm placeholder-gray-600 focus:border-[#00ff32] focus:outline-none"
           />
           <button
             type="button"
             onClick={() => {
-              if (customInput.trim()) {
-                onChange(customInput.trim());
+              const val = (editing ? draft : displayValue).trim();
+              if (val) {
+                onChange(val);
+                setEditing(false);
               }
             }}
             className="px-4 py-2 bg-[#404040] text-gray-300 rounded text-sm hover:bg-[#505050] transition-colors"
@@ -79,7 +100,8 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
         type="button"
         onClick={() => {
           onChange(null);
-          setCustomInput('');
+          setDraft('');
+          setEditing(false);
         }}
         className={`w-full px-4 py-2 rounded-lg border text-sm transition-colors ${
           value === null

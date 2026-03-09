@@ -39,16 +39,19 @@ export default function SourceDetailPage() {
       ]);
 
       if (!sourceRes.ok) throw new Error(`Source: HTTP ${sourceRes.status}`);
-      if (!runsRes.ok) throw new Error(`Runs: HTTP ${runsRes.status}`);
 
       const sourceData: DataSource = await sourceRes.json();
       setSource(sourceData);
-      setRuns(await runsRes.json());
 
       // Initialize edit form
       setEditName(sourceData.name);
       setEditConfig(JSON.stringify(sourceData.config, null, 2));
       setEditSchedule(sourceData.default_schedule);
+
+      // Runs fetch is independent - don't block source display on failure
+      if (runsRes.ok) {
+        setRuns(await runsRes.json());
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load source');
     } finally {
@@ -200,9 +203,12 @@ export default function SourceDetailPage() {
           </div>
           <button
             type="button"
+            role="switch"
+            aria-checked={source.enabled}
+            aria-label={`Toggle ${source.name}`}
             disabled={togglingEnabled}
             onClick={handleToggleEnabled}
-            className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none ${
+            className={`relative w-10 h-5 rounded-full transition-colors focus:ring-2 focus:ring-[#00ff32] focus:ring-offset-1 focus:ring-offset-[#292929] focus:outline-none ${
               source.enabled ? 'bg-[#00ff32]/60' : 'bg-[#404040]'
             } ${togglingEnabled ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
           >

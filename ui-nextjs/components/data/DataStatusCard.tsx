@@ -6,7 +6,9 @@ import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
 
 interface OverviewData {
-  sources: { enabled: number; healthy: number; failing: number };
+  total_sources: number;
+  enabled_sources: number;
+  recent_failures: number;
 }
 
 export default function DataStatusCard() {
@@ -47,6 +49,8 @@ export default function DataStatusCard() {
 
   if (hidden) return null;
 
+  const healthy = data ? Math.max(0, data.enabled_sources - data.recent_failures) : 0;
+
   return (
     <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
       <div className="flex items-center justify-between">
@@ -56,10 +60,10 @@ export default function DataStatusCard() {
             <p className="text-sm text-gray-400">Loading data status...</p>
           ) : data ? (
             <p className="text-sm text-gray-300">
-              <span className="text-[#00ff32] font-medium">{data.sources.healthy}</span> sources healthy
-              {data.sources.failing > 0 && (
+              <span className="text-[#00ff32] font-medium">{healthy}</span> sources healthy
+              {data.recent_failures > 0 && (
                 <>
-                  , <span className="text-red-400 font-medium">{data.sources.failing}</span> failing
+                  , <span className="text-red-400 font-medium">{data.recent_failures}</span> failing
                 </>
               )}
             </p>

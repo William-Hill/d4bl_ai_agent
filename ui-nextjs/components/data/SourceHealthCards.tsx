@@ -9,7 +9,7 @@ export default function SourceHealthCards({
   enabledSources,
   recentFailures,
 }: SourceHealthCardsProps) {
-  const healthy = enabledSources - recentFailures;
+  const healthy = Math.max(0, enabledSources - recentFailures);
   const disabled = totalSources - enabledSources;
 
   const cards = [
