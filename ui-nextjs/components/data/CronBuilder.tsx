@@ -33,6 +33,14 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
   // Display: if user is typing, show draft; otherwise show current custom value or empty
   const displayValue = editing ? draft : (!isPreset(value) && value != null ? value : '');
 
+  const commitDraft = () => {
+    const val = draft.trim() || displayValue.trim();
+    if (!val) return;
+    onChange(val);
+    setDraft('');
+    setEditing(false);
+  };
+
   return (
     <div className="space-y-4">
       {/* Preset buttons */}
@@ -84,12 +92,11 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
             type="button"
             onMouseDown={(e) => {
               e.preventDefault(); // Prevent blur from firing first
-              const val = draft.trim() || displayValue.trim();
-              if (val) {
-                onChange(val);
-                setDraft('');
-                setEditing(false);
-              }
+              commitDraft();
+            }}
+            onClick={(e) => {
+              // e.detail === 0 indicates keyboard activation (Enter/Space)
+              if (e.detail === 0) commitDraft();
             }}
             className="px-4 py-2 bg-[#404040] text-gray-300 rounded text-sm hover:bg-[#505050] transition-colors"
           >

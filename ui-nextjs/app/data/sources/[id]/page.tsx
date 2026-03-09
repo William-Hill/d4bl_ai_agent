@@ -121,11 +121,16 @@ export default function SourceDetailPage() {
     setError(null);
 
     try {
-      let parsedConfig: Record<string, unknown>;
+      let parsedConfig: unknown;
       try {
         parsedConfig = JSON.parse(editConfig);
       } catch {
         setError('Invalid JSON in config field');
+        setSaving(false);
+        return;
+      }
+      if (parsedConfig === null || Array.isArray(parsedConfig) || typeof parsedConfig !== 'object') {
+        setError('Config must be a JSON object');
         setSaving(false);
         return;
       }
@@ -232,7 +237,14 @@ export default function SourceDetailPage() {
           </button>
           <button
             type="button"
-            onClick={() => setEditing(!editing)}
+            onClick={() => {
+              if (!editing && source) {
+                setEditName(source.name);
+                setEditConfig(JSON.stringify(source.config, null, 2));
+                setEditSchedule(source.default_schedule);
+              }
+              setEditing(!editing);
+            }}
             className="px-4 py-2 bg-[#404040] text-gray-300 text-sm rounded hover:bg-[#505050] transition-colors"
           >
             {editing ? 'Cancel Edit' : 'Edit'}
@@ -284,7 +296,14 @@ export default function SourceDetailPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEditing(false)}
+                  onClick={() => {
+                    if (source) {
+                      setEditName(source.name);
+                      setEditConfig(JSON.stringify(source.config, null, 2));
+                      setEditSchedule(source.default_schedule);
+                    }
+                    setEditing(false);
+                  }}
                   className="px-4 py-2 bg-[#404040] text-gray-300 text-sm rounded hover:bg-[#505050] transition-colors"
                 >
                   Cancel

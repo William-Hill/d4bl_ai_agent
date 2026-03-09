@@ -50,17 +50,20 @@ export default function SourceWizard() {
   const [schedule, setSchedule] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [jsonErrors, setJsonErrors] = useState<{ headers: string | null; tool_params: string | null }>({
+    headers: null,
+    tool_params: null,
+  });
 
   const updateConfig = (field: string, value: string | number) => {
     setConfig((prev) => ({ ...prev, [field]: value }));
     if (field === 'headers' || field === 'tool_params') {
       const str = String(value).trim();
-      if (!str) {
-        setJsonError(null);
-      } else {
-        try { JSON.parse(str); setJsonError(null); } catch { setJsonError(`Invalid JSON in ${field === 'headers' ? 'Headers' : 'Tool Params'}`); }
-      }
+      const label = field === 'headers' ? 'Headers' : 'Tool Params';
+      setJsonErrors((prev) => ({
+        ...prev,
+        [field]: !str ? null : (() => { try { JSON.parse(str); return null; } catch { return `Invalid JSON in ${label}`; } })(),
+      }));
     }
   };
 
@@ -68,7 +71,8 @@ export default function SourceWizard() {
     if (step === 0) return sourceType !== null;
     if (step === 1) {
       if (!config.name.trim()) return false;
-      if (jsonError) return false;
+      if (sourceType === 'api' && jsonErrors.headers) return false;
+      if (sourceType === 'mcp' && jsonErrors.tool_params) return false;
       if (sourceType === 'api' && !config.url?.trim()) return false;
       if (sourceType === 'rss_feed' && !config.feed_url?.trim()) return false;
       if (sourceType === 'database' && !config.connection_string?.trim()) return false;
@@ -252,8 +256,8 @@ export default function SourceWizard() {
                 rows={3}
                 className={inputClass}
               />
-              {jsonError && config.headers?.trim() && (
-                <p className="text-red-400 text-xs mt-1">{jsonError}</p>
+              {jsonErrors.headers && config.headers?.trim() && (
+                <p className="text-red-400 text-xs mt-1">{jsonErrors.headers}</p>
               )}
             </div>
             <div>
@@ -390,8 +394,8 @@ export default function SourceWizard() {
                 rows={3}
                 className={inputClass}
               />
-              {jsonError && config.tool_params?.trim() && (
-                <p className="text-red-400 text-xs mt-1">{jsonError}</p>
+              {jsonErrors.tool_params && config.tool_params?.trim() && (
+                <p className="text-red-400 text-xs mt-1">{jsonErrors.tool_params}</p>
               )}
             </div>
           </>
