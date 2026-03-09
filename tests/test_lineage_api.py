@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from d4bl.app.schemas import (
+    ConnectionTestResponse,
     LineageGraphNode,
     LineageGraphResponse,
     LineageRecordResponse,
-    ConnectionTestResponse,
 )
 from d4bl.query.structured import ProvenanceInfo
 
