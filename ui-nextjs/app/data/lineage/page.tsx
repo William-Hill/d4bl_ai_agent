@@ -1,12 +1,12 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { Node, Edge } from '@xyflow/react';
-import LineageGraph from '@/components/data/LineageGraph';
+import type { Edge } from '@xyflow/react';
+import LineageGraph, { type LineageNode } from '@/components/data/LineageGraph';
 
 export default function LineagePage() {
   const { nodes, edges } = useMemo(() => {
-    const mockNodes: Node[] = [
+    const mockNodes: LineageNode[] = [
       // Sources (x=0)
       { id: 'src-1', type: 'source', position: { x: 0, y: 0 }, data: { label: 'Census ACS API', sourceType: 'api' } },
       { id: 'src-2', type: 'source', position: { x: 0, y: 150 }, data: { label: 'OpenStates API', sourceType: 'api' } },

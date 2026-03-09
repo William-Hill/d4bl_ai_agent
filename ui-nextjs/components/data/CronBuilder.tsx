@@ -81,10 +81,12 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
           />
           <button
             type="button"
-            onClick={() => {
-              const val = (editing ? draft : displayValue).trim();
+            onMouseDown={(e) => {
+              e.preventDefault(); // Prevent blur from firing first
+              const val = draft.trim() || displayValue.trim();
               if (val) {
                 onChange(val);
+                setDraft('');
                 setEditing(false);
               }
             }}

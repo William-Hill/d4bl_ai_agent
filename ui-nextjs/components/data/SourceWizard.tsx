@@ -376,6 +376,9 @@ export default function SourceWizard() {
                 rows={3}
                 className={inputClass}
               />
+              {jsonError && config.tool_params?.trim() && (
+                <p className="text-red-400 text-xs mt-1">{jsonError}</p>
+              )}
             </div>
           </>
         )}

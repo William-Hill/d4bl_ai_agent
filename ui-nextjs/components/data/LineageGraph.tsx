@@ -15,25 +15,35 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
+/* ---------- node data types ---------- */
+
+type SourceNodeData = { label: string; sourceType: string };
+type AssetNodeData = { label: string; status: string };
+type TableNodeData = { label: string; records: number };
+
+type SourceNodeType = Node<SourceNodeData, 'source'>;
+type AssetNodeType = Node<AssetNodeData, 'asset'>;
+type TableNodeType = Node<TableNodeData, 'table'>;
+export type LineageNode = SourceNodeType | AssetNodeType | TableNodeType;
+
 /* ---------- custom node components ---------- */
 
-function SourceNode({ data, selected }: NodeProps) {
+function SourceNode({ data, selected }: NodeProps<SourceNodeType>) {
   return (
     <div
       className={`px-4 py-3 rounded-lg border bg-blue-900/60 border-blue-500 min-w-[160px]
         ${selected ? 'ring-2 ring-blue-400' : ''}`}
     >
       <p className="text-xs text-blue-300 uppercase tracking-wide mb-1">Source</p>
-      <p className="text-sm font-semibold text-white">{data.label as string}</p>
-      <p className="text-xs text-gray-400 mt-1">{data.sourceType as string}</p>
+      <p className="text-sm font-semibold text-white">{data.label}</p>
+      <p className="text-xs text-gray-400 mt-1">{data.sourceType}</p>
       <Handle type="source" position={Position.Right} />
     </div>
   );
 }
 
-function AssetNode({ data, selected }: NodeProps) {
-  const status = data.status as string;
-  const statusColor = status === 'completed' ? 'text-green-400' : status === 'running' ? 'text-yellow-300' : 'text-gray-400';
+function AssetNode({ data, selected }: NodeProps<AssetNodeType>) {
+  const statusColor = data.status === 'completed' ? 'text-green-400' : data.status === 'running' ? 'text-yellow-300' : 'text-gray-400';
   return (
     <div
       className={`px-4 py-3 rounded-lg border bg-yellow-900/60 border-yellow-500 min-w-[160px]
@@ -41,14 +51,14 @@ function AssetNode({ data, selected }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} />
       <p className="text-xs text-yellow-300 uppercase tracking-wide mb-1">Asset</p>
-      <p className="text-sm font-semibold text-white">{data.label as string}</p>
-      <p className={`text-xs mt-1 ${statusColor}`}>{status}</p>
+      <p className="text-sm font-semibold text-white">{data.label}</p>
+      <p className={`text-xs mt-1 ${statusColor}`}>{data.status}</p>
       <Handle type="source" position={Position.Right} />
     </div>
   );
 }
 
-function TableNode({ data, selected }: NodeProps) {
+function TableNode({ data, selected }: NodeProps<TableNodeType>) {
   return (
     <div
       className={`px-4 py-3 rounded-lg border bg-green-900/60 border-green-500 min-w-[160px]
@@ -56,8 +66,8 @@ function TableNode({ data, selected }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} />
       <p className="text-xs text-green-300 uppercase tracking-wide mb-1">Table</p>
-      <p className="text-sm font-semibold text-white">{data.label as string}</p>
-      <p className="text-xs text-gray-400 mt-1">{(data.records as number).toLocaleString()} records</p>
+      <p className="text-sm font-semibold text-white">{data.label}</p>
+      <p className="text-xs text-gray-400 mt-1">{data.records.toLocaleString()} records</p>
     </div>
   );
 }
@@ -65,12 +75,12 @@ function TableNode({ data, selected }: NodeProps) {
 /* ---------- main component ---------- */
 
 interface LineageGraphProps {
-  nodes: Node[];
+  nodes: LineageNode[];
   edges: Edge[];
 }
 
 export default function LineageGraph({ nodes: initialNodes, edges: initialEdges }: LineageGraphProps) {
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedNode, setSelectedNode] = useState<LineageNode | null>(null);
 
   const nodeTypes: NodeTypes = useMemo(
     () => ({
@@ -82,7 +92,7 @@ export default function LineageGraph({ nodes: initialNodes, edges: initialEdges 
   );
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
-    setSelectedNode(node);
+    setSelectedNode(node as LineageNode);
   }, []);
 
   const onPaneClick = useCallback(() => {
@@ -117,24 +127,24 @@ export default function LineageGraph({ nodes: initialNodes, edges: initialEdges 
             </div>
             <div>
               <span className="text-gray-400">Name:</span>{' '}
-              <span className="text-gray-200">{selectedNode.data.label as string}</span>
+              <span className="text-gray-200">{selectedNode.data.label}</span>
             </div>
-            {selectedNode.data.sourceType != null && (
+            {'sourceType' in selectedNode.data && (
               <div>
                 <span className="text-gray-400">Source Type:</span>{' '}
-                <span className="text-gray-200">{String(selectedNode.data.sourceType)}</span>
+                <span className="text-gray-200">{selectedNode.data.sourceType}</span>
               </div>
             )}
-            {selectedNode.data.status != null && (
+            {'status' in selectedNode.data && (
               <div>
                 <span className="text-gray-400">Status:</span>{' '}
-                <span className="text-gray-200">{String(selectedNode.data.status)}</span>
+                <span className="text-gray-200">{selectedNode.data.status}</span>
               </div>
             )}
-            {selectedNode.data.records !== undefined && (
+            {'records' in selectedNode.data && (
               <div>
                 <span className="text-gray-400">Records:</span>{' '}
-                <span className="text-gray-200">{(selectedNode.data.records as number).toLocaleString()}</span>
+                <span className="text-gray-200">{selectedNode.data.records.toLocaleString()}</span>
               </div>
             )}
           </div>
