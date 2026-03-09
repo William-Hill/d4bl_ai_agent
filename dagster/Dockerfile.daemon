@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY dagster.yaml workspace.yaml ./
+COPY d4bl_pipelines/ ./d4bl_pipelines/
+
+ENV DAGSTER_HOME=/app
+
+RUN addgroup --system dagster && adduser --system --ingroup dagster dagster \
+    && chown -R dagster:dagster /app
+
+USER dagster
+
+CMD ["dagster-daemon", "run"]

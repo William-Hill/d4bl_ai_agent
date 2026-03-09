@@ -3,7 +3,7 @@ Pydantic schemas shared by the FastAPI application.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -90,6 +90,11 @@ class QuerySourceItem(BaseModel):
     snippet: str
     source_type: str
     relevance_score: float
+    # Provenance metadata (populated for ingested data results)
+    data_source_name: str | None = None
+    quality_score: float | None = None
+    last_updated: str | None = None
+    coverage_notes: str | None = None
 
 
 class QueryResponse(BaseModel):
@@ -266,6 +271,56 @@ class ReloadResponse(BaseModel):
 
 
 # --- Keyword Monitor models ---
+
+
+# --- Lineage models ---
+
+
+class LineageRecordResponse(BaseModel):
+    """Single data lineage record with full provenance."""
+
+    id: str
+    ingestion_run_id: str
+    target_table: str
+    record_id: str
+    source_url: str | None = None
+    source_hash: str | None = None
+    transformation: dict | None = None
+    quality_score: float | None = None
+    coverage_metadata: dict | None = None
+    bias_flags: Any = None
+    retrieved_at: str | None = None
+    # Joined from parent tables
+    data_source_name: str | None = None
+    data_source_type: str | None = None
+
+
+class LineageGraphNode(BaseModel):
+    """A node in the asset dependency graph."""
+
+    asset_key: str
+    source_name: str | None = None
+    source_type: str | None = None
+    last_run_status: str | None = None
+    last_run_at: str | None = None
+    record_count: int = 0
+
+
+class LineageGraphResponse(BaseModel):
+    """Asset dependency graph showing data flow."""
+
+    nodes: list[LineageGraphNode]
+
+
+# --- Test Connection models ---
+
+
+class ConnectionTestResponse(BaseModel):
+    """Result of testing a source connection."""
+
+    success: bool
+    message: str
+    details: dict | None = None
 
 
 class KeywordMonitorCreate(BaseModel):

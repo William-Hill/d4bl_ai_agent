@@ -35,6 +35,11 @@ class SourceReference:
     snippet: str
     source_type: str  # "vector" or "structured"
     relevance_score: float
+    # Provenance metadata (populated for ingested data results)
+    data_source_name: str | None = None
+    quality_score: float | None = None
+    last_updated: str | None = None
+    coverage_notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,28 @@ class ResultFusion:
             if job_key in seen_job_ids:
                 continue
             seen_job_ids.add(job_key)
+
+            # Build provenance metadata from lineage info if available
+            prov_name = None
+            prov_quality = None
+            prov_notes = None
+            if sr.provenance:
+                prov_name = ", ".join(
+                    p.data_source_name for p in sr.provenance
+                )
+                scores = [
+                    p.quality_score
+                    for p in sr.provenance
+                    if p.quality_score is not None
+                ]
+                if scores:
+                    prov_quality = round(sum(scores) / len(scores), 2)
+                all_gaps = []
+                for p in sr.provenance:
+                    all_gaps.extend(p.coverage_gaps)
+                if all_gaps:
+                    prov_notes = "; ".join(all_gaps)
+
             sources.append(
                 SourceReference(
                     url=f"job://{sr.job_id}",
@@ -95,6 +122,10 @@ class ResultFusion:
                     snippet=(sr.summary or "")[:300],
                     source_type="structured",
                     relevance_score=sr.relevance_score,
+                    data_source_name=prov_name,
+                    quality_score=prov_quality,
+                    last_updated=sr.created_at or None,
+                    coverage_notes=prov_notes,
                 )
             )
 

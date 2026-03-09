@@ -112,6 +112,7 @@ async def _fetch_acs(
         "source": "US Census Bureau ACS 5-Year Estimates",
         "methodology": "D4BL equity-focused data collection",
     },
+    required_resource_keys={"db_url", "langfuse"},
 )
 async def census_acs_indicators(
     context: AssetExecutionContext,
@@ -127,6 +128,15 @@ async def census_acs_indicators(
     year = int(os.environ.get("ACS_YEAR", "2022"))
     state_filter = os.environ.get("ACS_STATE_FIPS")
     db_url = context.resources.db_url
+
+    # --- Langfuse tracing ---
+    langfuse = context.resources.langfuse
+    trace = None
+    if langfuse:
+        trace = langfuse.trace(
+            name="dagster:census_acs_indicators",
+            metadata={"year": year, "state_filter": state_filter},
+        )
 
     engine = create_async_engine(
         db_url, pool_size=3, max_overflow=5
@@ -149,10 +159,13 @@ async def census_acs_indicators(
         f"year={year}, state={state_filter or 'all'}"
     )
 
+    fetch_span = trace.span(name="fetch") if trace else None
     async with aiohttp.ClientSession() as http_session:
         rows = await _fetch_acs(
             http_session, year, variables, state_filter
         )
+    if fetch_span:
+        fetch_span.end(metadata={"rows_fetched": len(rows) - 1 if rows else 0})
 
     if not rows or len(rows) < 2:
         context.log.warning("No data returned from Census API")
@@ -168,6 +181,7 @@ async def census_acs_indicators(
     data_rows = rows[1:]
     state_col = headers.index("state")
 
+    store_span = trace.span(name="store") if trace else None
     try:
         async with async_session() as session:
             for row in data_rows:
@@ -281,6 +295,8 @@ async def census_acs_indicators(
                     f"Lineage recording failed: {lineage_exc}"
                 )
     finally:
+        if store_span:
+            store_span.end(metadata={"records_ingested": records_ingested})
         await engine.dispose()
 
     # Compute coverage metadata
@@ -319,6 +335,20 @@ async def census_acs_indicators(
     bias_flags.append(
         "single_source: all data from Census ACS 5-Year only"
     )
+
+    # Flush Langfuse trace
+    if trace:
+        trace.update(
+            metadata={
+                "records_ingested": records_ingested,
+                "states_covered": len(covered_fips),
+                "quality_score": min(
+                    5.0, (len(covered_fips) / len(all_fips)) * 5
+                ),
+            }
+        )
+    if langfuse:
+        langfuse.flush()
 
     return MaterializeResult(
         metadata={

@@ -7,6 +7,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
+import aiohttp
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,11 +23,21 @@ from d4bl.app.schemas import (
     KeywordMonitorCreate,
     KeywordMonitorResponse,
     KeywordMonitorUpdate,
+    LineageGraphNode,
+    LineageGraphResponse,
+    LineageRecordResponse,
     ReloadResponse,
     RunStatusResponse,
+    ConnectionTestResponse,
     TriggerResponse,
 )
-from d4bl.infra.database import DataSource, IngestionRun, KeywordMonitor, get_db
+from d4bl.infra.database import (
+    DataLineage,
+    DataSource,
+    IngestionRun,
+    KeywordMonitor,
+    get_db,
+)
 from d4bl.services.dagster_client import DagsterClient, DagsterClientError
 
 logger = logging.getLogger(__name__)
@@ -439,6 +451,254 @@ async def reload_dagster(
         raise HTTPException(status_code=502, detail=str(exc))
 
     return ReloadResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# Lineage endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/lineage/{table}/{record_id}",
+    response_model=list[LineageRecordResponse],
+)
+async def get_record_lineage(
+    table: str,
+    record_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full provenance chain for a specific record."""
+    result = await db.execute(
+        select(DataLineage, DataSource.name, DataSource.source_type)
+        .join(IngestionRun, DataLineage.ingestion_run_id == IngestionRun.id)
+        .join(DataSource, IngestionRun.data_source_id == DataSource.id)
+        .where(
+            DataLineage.target_table == table,
+            DataLineage.record_id == record_id,
+        )
+        .order_by(desc(DataLineage.retrieved_at))
+    )
+    rows = result.all()
+
+    return [
+        LineageRecordResponse(
+            **lineage.to_dict(),
+            data_source_name=source_name,
+            data_source_type=source_type,
+        )
+        for lineage, source_name, source_type in rows
+    ]
+
+
+@router.get("/lineage/graph", response_model=LineageGraphResponse)
+async def get_lineage_graph(
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the asset dependency graph: one node per data source with run stats."""
+    # Subquery: latest run per source
+    latest_run_subq = (
+        select(
+            IngestionRun.data_source_id,
+            func.max(IngestionRun.started_at).label("max_started"),
+        )
+        .group_by(IngestionRun.data_source_id)
+        .subquery()
+    )
+
+    # Subquery: count of lineage records per source
+    lineage_counts = (
+        select(
+            IngestionRun.data_source_id,
+            func.count(DataLineage.id).label("record_count"),
+        )
+        .join(DataLineage, DataLineage.ingestion_run_id == IngestionRun.id)
+        .group_by(IngestionRun.data_source_id)
+        .subquery()
+    )
+
+    result = await db.execute(
+        select(
+            DataSource,
+            IngestionRun.status,
+            IngestionRun.started_at,
+            lineage_counts.c.record_count,
+        )
+        .outerjoin(
+            latest_run_subq,
+            DataSource.id == latest_run_subq.c.data_source_id,
+        )
+        .outerjoin(
+            IngestionRun,
+            and_(
+                IngestionRun.data_source_id == latest_run_subq.c.data_source_id,
+                IngestionRun.started_at == latest_run_subq.c.max_started,
+            ),
+        )
+        .outerjoin(
+            lineage_counts,
+            DataSource.id == lineage_counts.c.data_source_id,
+        )
+        .order_by(DataSource.name)
+    )
+    rows = result.all()
+
+    nodes = [
+        LineageGraphNode(
+            asset_key=_slugify(source.name),
+            source_name=source.name,
+            source_type=source.source_type,
+            last_run_status=run_status,
+            last_run_at=run_started.isoformat() if run_started else None,
+            record_count=record_count or 0,
+        )
+        for source, run_status, run_started, record_count in rows
+    ]
+
+    return LineageGraphResponse(nodes=nodes)
+
+
+# ---------------------------------------------------------------------------
+# Test connection endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/sources/{source_id}/test",
+    response_model=ConnectionTestResponse,
+)
+async def test_source_connection(
+    source_id: uuid.UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate a source's configuration without ingesting data."""
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == source_id)
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    try:
+        test_result = await _test_connection(source.source_type, source.config)
+        return test_result
+    except Exception as exc:
+        logger.error("Connection test failed for source %s: %s", source_id, exc)
+        return ConnectionTestResponse(
+            success=False,
+            message=f"Connection test failed: {exc}",
+        )
+
+
+async def _test_connection(
+    source_type: str, config: dict
+) -> ConnectionTestResponse:
+    """Run a lightweight connectivity check based on source type."""
+
+    if source_type == "api":
+        url = config.get("url") or config.get("base_url")
+        if not url:
+            return ConnectionTestResponse(
+                success=False, message="No URL configured"
+            )
+        async with aiohttp.ClientSession() as session:
+            async with session.head(
+                url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True
+            ) as resp:
+                return ConnectionTestResponse(
+                    success=resp.status < 400,
+                    message=f"HTTP {resp.status}",
+                    details={"status_code": resp.status},
+                )
+
+    elif source_type == "web_scrape":
+        url = config.get("url")
+        if not url:
+            return ConnectionTestResponse(
+                success=False, message="No URL configured"
+            )
+        async with aiohttp.ClientSession() as session:
+            async with session.head(
+                url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True
+            ) as resp:
+                return ConnectionTestResponse(
+                    success=resp.status < 400,
+                    message=f"URL reachable (HTTP {resp.status})",
+                    details={"status_code": resp.status},
+                )
+
+    elif source_type == "rss_feed":
+        url = config.get("feed_url") or config.get("url")
+        if not url:
+            return ConnectionTestResponse(
+                success=False, message="No feed URL configured"
+            )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status >= 400:
+                    return ConnectionTestResponse(
+                        success=False,
+                        message=f"Feed returned HTTP {resp.status}",
+                    )
+                text = await resp.text()
+                is_xml = "<rss" in text[:500] or "<feed" in text[:500]
+                return ConnectionTestResponse(
+                    success=is_xml,
+                    message="Valid RSS/Atom feed" if is_xml else "Response is not valid RSS/Atom XML",
+                )
+
+    elif source_type == "database":
+        dsn = config.get("connection_string") or config.get("dsn")
+        if not dsn:
+            return ConnectionTestResponse(
+                success=False, message="No connection string configured"
+            )
+        from sqlalchemy.ext.asyncio import create_async_engine as _create_engine
+
+        test_engine = _create_engine(dsn, pool_pre_ping=True)
+        try:
+            async with test_engine.connect() as conn:
+                await conn.execute(select(func.now()))
+            return ConnectionTestResponse(
+                success=True, message="Database connection successful"
+            )
+        finally:
+            await test_engine.dispose()
+
+    elif source_type == "mcp":
+        server_url = config.get("server_url")
+        if not server_url:
+            return ConnectionTestResponse(
+                success=False, message="No MCP server URL configured"
+            )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                server_url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                return ConnectionTestResponse(
+                    success=resp.status < 400,
+                    message=f"MCP server reachable (HTTP {resp.status})",
+                    details={"status_code": resp.status},
+                )
+
+    elif source_type == "file_upload":
+        upload_dir = Path(UPLOAD_ROOT) / str(config.get("source_id", ""))
+        if upload_dir.exists() and any(upload_dir.iterdir()):
+            return ConnectionTestResponse(
+                success=True,
+                message=f"Upload directory exists with {sum(1 for _ in upload_dir.iterdir())} file(s)",
+            )
+        return ConnectionTestResponse(
+            success=False, message="No files found in upload directory"
+        )
+
+    return ConnectionTestResponse(
+        success=False, message=f"Unknown source type: {source_type}"
+    )
 
 
 # ---------------------------------------------------------------------------

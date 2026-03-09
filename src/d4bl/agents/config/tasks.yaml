@@ -98,11 +98,24 @@ bias_detection_task:
     - Cultural bias (assumptions based on cultural norms)
     - Systemic biases (structural inequalities in data or methodology)
     - Language bias (biased terminology or framing)
+
+    DATA LINEAGE AWARENESS:
+    When research draws on ingested datasets (Census ACS, OpenStates, etc.),
+    also evaluate the underlying data for:
+    - Quality score concerns: Flag conclusions based on data with quality scores below 3.0
+    - Geographic/demographic coverage gaps: Note which states, races, or demographics
+      are missing from the datasets used
+    - Single-source concentration: Flag when conclusions rely on data from only one
+      ingestion source, as this increases risk of systematic bias
+    - Temporal gaps: Note if data is outdated relative to the research question
+
     Provide recommendations to mitigate identified biases.
   expected_output: >
     A bias detection report that:
     - Identifies potential biases in the research and analysis
     - Explains the nature and impact of each identified bias
+    - Flags data quality or coverage concerns from underlying datasets
+    - Notes any single-source concentration risks
     - Provides recommendations to address or mitigate biases
     - Suggests alternative perspectives or additional sources if needed
   agent: bias_detection_agent
