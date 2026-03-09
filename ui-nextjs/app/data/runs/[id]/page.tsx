@@ -3,29 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
+import { IngestionRun, STATUS_STYLES } from '@/lib/data-types';
 import RunTimeline from '@/components/data/RunTimeline';
-
-interface IngestionRun {
-  id: string;
-  data_source_id: string;
-  dagster_run_id: string | null;
-  status: string;
-  triggered_by: string | null;
-  trigger_type: string;
-  records_ingested: number | null;
-  started_at: string | null;
-  completed_at: string | null;
-  error_detail: string | null;
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  completed: 'bg-green-900/40 text-green-400 border-green-800',
-  running: 'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  failed: 'bg-red-900/40 text-red-400 border-red-800',
-  pending: 'bg-gray-800/40 text-gray-400 border-gray-700',
-};
 
 function formatDuration(startedAt: string, completedAt: string): string {
   const start = new Date(startedAt).getTime();
@@ -48,15 +29,10 @@ function formatDuration(startedAt: string, completedAt: string): string {
 
 export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
-  const { session } = useAuth();
+  const { session, getHeaders } = useAuthHeaders();
   const [run, setRun] = useState<IngestionRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const getHeaders = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token}`,
-  }), [session?.access_token]);
 
   const fetchRun = useCallback(async () => {
     if (!session?.access_token || !params.id) return;
@@ -217,11 +193,7 @@ export default function RunDetailPage() {
         {/* Run Timeline */}
         <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-4">
           <h2 className="text-base font-semibold text-white mb-4">Pipeline Steps</h2>
-          <RunTimeline
-            status={run.status}
-            startedAt={run.started_at}
-            completedAt={run.completed_at}
-          />
+          <RunTimeline status={run.status} />
         </div>
       </div>
     </div>

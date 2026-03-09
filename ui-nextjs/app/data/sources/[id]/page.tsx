@@ -3,57 +3,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
+import { DataSource, IngestionRun, STATUS_STYLES, TYPE_LABELS } from '@/lib/data-types';
 import CronBuilder from '@/components/data/CronBuilder';
 import QualityTrendChart from '@/components/data/QualityTrendChart';
 
-interface DataSource {
-  id: string;
-  name: string;
-  source_type: string;
-  config: Record<string, unknown>;
-  default_schedule: string | null;
-  enabled: boolean;
-  created_by: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  last_run_status: string | null;
-  last_run_at: string | null;
-}
-
-interface IngestionRun {
-  id: string;
-  data_source_id: string;
-  dagster_run_id: string | null;
-  status: string;
-  triggered_by: string | null;
-  trigger_type: string;
-  records_ingested: number | null;
-  started_at: string | null;
-  completed_at: string | null;
-  error_detail: string | null;
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  completed: 'bg-green-900/40 text-green-400 border-green-800',
-  running: 'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  failed: 'bg-red-900/40 text-red-400 border-red-800',
-  pending: 'bg-gray-800/40 text-gray-400 border-gray-700',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  api: 'API',
-  file_upload: 'File',
-  web_scrape: 'Web',
-  rss_feed: 'RSS',
-  database: 'DB',
-  mcp: 'MCP',
-};
-
 export default function SourceDetailPage() {
   const params = useParams<{ id: string }>();
-  const { session } = useAuth();
+  const { session, getHeaders } = useAuthHeaders();
   const [source, setSource] = useState<DataSource | null>(null);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,11 +26,6 @@ export default function SourceDetailPage() {
   const [editName, setEditName] = useState('');
   const [editConfig, setEditConfig] = useState('');
   const [editSchedule, setEditSchedule] = useState<string | null>(null);
-
-  const getHeaders = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token}`,
-  }), [session?.access_token]);
 
   const fetchData = useCallback(async () => {
     if (!session?.access_token || !params.id) return;
@@ -103,6 +56,17 @@ export default function SourceDetailPage() {
     }
   }, [session?.access_token, params.id, getHeaders]);
 
+  const fetchRuns = useCallback(async () => {
+    if (!session?.access_token || !params.id) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/data/runs?source_id=${params.id}&limit=20`, { headers: getHeaders() });
+      if (!res.ok) throw new Error(`Runs: HTTP ${res.status}`);
+      setRuns(await res.json());
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load runs');
+    }
+  }, [session?.access_token, params.id, getHeaders]);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -121,7 +85,7 @@ export default function SourceDetailPage() {
       const data = await res.json();
       setTriggerResult(`Run triggered: ${data.run_id}`);
       // Refresh runs list
-      fetchData();
+      fetchRuns();
     } catch (e: unknown) {
       setTriggerResult(e instanceof Error ? e.message : 'Failed to trigger run');
     } finally {

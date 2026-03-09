@@ -14,7 +14,7 @@ const PRESETS = [
   { label: 'Monthly on 1st', cron: '0 2 1 * *', description: 'Runs on the 1st of every month at 2:00 AM' },
 ];
 
-function describeCron(cron: string | null): string {
+export function describeCron(cron: string | null): string {
   if (!cron) return 'No schedule set';
   const preset = PRESETS.find((p) => p.cron === cron);
   if (preset) return preset.description;

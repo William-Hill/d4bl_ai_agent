@@ -2,34 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
+import { DataSource } from '@/lib/data-types';
 import SourceTable from '@/components/data/SourceTable';
 
-interface DataSource {
-  id: string;
-  name: string;
-  source_type: string;
-  config: Record<string, unknown>;
-  default_schedule: string | null;
-  enabled: boolean;
-  created_by: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  last_run_status: string | null;
-  last_run_at: string | null;
-}
-
 export default function SourcesPage() {
-  const { session } = useAuth();
+  const { session, getHeaders } = useAuthHeaders();
   const [sources, setSources] = useState<DataSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const getHeaders = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token}`,
-  }), [session?.access_token]);
 
   const fetchSources = useCallback(async () => {
     if (!session?.access_token) return;

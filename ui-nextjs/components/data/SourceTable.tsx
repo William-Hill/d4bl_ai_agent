@@ -2,41 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-
-interface DataSource {
-  id: string;
-  name: string;
-  source_type: string;
-  config: Record<string, unknown>;
-  default_schedule: string | null;
-  enabled: boolean;
-  created_by: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  last_run_status: string | null;
-  last_run_at: string | null;
-}
+import { DataSource, STATUS_STYLES, TYPE_LABELS } from '@/lib/data-types';
 
 interface SourceTableProps {
   sources: DataSource[];
   onToggleEnabled: (id: string, enabled: boolean) => Promise<void>;
 }
-
-const STATUS_STYLES: Record<string, string> = {
-  completed: 'bg-green-900/40 text-green-400 border-green-800',
-  running: 'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  failed: 'bg-red-900/40 text-red-400 border-red-800',
-  pending: 'bg-gray-800/40 text-gray-400 border-gray-700',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  api: 'API',
-  file_upload: 'File',
-  web_scrape: 'Web',
-  rss_feed: 'RSS',
-  database: 'DB',
-  mcp: 'MCP',
-};
 
 export default function SourceTable({ sources, onToggleEnabled }: SourceTableProps) {
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());

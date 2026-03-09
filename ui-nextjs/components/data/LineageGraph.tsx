@@ -113,16 +113,16 @@ export default function LineageGraph({ nodes: initialNodes, edges: initialEdges 
               <span className="text-gray-400">Name:</span>{' '}
               <span className="text-gray-200">{selectedNode.data.label as string}</span>
             </div>
-            {selectedNode.data.sourceType && (
+            {selectedNode.data.sourceType != null && (
               <div>
                 <span className="text-gray-400">Source Type:</span>{' '}
-                <span className="text-gray-200">{selectedNode.data.sourceType as string}</span>
+                <span className="text-gray-200">{String(selectedNode.data.sourceType)}</span>
               </div>
             )}
-            {selectedNode.data.status && (
+            {selectedNode.data.status != null && (
               <div>
                 <span className="text-gray-400">Status:</span>{' '}
-                <span className="text-gray-200">{selectedNode.data.status as string}</span>
+                <span className="text-gray-200">{String(selectedNode.data.status)}</span>
               </div>
             )}
             {selectedNode.data.records !== undefined && (

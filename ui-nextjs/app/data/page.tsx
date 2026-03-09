@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/lib/auth-context';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
+import { IngestionRun, STATUS_STYLES } from '@/lib/data-types';
 import SourceHealthCards from '@/components/data/SourceHealthCards';
 
 interface OverviewData {
@@ -11,37 +12,12 @@ interface OverviewData {
   recent_failures: number;
 }
 
-interface IngestionRun {
-  id: string;
-  data_source_id: string;
-  dagster_run_id: string | null;
-  status: string;
-  triggered_by: string | null;
-  trigger_type: string;
-  records_ingested: number | null;
-  started_at: string | null;
-  completed_at: string | null;
-  error_detail: string | null;
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  completed: 'bg-green-900/40 text-green-400 border-green-800',
-  running: 'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  failed: 'bg-red-900/40 text-red-400 border-red-800',
-  pending: 'bg-gray-800/40 text-gray-400 border-gray-700',
-};
-
 export default function DataPage() {
-  const { session } = useAuth();
+  const { session, getHeaders } = useAuthHeaders();
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const getHeaders = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token}`,
-  }), [session?.access_token]);
 
   const fetchData = useCallback(async () => {
     if (!session?.access_token) return;

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/lib/auth-context';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
-import CronBuilder from '@/components/data/CronBuilder';
+import { DataSource } from '@/lib/data-types';
+import CronBuilder, { describeCron } from '@/components/data/CronBuilder';
 import KeywordTagInput from '@/components/data/KeywordTagInput';
 
 interface Monitor {
@@ -17,31 +18,12 @@ interface Monitor {
   created_at: string | null;
 }
 
-interface DataSource {
-  id: string;
-  name: string;
-  source_type: string;
-  enabled: boolean;
-}
-
 interface MonitorFormData {
   name: string;
   keywords: string[];
   source_ids: string[];
   schedule: string | null;
   enabled: boolean;
-}
-
-const CRON_PRESETS: Record<string, string> = {
-  '0 * * * *': 'Every hour',
-  '0 2 * * *': 'Daily at 2am',
-  '0 2 * * 1': 'Weekly on Monday',
-  '0 2 1 * *': 'Monthly on 1st',
-};
-
-function describeCron(cron: string | null): string {
-  if (!cron) return 'Manual only';
-  return CRON_PRESETS[cron] ?? cron;
 }
 
 const emptyForm: MonitorFormData = {
@@ -53,7 +35,7 @@ const emptyForm: MonitorFormData = {
 };
 
 export default function MonitorsPage() {
-  const { session } = useAuth();
+  const { session, getHeaders } = useAuthHeaders();
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [sources, setSources] = useState<DataSource[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,38 +52,37 @@ export default function MonitorsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const getHeaders = useCallback(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token}`,
-  }), [session?.access_token]);
-
-  const fetchData = useCallback(async () => {
+  const fetchMonitors = useCallback(async () => {
     if (!session?.access_token) return;
-    setLoading(true);
-    setError(null);
-
     try {
-      const [monitorsRes, sourcesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/data/monitors`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/data/sources`, { headers: getHeaders() }),
-      ]);
-
-      if (!monitorsRes.ok) throw new Error(`Monitors: HTTP ${monitorsRes.status}`);
-      if (!sourcesRes.ok) throw new Error(`Sources: HTTP ${sourcesRes.status}`);
-
-      setMonitors(await monitorsRes.json());
-      const allSources = await sourcesRes.json();
-      setSources(allSources.map((s: DataSource) => ({ id: s.id, name: s.name, source_type: s.source_type, enabled: s.enabled })));
+      const res = await fetch(`${API_BASE}/api/data/monitors`, { headers: getHeaders() });
+      if (!res.ok) throw new Error(`Monitors: HTTP ${res.status}`);
+      setMonitors(await res.json());
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load data');
-    } finally {
-      setLoading(false);
+      setError(e instanceof Error ? e.message : 'Failed to load monitors');
+    }
+  }, [session?.access_token, getHeaders]);
+
+  const fetchSources = useCallback(async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/data/sources`, { headers: getHeaders() });
+      if (!res.ok) throw new Error(`Sources: HTTP ${res.status}`);
+      setSources(await res.json());
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load sources');
     }
   }, [session?.access_token, getHeaders]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const loadAll = async () => {
+      setLoading(true);
+      setError(null);
+      await Promise.all([fetchMonitors(), fetchSources()]);
+      setLoading(false);
+    };
+    loadAll();
+  }, [fetchMonitors, fetchSources]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -152,7 +133,7 @@ export default function MonitorsPage() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       closeModal();
-      fetchData();
+      fetchMonitors();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save monitor');
     } finally {
@@ -195,7 +176,7 @@ export default function MonitorsPage() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setDeletingId(null);
-      fetchData();
+      fetchMonitors();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to delete monitor');
     } finally {

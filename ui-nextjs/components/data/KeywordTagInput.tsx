@@ -19,14 +19,18 @@ export default function KeywordTagInput({ value, onChange }: KeywordTagInputProp
       .filter(Boolean);
 
     const unique: string[] = [];
+    let lastDuplicate: string | null = null;
     for (const kw of newKeywords) {
       if (value.includes(kw)) {
-        // Flash duplicate briefly
-        setFlashTag(kw);
-        setTimeout(() => setFlashTag(null), 400);
+        lastDuplicate = kw;
       } else if (!unique.includes(kw)) {
         unique.push(kw);
       }
+    }
+
+    if (lastDuplicate) {
+      setFlashTag(lastDuplicate);
+      setTimeout(() => setFlashTag(null), 400);
     }
 
     if (unique.length > 0) {

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 import { API_BASE } from '@/lib/api';
 
 interface OverviewData {
@@ -10,18 +10,10 @@ interface OverviewData {
 }
 
 export default function DataStatusCard() {
-  const { session } = useAuth();
+  const { session, getHeaders } = useAuthHeaders();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
-
-  const getHeaders = useCallback(
-    () => ({
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session?.access_token}`,
-    }),
-    [session?.access_token],
-  );
 
   useEffect(() => {
     if (!session?.access_token) return;

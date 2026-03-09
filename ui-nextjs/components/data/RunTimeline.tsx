@@ -2,8 +2,6 @@
 
 interface RunTimelineProps {
   status: string;
-  startedAt: string | null;
-  completedAt: string | null;
 }
 
 const STEPS = ['FETCH', 'VALIDATE', 'SCORE', 'TRANSFORM', 'STORE', 'LINEAGE', 'NOTIFY'];
