@@ -586,7 +586,11 @@ async def test_source_connection(
         )
         return test_result
     except Exception as exc:
-        logger.error("Connection test failed for source %s: %s", source_id, exc)
+        logger.error(
+            "Connection test failed for source %s: %s",
+            source_id,
+            type(exc).__name__,
+        )
         return ConnectionTestResponse(
             success=False,
             message="Connection test failed unexpectedly",

@@ -206,8 +206,12 @@ async def census_acs_indicators(
     data_rows = rows[1:]
     state_col = headers.index("state")
 
-    store_span = trace.span(name="store") if trace else None
+    store_span = None
     try:
+        try:
+            store_span = trace.span(name="store") if trace else None
+        except Exception:
+            pass
         async with async_session() as session:
             for row in data_rows:
                 state_fips = row[state_col]

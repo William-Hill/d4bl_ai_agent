@@ -28,7 +28,7 @@ python src/d4bl/main.py "query" --agents researcher writer  # Select specific ag
 
 ```bash
 # Local development
-cd dagster && dagster dev -p 3003 && cd ..
+(cd dagster && dagster dev -p 3003)
 
 # Or via Docker Compose overlay (from repo root)
 docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
