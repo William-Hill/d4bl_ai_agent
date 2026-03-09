@@ -39,7 +39,7 @@ def _get_langfuse_client():
         logger.warning("langfuse package not installed, tracing disabled")
         return None
     except Exception as exc:
-        logger.warning("Failed to initialise Langfuse: %s", exc)
+        logger.warning("Failed to initialise Langfuse: %s", exc, exc_info=True)
         return None
 
 

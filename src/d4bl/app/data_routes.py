@@ -8,13 +8,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 import aiohttp
-
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, require_admin
 from d4bl.app.schemas import (
+    ConnectionTestResponse,
     DataOverviewResponse,
     DataSourceCreate,
     DataSourceResponse,
@@ -28,7 +28,6 @@ from d4bl.app.schemas import (
     LineageRecordResponse,
     ReloadResponse,
     RunStatusResponse,
-    ConnectionTestResponse,
     TriggerResponse,
 )
 from d4bl.infra.database import (
@@ -582,29 +581,41 @@ async def test_source_connection(
         raise HTTPException(status_code=404, detail="Source not found")
 
     try:
-        test_result = await _test_connection(source.source_type, source.config)
+        test_result = await _test_connection(
+            source.source_type, source.config, source_id=source_id
+        )
         return test_result
     except Exception as exc:
         logger.error("Connection test failed for source %s: %s", source_id, exc)
         return ConnectionTestResponse(
             success=False,
-            message=f"Connection test failed: {exc}",
+            message="Connection test failed unexpectedly",
         )
 
 
 async def _check_url_reachable(
     session: aiohttp.ClientSession, url: str, label: str = ""
 ) -> ConnectionTestResponse:
-    """HEAD-request a URL and return success/failure."""
+    """HEAD-request a URL, falling back to GET if HEAD is rejected."""
+    timeout = aiohttp.ClientTimeout(total=10)
     async with session.head(
-        url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True
+        url, timeout=timeout, allow_redirects=True
     ) as resp:
-        prefix = f"{label} " if label else ""
-        return ConnectionTestResponse(
-            success=resp.status < 400,
-            message=f"{prefix}(HTTP {resp.status})".strip(),
-            details={"status_code": resp.status},
-        )
+        status = resp.status
+
+    # Fall back to GET if the server doesn't support HEAD
+    if status in (405, 501):
+        async with session.get(
+            url, timeout=timeout, allow_redirects=True
+        ) as resp:
+            status = resp.status
+
+    prefix = f"{label} " if label else ""
+    return ConnectionTestResponse(
+        success=status < 400,
+        message=f"{prefix}(HTTP {status})".strip(),
+        details={"status_code": status},
+    )
 
 
 # URL config keys per source type for _test_connection
@@ -617,7 +628,9 @@ _URL_KEYS: dict[str, list[str]] = {
 
 
 async def _test_connection(
-    source_type: str, config: dict
+    source_type: str,
+    config: dict,
+    source_id: uuid.UUID | None = None,
 ) -> ConnectionTestResponse:
     """Run a lightweight connectivity check based on source type."""
 
@@ -673,7 +686,7 @@ async def _test_connection(
             await test_engine.dispose()
 
     elif source_type == "file_upload":
-        upload_dir = Path(UPLOAD_ROOT) / str(config.get("source_id", ""))
+        upload_dir = Path(UPLOAD_ROOT) / str(source_id or config.get("source_id", ""))
         if upload_dir.exists():
             files = list(upload_dir.iterdir())
             if files:

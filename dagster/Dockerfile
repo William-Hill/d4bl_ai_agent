@@ -2,11 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY dagster/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY dagster.yaml workspace.yaml ./
-COPY d4bl_pipelines/ ./d4bl_pipelines/
+COPY dagster/dagster.yaml dagster/workspace.yaml ./
+COPY dagster/d4bl_pipelines/ ./d4bl_pipelines/
 
 ENV DAGSTER_HOME=/app
 

@@ -27,10 +27,10 @@ python src/d4bl/main.py "query" --agents researcher writer  # Select specific ag
 ### Dagster (Data Ingestion Pipelines)
 
 ```bash
-# Local development (from dagster/ directory)
-cd dagster && dagster dev -p 3003
+# Local development
+cd dagster && dagster dev -p 3003 && cd ..
 
-# Or via Docker Compose overlay
+# Or via Docker Compose overlay (from repo root)
 docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
 ```
 

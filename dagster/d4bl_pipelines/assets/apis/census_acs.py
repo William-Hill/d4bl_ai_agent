@@ -66,6 +66,20 @@ STATE_FIPS = {
 }
 
 
+def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
+    """Best-effort Langfuse trace finalization."""
+    try:
+        if trace:
+            metadata = {"records_ingested": records_ingested}
+            if extra_metadata:
+                metadata.update(extra_metadata)
+            trace.update(metadata=metadata)
+        if langfuse:
+            langfuse.flush()
+    except Exception:
+        pass  # tracing is best-effort
+
+
 def _compute_rate(
     numerator: str, denominator: str
 ) -> float | None:
@@ -129,14 +143,18 @@ async def census_acs_indicators(
     state_filter = os.environ.get("ACS_STATE_FIPS")
     db_url = context.resources.db_url
 
-    # --- Langfuse tracing ---
+    # --- Langfuse tracing (best-effort) ---
     langfuse = context.resources.langfuse
     trace = None
-    if langfuse:
-        trace = langfuse.trace(
-            name="dagster:census_acs_indicators",
-            metadata={"year": year, "state_filter": state_filter},
-        )
+    try:
+        if langfuse:
+            trace = langfuse.trace(
+                name="dagster:census_acs_indicators",
+                metadata={"year": year, "state_filter": state_filter},
+            )
+    except Exception as lf_exc:
+        context.log.warning(f"Langfuse trace init failed: {lf_exc}")
+        langfuse = None
 
     engine = create_async_engine(
         db_url, pool_size=3, max_overflow=5
@@ -159,17 +177,24 @@ async def census_acs_indicators(
         f"year={year}, state={state_filter or 'all'}"
     )
 
-    fetch_span = trace.span(name="fetch") if trace else None
+    try:
+        fetch_span = trace.span(name="fetch") if trace else None
+    except Exception:
+        fetch_span = None
     async with aiohttp.ClientSession() as http_session:
         rows = await _fetch_acs(
             http_session, year, variables, state_filter
         )
-    if fetch_span:
-        fetch_span.end(metadata={"rows_fetched": len(rows) - 1 if rows else 0})
+    try:
+        if fetch_span:
+            fetch_span.end(metadata={"rows_fetched": len(rows) - 1 if rows else 0})
+    except Exception:
+        pass
 
     if not rows or len(rows) < 2:
         context.log.warning("No data returned from Census API")
         await engine.dispose()
+        _flush_langfuse(langfuse, trace, records_ingested=0)
         return MaterializeResult(
             metadata={
                 "records_ingested": 0,
@@ -295,8 +320,11 @@ async def census_acs_indicators(
                     f"Lineage recording failed: {lineage_exc}"
                 )
     finally:
-        if store_span:
-            store_span.end(metadata={"records_ingested": records_ingested})
+        try:
+            if store_span:
+                store_span.end(metadata={"records_ingested": records_ingested})
+        except Exception:
+            pass
         await engine.dispose()
 
     # Compute coverage metadata
@@ -336,19 +364,13 @@ async def census_acs_indicators(
         "single_source: all data from Census ACS 5-Year only"
     )
 
-    # Flush Langfuse trace
-    if trace:
-        trace.update(
-            metadata={
-                "records_ingested": records_ingested,
-                "states_covered": len(covered_fips),
-                "quality_score": min(
-                    5.0, (len(covered_fips) / len(all_fips)) * 5
-                ),
-            }
-        )
-    if langfuse:
-        langfuse.flush()
+    _flush_langfuse(
+        langfuse, trace, records_ingested,
+        extra_metadata={
+            "states_covered": len(covered_fips),
+            "quality_score": min(5.0, (len(covered_fips) / len(all_fips)) * 5),
+        },
+    )
 
     return MaterializeResult(
         metadata={

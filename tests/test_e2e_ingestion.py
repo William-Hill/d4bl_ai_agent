@@ -23,7 +23,7 @@ from d4bl.infra.database import (
     IngestionRun,
     get_db,
 )
-from d4bl.query.fusion import ResultFusion, SourceReference
+from d4bl.query.fusion import ResultFusion
 from d4bl.query.structured import ProvenanceInfo, StructuredResult
 
 # ---- Constants ----

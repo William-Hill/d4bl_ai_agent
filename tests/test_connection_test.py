@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from d4bl.app.data_routes import _test_connection
-from d4bl.app.schemas import ConnectionTestResponse
 
 
 @pytest.mark.asyncio
@@ -110,6 +109,6 @@ async def test_rss_invalid_feed():
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with patch("d4bl.app.data_routes.aiohttp.ClientSession", return_value=mock_session):
-        result = await _test_connection("rss_feed", {"url": "https://example.com/page"})
+        result = await _test_connection("rss_feed", {"feed_url": "https://example.com/page"})
     assert result.success is False
     assert "not valid RSS" in result.message
