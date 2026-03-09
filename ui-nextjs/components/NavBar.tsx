@@ -16,6 +16,11 @@ export default function NavBar() {
         Explore Data
       </Link>
       {isAdmin && (
+        <Link href="/data" className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors">
+          Data
+        </Link>
+      )}
+      {isAdmin && (
         <Link href="/admin" className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors">
           Admin
         </Link>
