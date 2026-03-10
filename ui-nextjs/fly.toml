@@ -4,6 +4,10 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
+[build.args]
+  NEXT_PUBLIC_SUPABASE_URL = "https://ioyudfdpjvbnwoqyokzd.supabase.co"
+  NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlveXVkZmRwanZibndvcXlva3pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NDkxMjcsImV4cCI6MjA4ODQyNTEyN30.PWb03j-CuFDahc4RMfLUzDV15OFd3OrNnvjHzhnHb6A"
+
 [http_service]
   internal_port = 3000
   force_https = true
