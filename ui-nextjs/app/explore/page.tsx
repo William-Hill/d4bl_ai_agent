@@ -7,6 +7,7 @@ import RacialGapChart from '@/components/explore/RacialGapChart';
 import PolicyTable from '@/components/explore/PolicyTable';
 import { IndicatorRow, PolicyBill } from '@/lib/types';
 import { API_BASE } from '@/lib/api';
+import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
 /** 2-digit FIPS code → 2-letter state abbreviation for API filtering */
 const FIPS_TO_ABBREV: Record<string, string> = {
@@ -21,6 +22,7 @@ const FIPS_TO_ABBREV: Record<string, string> = {
 };
 
 export default function ExplorePage() {
+  const { session, getHeaders } = useAuthHeaders();
   const [filters, setFilters] = useState<ExploreFilters>({
     metric: 'homeownership_rate',
     race: 'total',
@@ -44,6 +46,7 @@ export default function ExplorePage() {
 
   // Fetch all-state indicators for the map (current metric + race + year)
   const fetchMapData = useCallback(async (signal: AbortSignal) => {
+    if (!session?.access_token) return;
     try {
       const params = new URLSearchParams({
         metric: filters.metric,
@@ -53,7 +56,7 @@ export default function ExplorePage() {
       });
       const res = await fetch(
         `${API_BASE}/api/explore/indicators?${params}`,
-        { signal },
+        { signal, headers: getHeaders() },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (signal.aborted) return;
@@ -62,7 +65,7 @@ export default function ExplorePage() {
       if (signal.aborted) return;
       setError(e instanceof Error ? e.message : 'Failed to load map data');
     }
-  }, [filters.metric, filters.race, filters.year]);
+  }, [filters.metric, filters.race, filters.year, session?.access_token, getHeaders]);
 
   // Fetch all-race indicators for selected state (for bar chart)
   const fetchChartData = useCallback(async (signal: AbortSignal) => {
@@ -79,7 +82,7 @@ export default function ExplorePage() {
       });
       const res = await fetch(
         `${API_BASE}/api/explore/indicators?${params}`,
-        { signal },
+        { signal, headers: getHeaders() },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (signal.aborted) return;
@@ -88,7 +91,7 @@ export default function ExplorePage() {
       if (signal.aborted) return;
       setError(e instanceof Error ? e.message : 'Failed to load chart data');
     }
-  }, [filters.selectedState, filters.metric, filters.year]);
+  }, [filters.selectedState, filters.metric, filters.year, getHeaders]);
 
   // Fetch policy bills for selected state (server-side filter by state abbrev)
   const fetchBills = useCallback(async (signal: AbortSignal) => {
@@ -104,7 +107,7 @@ export default function ExplorePage() {
     try {
       const res = await fetch(
         `${API_BASE}/api/explore/policies?state=${abbrev}`,
-        { signal },
+        { signal, headers: getHeaders() },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (signal.aborted) return;
@@ -114,7 +117,7 @@ export default function ExplorePage() {
       if (signal.aborted) return;
       setError(e instanceof Error ? e.message : 'Failed to load bills');
     }
-  }, [filters.selectedState]);
+  }, [filters.selectedState, getHeaders]);
 
   useEffect(() => {
     const controller = new AbortController();
