@@ -4,13 +4,12 @@ Fetches health outcome and prevention measures by county/state
 from the CDC PLACES SODA API. No authentication required.
 """
 
-import hashlib
-import json
 import os
 import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -63,18 +62,6 @@ MEASURE_CATEGORIES = {
 }
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
 
 
 @asset(
@@ -268,7 +255,7 @@ async def cdc_places_health(
         "limitation: county-level only, no race disaggregation in PLACES"
     )
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     context.log.info(
         f"Ingested {records_ingested} CDC PLACES records "

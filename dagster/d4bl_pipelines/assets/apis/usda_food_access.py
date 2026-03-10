@@ -10,6 +10,7 @@ import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -59,7 +60,7 @@ OUT_FIELDS = ",".join([
 ])
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0,
+def flush_langfuse(langfuse, trace, records_ingested=0,
                      extra_metadata=None):
     """Best-effort Langfuse trace finalization."""
     try:
@@ -151,6 +152,36 @@ async def usda_food_access(
                 if not features:
                     break
 
+                upsert_sql = text("""
+                    INSERT INTO usda_food_access
+                        (id, tract_fips, state_fips,
+                         county_fips, state_name,
+                         county_name, urban_rural,
+                         population, poverty_rate,
+                         median_income, year,
+                         indicator, value)
+                    VALUES
+                        (CAST(:id AS UUID),
+                         :tract_fips, :state_fips,
+                         :county_fips, :state_name,
+                         :county_name, :urban_rural,
+                         :population, :poverty_rate,
+                         :median_income, :year,
+                         :indicator, :value)
+                    ON CONFLICT (tract_fips, year,
+                                 indicator)
+                    DO UPDATE SET
+                        value = EXCLUDED.value,
+                        state_fips = EXCLUDED.state_fips,
+                        county_fips = EXCLUDED.county_fips,
+                        state_name = EXCLUDED.state_name,
+                        county_name = EXCLUDED.county_name,
+                        urban_rural = EXCLUDED.urban_rural,
+                        population = EXCLUDED.population,
+                        poverty_rate = EXCLUDED.poverty_rate,
+                        median_income = EXCLUDED.median_income
+                """)
+
                 async with async_session() as session:
                     for feature in features:
                         attrs = feature.get("attributes", {})
@@ -160,12 +191,38 @@ async def usda_food_access(
                         if not tract_fips:
                             continue
 
+                        state_fips = (
+                            tract_fips[:2] if len(tract_fips) >= 2
+                            else None
+                        )
+                        county_fips = (
+                            tract_fips[:5] if len(tract_fips) >= 5
+                            else None
+                        )
                         state_name = attrs.get("State", "")
                         county_name = attrs.get("County", "")
                         urban = attrs.get("Urban", None)
                         population = None
                         try:
                             population = int(attrs.get("Pop2010", ""))
+                        except (ValueError, TypeError):
+                            pass
+
+                        poverty_rate = None
+                        try:
+                            raw_pr = attrs.get("PovertyRate")
+                            if raw_pr is not None:
+                                poverty_rate = float(raw_pr)
+                        except (ValueError, TypeError):
+                            pass
+
+                        median_income = None
+                        try:
+                            raw_mi = attrs.get(
+                                "MedianFamilyIncome"
+                            )
+                            if raw_mi is not None:
+                                median_income = float(raw_mi)
                         except (ValueError, TypeError):
                             pass
 
@@ -182,42 +239,23 @@ async def usda_food_access(
                             except (ValueError, TypeError):
                                 continue
 
+                            indicator_name = INDICATOR_NAMES.get(
+                                indicator, indicator.lower()
+                            )
+
                             record_id = uuid.uuid5(
                                 uuid.NAMESPACE_URL,
                                 f"usda_food:{tract_fips}:{year}"
                                 f":{indicator}",
                             )
 
-                            upsert_sql = text("""
-                                INSERT INTO usda_food_access
-                                    (id, tract_fips, state_name,
-                                     county_name, urban_rural,
-                                     population, year, indicator,
-                                     indicator_name, value,
-                                     bias_flags)
-                                VALUES
-                                    (CAST(:id AS UUID),
-                                     :tract_fips, :state_name,
-                                     :county_name, :urban_rural,
-                                     :population, :year,
-                                     :indicator, :indicator_name,
-                                     :value, :bias_flags)
-                                ON CONFLICT (tract_fips, year,
-                                             indicator)
-                                DO UPDATE SET
-                                    value = :value,
-                                    state_name = :state_name,
-                                    county_name = :county_name,
-                                    urban_rural = :urban_rural,
-                                    population = :population,
-                                    indicator_name = :indicator_name,
-                                    bias_flags = :bias_flags
-                            """)
                             await session.execute(
                                 upsert_sql,
                                 {
                                     "id": str(record_id),
                                     "tract_fips": tract_fips,
+                                    "state_fips": state_fips,
+                                    "county_fips": county_fips,
                                     "state_name": state_name,
                                     "county_name": county_name,
                                     "urban_rural": (
@@ -228,21 +266,11 @@ async def usda_food_access(
                                         else None
                                     ),
                                     "population": population,
+                                    "poverty_rate": poverty_rate,
+                                    "median_income": median_income,
                                     "year": year,
-                                    "indicator": indicator,
-                                    "indicator_name": (
-                                        INDICATOR_NAMES.get(
-                                            indicator,
-                                            indicator.lower(),
-                                        )
-                                    ),
+                                    "indicator": indicator_name,
                                     "value": value,
-                                    "bias_flags": (
-                                        "tract-level, not race-"
-                                        "disaggregated; food desert "
-                                        "definitions vary by "
-                                        "distance threshold"
-                                    ),
                                 },
                             )
                             records_ingested += 1
@@ -266,7 +294,7 @@ async def usda_food_access(
         f"atlas_year: {year} (based on 2010 Census tracts)",
     ]
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     context.log.info(
         f"Ingested {records_ingested} USDA Food Access records "

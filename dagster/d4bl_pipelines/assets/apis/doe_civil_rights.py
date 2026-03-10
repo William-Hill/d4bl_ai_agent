@@ -12,6 +12,7 @@ import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -76,7 +77,7 @@ _RACE_SUFFIXES = {
 }
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0,
+def flush_langfuse(langfuse, trace, records_ingested=0,
                     extra_metadata=None):
     """Best-effort Langfuse trace finalization."""
     try:
@@ -216,7 +217,7 @@ async def doe_civil_rights(
                             f"{resp.status}. CRDC bulk data may not "
                             f"be available at this URL. Skipping."
                         )
-                        _flush_langfuse(
+                        flush_langfuse(
                             langfuse, trace, 0,
                             {"status": "skipped",
                              "reason": f"HTTP {resp.status}"},
@@ -237,7 +238,7 @@ async def doe_civil_rights(
                 context.log.warning(
                     f"CRDC download failed: {exc}. Skipping."
                 )
-                _flush_langfuse(
+                flush_langfuse(
                     langfuse, trace, 0,
                     {"status": "skipped", "reason": str(exc)},
                 )
@@ -263,7 +264,7 @@ async def doe_civil_rights(
                     context.log.warning(
                         "No CSV files found in CRDC ZIP archive."
                     )
-                    _flush_langfuse(
+                    flush_langfuse(
                         langfuse, trace, 0,
                         {"status": "skipped",
                          "reason": "no CSV in ZIP"},
@@ -412,7 +413,7 @@ async def doe_civil_rights(
         missing = set(CRDC_METRICS) - metrics_seen
         bias_flags.append(f"missing_metrics: {sorted(missing)}")
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     context.log.info(
         f"Ingested {records_ingested} CRDC records "

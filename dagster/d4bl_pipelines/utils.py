@@ -53,6 +53,20 @@ async def db_session(db_url: str):
         await engine.dispose()
 
 
+def flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
+    """Best-effort Langfuse trace finalization."""
+    try:
+        if trace:
+            metadata = {"records_ingested": records_ingested}
+            if extra_metadata:
+                metadata.update(extra_metadata)
+            trace.update(metadata=metadata)
+        if langfuse:
+            langfuse.flush()
+    except Exception:
+        pass
+
+
 # Shared SQL for ingested_records upsert
 INGESTED_RECORDS_UPSERT_SQL = """
     INSERT INTO ingested_records

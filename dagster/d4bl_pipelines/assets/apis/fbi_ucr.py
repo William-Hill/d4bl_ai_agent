@@ -14,6 +14,7 @@ import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -92,18 +93,6 @@ FBI_OFFENSES = [
 ]
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
 
 
 @asset(
@@ -175,6 +164,24 @@ async def fbi_ucr_crime(
             timeout = aiohttp.ClientTimeout(total=60)
 
             # --- Arrest data by race ---
+            arrest_upsert_sql = text("""
+                INSERT INTO fbi_crime_stats
+                    (id, state_abbrev, state_name,
+                     offense, race, year, category,
+                     value)
+                VALUES
+                    (CAST(:id AS UUID),
+                     :state_abbrev, :state_name,
+                     :offense, :race, :year,
+                     :category, :value)
+                ON CONFLICT
+                    (state_abbrev, offense, race,
+                     year, category)
+                DO UPDATE SET
+                    value = :value,
+                    state_name = :state_name
+            """)
+
             for state_abbr in STATE_ABBREVS:
                 for offense in FBI_OFFENSES:
                     url = (
@@ -241,26 +248,8 @@ async def fbi_ucr_crime(
                                 f"{race}:{year}:arrest",
                             )
 
-                            upsert_sql = text("""
-                                INSERT INTO fbi_crime_stats
-                                    (id, state_abbrev, state_name,
-                                     offense, race, year, category,
-                                     value, bias_flag)
-                                VALUES
-                                    (CAST(:id AS UUID),
-                                     :state_abbrev, :state_name,
-                                     :offense, :race, :year,
-                                     :category, :value, :bias_flag)
-                                ON CONFLICT
-                                    (state_abbrev, offense, race,
-                                     year, category)
-                                DO UPDATE SET
-                                    value = :value,
-                                    state_name = :state_name,
-                                    bias_flag = :bias_flag
-                            """)
                             await session.execute(
-                                upsert_sql,
+                                arrest_upsert_sql,
                                 {
                                     "id": str(record_id),
                                     "state_abbrev": state_abbr,
@@ -272,12 +261,6 @@ async def fbi_ucr_crime(
                                     "year": int(year),
                                     "category": "arrest",
                                     "value": value,
-                                    "bias_flag": (
-                                        "voluntary_reporting: "
-                                        "FBI UCR data is voluntarily "
-                                        "reported by agencies; "
-                                        "significant underreporting"
-                                    ),
                                 },
                             )
                             records_ingested += 1
@@ -290,6 +273,24 @@ async def fbi_ucr_crime(
                     )
 
             # --- Hate crime data by state ---
+            hate_upsert_sql = text("""
+                INSERT INTO fbi_crime_stats
+                    (id, state_abbrev, state_name,
+                     offense, race, year, category,
+                     value)
+                VALUES
+                    (CAST(:id AS UUID),
+                     :state_abbrev, :state_name,
+                     :offense, :race, :year,
+                     :category, :value)
+                ON CONFLICT
+                    (state_abbrev, offense, race,
+                     year, category)
+                DO UPDATE SET
+                    value = :value,
+                    state_name = :state_name
+            """)
+
             for state_abbr in STATE_ABBREVS:
                 url = (
                     f"{FBI_CDE_URL}/hate-crime/state/{state_abbr}"
@@ -348,26 +349,8 @@ async def fbi_ucr_crime(
                             f"{bias_motivation}:{year}:hate_crime",
                         )
 
-                        upsert_sql = text("""
-                            INSERT INTO fbi_crime_stats
-                                (id, state_abbrev, state_name,
-                                 offense, race, year, category,
-                                 value, bias_flag)
-                            VALUES
-                                (CAST(:id AS UUID),
-                                 :state_abbrev, :state_name,
-                                 :offense, :race, :year,
-                                 :category, :value, :bias_flag)
-                            ON CONFLICT
-                                (state_abbrev, offense, race,
-                                 year, category)
-                            DO UPDATE SET
-                                value = :value,
-                                state_name = :state_name,
-                                bias_flag = :bias_flag
-                        """)
                         await session.execute(
-                            upsert_sql,
+                            hate_upsert_sql,
                             {
                                 "id": str(record_id),
                                 "state_abbrev": state_abbr,
@@ -379,12 +362,6 @@ async def fbi_ucr_crime(
                                 "year": int(year),
                                 "category": "hate_crime",
                                 "value": value,
-                                "bias_flag": (
-                                    "voluntary_reporting: "
-                                    "FBI UCR data is voluntarily "
-                                    "reported by agencies; "
-                                    "significant underreporting"
-                                ),
                             },
                         )
                         hate_crime_records += 1
@@ -419,7 +396,7 @@ async def fbi_ucr_crime(
             f"missing_offenses: {sorted(missing)}"
         )
 
-    _flush_langfuse(langfuse, trace, total)
+    flush_langfuse(langfuse, trace, total)
 
     context.log.info(
         f"Ingested {total} FBI UCR records "

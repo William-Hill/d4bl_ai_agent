@@ -10,6 +10,7 @@ import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -38,23 +39,31 @@ INDICATOR_FIELDS = {
     "fmr_4br": "Four-Bedroom",
 }
 
-# State FIPS codes (2-digit) to state abbreviation
+# State FIPS codes (2-digit) to state name
 STATE_FIPS = {
-    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA",
-    "08": "CO", "09": "CT", "10": "DE", "11": "DC", "12": "FL",
-    "13": "GA", "15": "HI", "16": "ID", "17": "IL", "18": "IN",
-    "19": "IA", "20": "KS", "21": "KY", "22": "LA", "23": "ME",
-    "24": "MD", "25": "MA", "26": "MI", "27": "MN", "28": "MS",
-    "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH",
-    "34": "NJ", "35": "NM", "36": "NY", "37": "NC", "38": "ND",
-    "39": "OH", "40": "OK", "41": "OR", "42": "PA", "44": "RI",
-    "45": "SC", "46": "SD", "47": "TN", "48": "TX", "49": "UT",
-    "50": "VT", "51": "VA", "53": "WA", "54": "WV", "55": "WI",
-    "56": "WY",
+    "01": "Alabama", "02": "Alaska", "04": "Arizona",
+    "05": "Arkansas", "06": "California", "08": "Colorado",
+    "09": "Connecticut", "10": "Delaware",
+    "11": "District of Columbia", "12": "Florida",
+    "13": "Georgia", "15": "Hawaii", "16": "Idaho",
+    "17": "Illinois", "18": "Indiana", "19": "Iowa",
+    "20": "Kansas", "21": "Kentucky", "22": "Louisiana",
+    "23": "Maine", "24": "Maryland", "25": "Massachusetts",
+    "26": "Michigan", "27": "Minnesota", "28": "Mississippi",
+    "29": "Missouri", "30": "Montana", "31": "Nebraska",
+    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey",
+    "35": "New Mexico", "36": "New York",
+    "37": "North Carolina", "38": "North Dakota", "39": "Ohio",
+    "40": "Oklahoma", "41": "Oregon", "42": "Pennsylvania",
+    "44": "Rhode Island", "45": "South Carolina",
+    "46": "South Dakota", "47": "Tennessee", "48": "Texas",
+    "49": "Utah", "50": "Vermont", "51": "Virginia",
+    "53": "Washington", "54": "West Virginia",
+    "55": "Wisconsin", "56": "Wyoming",
 }
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0,
+def flush_langfuse(langfuse, trace, records_ingested=0,
                      extra_metadata=None):
     """Best-effort Langfuse trace finalization."""
     try:
@@ -120,9 +129,28 @@ async def hud_fair_housing(
         f"across {len(STATE_FIPS)} states"
     )
 
+    upsert_sql = text("""
+        INSERT INTO hud_fair_housing
+            (id, fips_code, geography_type, geography_name,
+             state_fips, year, indicator, value,
+             race_group_a, race_group_b)
+        VALUES
+            (CAST(:id AS UUID), :fips_code,
+             :geography_type, :geography_name,
+             :state_fips, :year, :indicator,
+             :value, :race_group_a, :race_group_b)
+        ON CONFLICT (fips_code, year, indicator,
+                     race_group_a, race_group_b)
+        DO UPDATE SET
+            value = EXCLUDED.value,
+            geography_type = EXCLUDED.geography_type,
+            geography_name = EXCLUDED.geography_name,
+            state_fips = EXCLUDED.state_fips
+    """)
+
     try:
         async with aiohttp.ClientSession() as http_session:
-            for fips_code, state_abbr in STATE_FIPS.items():
+            for fips_code, state_name in STATE_FIPS.items():
                 url = f"{HUD_FMR_URL}/{fips_code}"
                 timeout = aiohttp.ClientTimeout(total=60)
                 try:
@@ -133,7 +161,7 @@ async def hud_fair_housing(
                         payload = await resp.json()
                 except Exception as fetch_exc:
                     context.log.warning(
-                        f"Failed to fetch FMR for {state_abbr} "
+                        f"Failed to fetch FMR for {state_name} "
                         f"({fips_code}): {fetch_exc}"
                     )
                     continue
@@ -148,11 +176,11 @@ async def hud_fair_housing(
                     fmr_data = data[0]
                 else:
                     context.log.warning(
-                        f"No FMR data for {state_abbr}"
+                        f"No FMR data for {state_name}"
                     )
                     continue
 
-                states_seen.add(state_abbr)
+                states_seen.add(state_name)
 
                 async with async_session() as session:
                     for indicator in HUD_INDICATORS:
@@ -189,39 +217,19 @@ async def hud_fair_housing(
                             f"{indicator}:all:all",
                         )
 
-                        upsert_sql = text("""
-                            INSERT INTO hud_fair_housing
-                                (id, fips_code, state_abbr,
-                                 year, indicator, value,
-                                 race_group_a, race_group_b,
-                                 bias_flag)
-                            VALUES
-                                (CAST(:id AS UUID), :fips_code,
-                                 :state_abbr, :year, :indicator,
-                                 :value, :race_group_a,
-                                 :race_group_b, :bias_flag)
-                            ON CONFLICT (fips_code, year, indicator,
-                                         race_group_a, race_group_b)
-                            DO UPDATE SET
-                                value = :value,
-                                state_abbr = :state_abbr,
-                                bias_flag = :bias_flag
-                        """)
                         await session.execute(
                             upsert_sql,
                             {
                                 "id": str(record_id),
                                 "fips_code": fips_code,
-                                "state_abbr": state_abbr,
+                                "geography_type": "state",
+                                "geography_name": state_name,
+                                "state_fips": fips_code,
                                 "year": year,
                                 "indicator": indicator,
                                 "value": value,
                                 "race_group_a": "all",
                                 "race_group_b": "all",
-                                "bias_flag": (
-                                    "HUD FMR does not disaggregate "
-                                    "by race"
-                                ),
                             },
                         )
                         records_ingested += 1
@@ -229,7 +237,7 @@ async def hud_fair_housing(
                     await session.commit()
 
                 context.log.info(
-                    f"  {state_abbr} ({fips_code}): upserted FMR "
+                    f"  {state_name} ({fips_code}): upserted FMR "
                     f"records"
                 )
     finally:
@@ -247,7 +255,7 @@ async def hud_fair_housing(
             f"missing_indicators: {sorted(missing)}"
         )
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     context.log.info(
         f"Ingested {records_ingested} HUD FMR records "

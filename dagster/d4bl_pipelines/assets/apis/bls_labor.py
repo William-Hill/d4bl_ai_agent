@@ -5,12 +5,12 @@ Bureau of Labor Statistics (BLS) Public Data API via POST requests.
 API key is optional but recommended (25 req/day without vs 500 with).
 """
 
-import json
 import os
 import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -32,18 +32,6 @@ BLS_SERIES = {
 }
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
 
 
 @asset(
@@ -141,6 +129,25 @@ async def bls_labor_stats(
                 results = data.get("Results", {})
                 series_list = results.get("series", [])
 
+                upsert_sql = text("""
+                    INSERT INTO bls_labor_statistics
+                        (id, series_id, state_fips, state_name,
+                         metric, race, year, period, value,
+                         footnotes)
+                    VALUES
+                        (CAST(:id AS UUID), :series_id,
+                         :state_fips, :state_name,
+                         :metric, :race,
+                         :year, :period, :value,
+                         :footnotes)
+                    ON CONFLICT (series_id, year, period)
+                    DO UPDATE SET
+                        value = EXCLUDED.value,
+                        footnotes = EXCLUDED.footnotes,
+                        metric = EXCLUDED.metric,
+                        race = EXCLUDED.race
+                """)
+
                 async with async_session() as session:
                     for series in series_list:
                         sid = series.get("seriesID", "")
@@ -153,7 +160,6 @@ async def bls_labor_stats(
                         for obs in series.get("data", []):
                             year = obs.get("year", "")
                             period = obs.get("period", "")
-                            period_name = obs.get("periodName", "")
                             raw_value = obs.get("value", "")
 
                             try:
@@ -161,47 +167,31 @@ async def bls_labor_stats(
                             except (ValueError, TypeError):
                                 continue
 
+                            footnote_list = obs.get("footnotes", [])
+                            footnotes = ", ".join(
+                                fn.get("text", "")
+                                for fn in footnote_list
+                                if fn.get("text")
+                            ) or None
+
                             record_id = uuid.uuid5(
                                 uuid.NAMESPACE_URL,
                                 f"bls:{sid}:{year}:{period}",
                             )
 
-                            upsert_sql = text("""
-                                INSERT INTO bls_labor_statistics
-                                    (id, series_id, metric, race,
-                                     year, period, period_name,
-                                     value, geography_level,
-                                     bias_flags)
-                                VALUES
-                                    (CAST(:id AS UUID), :series_id,
-                                     :metric, :race,
-                                     :year, :period, :period_name,
-                                     :value, :geography_level,
-                                     :bias_flags)
-                                ON CONFLICT (series_id, year, period)
-                                DO UPDATE SET
-                                    value = :value,
-                                    period_name = :period_name,
-                                    metric = :metric,
-                                    race = :race
-                            """)
                             await session.execute(
                                 upsert_sql,
                                 {
                                     "id": str(record_id),
                                     "series_id": sid,
+                                    "state_fips": None,
+                                    "state_name": None,
                                     "metric": meta["metric"],
                                     "race": meta["race"],
                                     "year": year,
                                     "period": period,
-                                    "period_name": period_name,
                                     "value": value,
-                                    "geography_level": "national",
-                                    "bias_flags": json.dumps([
-                                        "national_level_only",
-                                        "race_disaggregated_not_available"
-                                        "_at_state_level",
-                                    ]),
+                                    "footnotes": footnotes,
                                 },
                             )
                             records_ingested += 1
@@ -225,7 +215,7 @@ async def bls_labor_stats(
         missing = set(BLS_SERIES.keys()) - series_seen
         bias_flags.append(f"missing_series: {sorted(missing)}")
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     context.log.info(
         f"Ingested {records_ingested} BLS labor statistics records "

@@ -12,6 +12,7 @@ import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -37,18 +38,6 @@ RACE_CATEGORIES = [
 ]
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
 
 
 def _derive_incident_id(date: str, name: str, city: str, state: str) -> str:
@@ -115,7 +104,7 @@ async def mapping_police_violence(
                     context.log.error(
                         f"Download failed with status {resp.status}"
                     )
-                    _flush_langfuse(langfuse, trace, 0)
+                    flush_langfuse(langfuse, trace, 0)
                     return MaterializeResult(
                         metadata={
                             "status": "skipped",
@@ -156,7 +145,7 @@ async def mapping_police_violence(
                         "openpyxl not installed; cannot parse Excel. "
                         "Install it or provide a CSV URL via MPV_DATA_URL."
                     )
-                    _flush_langfuse(langfuse, trace, 0)
+                    flush_langfuse(langfuse, trace, 0)
                     return MaterializeResult(
                         metadata={
                             "status": "skipped",
@@ -184,6 +173,31 @@ async def mapping_police_violence(
                     return str(val).strip()
             return default
 
+        upsert_sql = text("""
+            INSERT INTO police_violence_incidents
+                (id, incident_id, date, year, state, city,
+                 race, age, gender,
+                 armed_status, cause_of_death, agency)
+            VALUES
+                (CAST(:id AS UUID), :incident_id,
+                 CAST(:date AS DATE),
+                 :year, :state, :city,
+                 :race, :age, :gender,
+                 :armed_status, :cause_of_death, :agency)
+            ON CONFLICT (incident_id)
+            DO UPDATE SET
+                date = CAST(EXCLUDED.date AS DATE),
+                year = EXCLUDED.year,
+                state = EXCLUDED.state,
+                city = EXCLUDED.city,
+                race = EXCLUDED.race,
+                age = EXCLUDED.age,
+                gender = EXCLUDED.gender,
+                armed_status = EXCLUDED.armed_status,
+                cause_of_death = EXCLUDED.cause_of_death,
+                agency = EXCLUDED.agency
+        """)
+
         async with async_session() as session:
             batch_count = 0
             for row in rows:
@@ -191,7 +205,7 @@ async def mapping_police_violence(
                     row, "victim's name", "name",
                     "victims name", "victim name",
                 )
-                date = _get(
+                date_raw = _get(
                     row, "date of incident (month/day/year)",
                     "date", "date of incident",
                 )
@@ -229,23 +243,46 @@ async def mapping_police_violence(
                     default="Unknown",
                 )
 
-                if not date or not name:
+                if not date_raw or not name:
                     continue
 
                 incident_id = _derive_incident_id(
-                    date, name, city, state
+                    date_raw, name, city, state
                 )
 
-                # Parse year from date string
+                # Parse date to ISO format (YYYY-MM-DD)
+                date_iso = None
                 year = None
-                for part in date.replace("-", "/").split("/"):
-                    try:
-                        val = int(part)
-                        if val > 1900:
-                            year = val
+                try:
+                    from datetime import datetime as _dt
+
+                    for fmt in (
+                        "%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y",
+                        "%Y/%m/%d", "%d/%m/%Y",
+                    ):
+                        try:
+                            parsed = _dt.strptime(date_raw, fmt)
+                            date_iso = parsed.strftime("%Y-%m-%d")
+                            year = parsed.year
                             break
-                    except ValueError:
-                        continue
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+
+                if date_iso is None:
+                    # Fallback: try to extract year at least
+                    for part in date_raw.replace(
+                        "-", "/"
+                    ).split("/"):
+                        try:
+                            val = int(part)
+                            if val > 1900:
+                                year = val
+                                break
+                        except ValueError:
+                            continue
+                    date_iso = date_raw
 
                 # Parse age as integer
                 age_int = None
@@ -264,40 +301,15 @@ async def mapping_police_violence(
                     f"mpv:{incident_id}",
                 )
 
-                upsert_sql = text("""
-                    INSERT INTO police_violence_incidents
-                        (id, incident_id, date, year, state, city,
-                         victim_name, race, age, gender,
-                         armed_status, cause_of_death, agency)
-                    VALUES
-                        (CAST(:id AS UUID), :incident_id, :date,
-                         :year, :state, :city,
-                         :victim_name, :race, :age, :gender,
-                         :armed_status, :cause_of_death, :agency)
-                    ON CONFLICT (incident_id)
-                    DO UPDATE SET
-                        date = :date,
-                        year = :year,
-                        state = :state,
-                        city = :city,
-                        victim_name = :victim_name,
-                        race = :race,
-                        age = :age,
-                        gender = :gender,
-                        armed_status = :armed_status,
-                        cause_of_death = :cause_of_death,
-                        agency = :agency
-                """)
                 await session.execute(
                     upsert_sql,
                     {
                         "id": str(record_uuid),
                         "incident_id": incident_id,
-                        "date": date,
+                        "date": date_iso,
                         "year": year,
                         "state": state,
                         "city": city,
-                        "victim_name": name,
                         "race": race,
                         "age": age_int,
                         "gender": gender,
@@ -321,7 +333,7 @@ async def mapping_police_violence(
 
     except aiohttp.ClientError as exc:
         context.log.error(f"Download failed: {exc}")
-        _flush_langfuse(langfuse, trace, records_ingested)
+        flush_langfuse(langfuse, trace, records_ingested)
         return MaterializeResult(
             metadata={
                 "status": "skipped",
@@ -339,7 +351,7 @@ async def mapping_police_violence(
         "rural and smaller jurisdictions may be underrepresented",
     ]
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     context.log.info(
         f"Ingested {records_ingested} police violence incident records "

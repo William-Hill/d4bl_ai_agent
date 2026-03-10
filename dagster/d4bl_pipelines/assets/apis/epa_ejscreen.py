@@ -7,13 +7,12 @@ Note: EJScreen data is fetched at state summary level.
 Tract-level data can be added as follow-up work.
 """
 
-import hashlib
-import json
 import os
 import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -72,18 +71,6 @@ STATE_FIPS = {
 }
 
 
-def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
 
 
 @asset(
@@ -165,6 +152,30 @@ async def epa_ejscreen(
                 # Parse the response - EJScreen returns nested data
                 raw_data = data if isinstance(data, dict) else {}
 
+                # Hoist the SQL text object outside the per-indicator
+                # loop so it is compiled once per state, not once per row.
+                upsert_sql = text("""
+                    INSERT INTO epa_environmental_justice
+                        (id, tract_fips, state_fips, state_name,
+                         year, indicator, raw_value,
+                         percentile_state, percentile_national,
+                         population, minority_pct, low_income_pct)
+                    VALUES
+                        (CAST(:id AS UUID), :tract_fips,
+                         :state_fips, :state_name, :year,
+                         :indicator, :raw_value,
+                         :pctile_state, :pctile_national,
+                         :pop, :minority, :lowinc)
+                    ON CONFLICT (tract_fips, year, indicator)
+                    DO UPDATE SET
+                        raw_value = :raw_value,
+                        percentile_state = :pctile_state,
+                        percentile_national = :pctile_national,
+                        population = :pop,
+                        minority_pct = :minority,
+                        low_income_pct = :lowinc
+                """)
+
                 async with async_session() as session:
                     for indicator in EJ_INDICATORS:
                         indicator_lower = indicator.lower()
@@ -206,31 +217,13 @@ async def epa_ejscreen(
                         lowinc = raw_data.get("LOWINCPCT") or raw_data.get("lowincpct")
                         pop = raw_data.get("ACSTOTPOP") or raw_data.get("acstotpop")
 
-                        upsert_sql = text("""
-                            INSERT INTO epa_environmental_justice
-                                (id, tract_fips, state_fips, state_name,
-                                 year, indicator, raw_value,
-                                 percentile_state, percentile_national,
-                                 population, minority_pct, low_income_pct)
-                            VALUES
-                                (CAST(:id AS UUID), :tract_fips,
-                                 :state_fips, :state_name, :year,
-                                 :indicator, :raw_value,
-                                 :pctile_state, :pctile_national,
-                                 :pop, :minority, :lowinc)
-                            ON CONFLICT (tract_fips, year, indicator)
-                            DO UPDATE SET
-                                raw_value = :raw_value,
-                                percentile_state = :pctile_state,
-                                percentile_national = :pctile_national,
-                                population = :pop,
-                                minority_pct = :minority,
-                                low_income_pct = :lowinc
-                        """)
                         await session.execute(
                             upsert_sql,
                             {
                                 "id": str(record_id),
+                                # tract_fips stores the 2-digit state FIPS
+                                # because this asset fetches state-level
+                                # summaries, not census-tract-level data.
                                 "tract_fips": fips,
                                 "state_fips": fips,
                                 "state_name": state_name,
@@ -256,6 +249,7 @@ async def epa_ejscreen(
 
     bias_flags = [
         "limitation: state-level aggregates only, tract data in follow-up",
+        "limitation: tract_fips stores 2-digit state FIPS (not 11-digit tract)",
         "single_source: all data from EPA EJScreen",
     ]
     if len(states_covered) < len(STATE_FIPS):
@@ -264,7 +258,7 @@ async def epa_ejscreen(
             f"missing_states: {len(missing)} states had no data"
         )
 
-    _flush_langfuse(langfuse, trace, records_ingested)
+    flush_langfuse(langfuse, trace, records_ingested)
 
     return MaterializeResult(
         metadata={
