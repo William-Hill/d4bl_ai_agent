@@ -309,14 +309,10 @@ async def websocket_endpoint(
         await websocket.close(code=1008, reason="Missing token")
         return
     # Validate JWT manually (can't use Depends in WebSocket easily)
+    from d4bl.app.auth import decode_supabase_jwt
     settings = get_settings()
     try:
-        payload = pyjwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        payload = decode_supabase_jwt(token, settings)
     except Exception:
         await websocket.close(code=1008, reason="Invalid token")
         return
