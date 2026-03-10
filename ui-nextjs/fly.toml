@@ -13,14 +13,14 @@ primary_region = "iad"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [[http_service.checks]]
-    interval = "15s"
-    timeout = "5s"
-    grace_period = "10s"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "30s"
     method = "GET"
-    path = "/"
+    path = "/login"
 
 [[vm]]
   size = "shared-cpu-1x"
