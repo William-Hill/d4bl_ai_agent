@@ -55,7 +55,9 @@ USER nextjs
 EXPOSE 3000
 
 ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
 
-CMD ["node", "server.js"]
+# Note: Do NOT use ENV HOSTNAME here — Fly.io's init overrides it with the
+# machine hostname, causing Next.js to bind to the wrong address.
+# Instead, set it at runtime in CMD.
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node server.js"]
 
