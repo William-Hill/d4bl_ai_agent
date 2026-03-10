@@ -1,0 +1,9 @@
+app = "d4bl-dagster-daemon"
+primary_region = "iad"
+
+[build]
+  dockerfile = "dagster/Dockerfile.daemon"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

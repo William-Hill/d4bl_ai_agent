@@ -66,6 +66,20 @@ STATE_FIPS = {
 }
 
 
+def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
+    """Best-effort Langfuse trace finalization."""
+    try:
+        if trace:
+            metadata = {"records_ingested": records_ingested}
+            if extra_metadata:
+                metadata.update(extra_metadata)
+            trace.update(metadata=metadata)
+        if langfuse:
+            langfuse.flush()
+    except Exception:
+        pass  # tracing is best-effort
+
+
 def _compute_rate(
     numerator: str, denominator: str
 ) -> float | None:
@@ -112,6 +126,7 @@ async def _fetch_acs(
         "source": "US Census Bureau ACS 5-Year Estimates",
         "methodology": "D4BL equity-focused data collection",
     },
+    required_resource_keys={"db_url", "langfuse"},
 )
 async def census_acs_indicators(
     context: AssetExecutionContext,
@@ -128,6 +143,19 @@ async def census_acs_indicators(
     state_filter = os.environ.get("ACS_STATE_FIPS")
     db_url = context.resources.db_url
 
+    # --- Langfuse tracing (best-effort) ---
+    langfuse = context.resources.langfuse
+    trace = None
+    try:
+        if langfuse:
+            trace = langfuse.trace(
+                name="dagster:census_acs_indicators",
+                metadata={"year": year, "state_filter": state_filter},
+            )
+    except Exception as lf_exc:
+        context.log.warning(f"Langfuse trace init failed: {lf_exc}")
+        langfuse = None
+
     engine = create_async_engine(
         db_url, pool_size=3, max_overflow=5
     )
@@ -136,7 +164,7 @@ async def census_acs_indicators(
     )
 
     records_ingested = 0
-    states_covered = []
+    states_covered = set()
     races_covered = set()
     all_variables = set()
     for metric_vars in METRIC_VARIABLES.values():
@@ -149,14 +177,24 @@ async def census_acs_indicators(
         f"year={year}, state={state_filter or 'all'}"
     )
 
+    try:
+        fetch_span = trace.span(name="fetch") if trace else None
+    except Exception:
+        fetch_span = None
     async with aiohttp.ClientSession() as http_session:
         rows = await _fetch_acs(
             http_session, year, variables, state_filter
         )
+    try:
+        if fetch_span:
+            fetch_span.end(metadata={"rows_fetched": len(rows) - 1 if rows else 0})
+    except Exception:
+        pass
 
     if not rows or len(rows) < 2:
         context.log.warning("No data returned from Census API")
         await engine.dispose()
+        _flush_langfuse(langfuse, trace, records_ingested=0)
         return MaterializeResult(
             metadata={
                 "records_ingested": 0,
@@ -168,14 +206,19 @@ async def census_acs_indicators(
     data_rows = rows[1:]
     state_col = headers.index("state")
 
+    store_span = None
     try:
+        try:
+            store_span = trace.span(name="store") if trace else None
+        except Exception:
+            pass
         async with async_session() as session:
             for row in data_rows:
                 state_fips = row[state_col]
                 state_name = STATE_FIPS.get(
                     state_fips, f"Unknown ({state_fips})"
                 )
-                states_covered.append(state_fips)
+                states_covered.add(state_fips)
 
                 for metric, race_vars in METRIC_VARIABLES.items():
                     for race, var_map in race_vars.items():
@@ -281,11 +324,16 @@ async def census_acs_indicators(
                     f"Lineage recording failed: {lineage_exc}"
                 )
     finally:
+        try:
+            if store_span:
+                store_span.end(metadata={"records_ingested": records_ingested})
+        except Exception:
+            pass
         await engine.dispose()
 
     # Compute coverage metadata
     all_fips = set(STATE_FIPS.keys())
-    covered_fips = set(states_covered)
+    covered_fips = states_covered
     missing_fips = all_fips - covered_fips
     all_races = {
         "total", "black", "white", "hispanic",
@@ -318,6 +366,14 @@ async def census_acs_indicators(
     # Single-source concentration: all data comes from one API
     bias_flags.append(
         "single_source: all data from Census ACS 5-Year only"
+    )
+
+    _flush_langfuse(
+        langfuse, trace, records_ingested,
+        extra_metadata={
+            "states_covered": len(covered_fips),
+            "quality_score": min(5.0, (len(covered_fips) / len(all_fips)) * 5),
+        },
     )
 
     return MaterializeResult(

@@ -35,6 +35,11 @@ class SourceReference:
     snippet: str
     source_type: str  # "vector" or "structured"
     relevance_score: float
+    # Provenance metadata (populated for ingested data results)
+    data_source_name: str | None = None
+    quality_score: float | None = None
+    last_updated: str | None = None
+    coverage_notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,21 @@ class QueryResult:
     answer: str
     sources: list[SourceReference]
     query: str
+
+
+def _summarize_provenance(
+    provenance: list,
+) -> tuple[str | None, float | None, str | None]:
+    """Summarize a list of ProvenanceInfo into (name, quality, notes)."""
+    if not provenance:
+        return None, None, None
+
+    name = ", ".join(p.data_source_name for p in provenance)
+    scores = [p.quality_score for p in provenance if p.quality_score is not None]
+    quality = round(sum(scores) / len(scores), 2) if scores else None
+    all_gaps = [g for p in provenance for g in p.coverage_gaps]
+    notes = "; ".join(all_gaps) if all_gaps else None
+    return name, quality, notes
 
 
 class ResultFusion:
@@ -88,6 +108,11 @@ class ResultFusion:
             if job_key in seen_job_ids:
                 continue
             seen_job_ids.add(job_key)
+
+            prov_name, prov_quality, prov_notes = _summarize_provenance(
+                sr.provenance
+            )
+
             sources.append(
                 SourceReference(
                     url=f"job://{sr.job_id}",
@@ -95,6 +120,10 @@ class ResultFusion:
                     snippet=(sr.summary or "")[:300],
                     source_type="structured",
                     relevance_score=sr.relevance_score,
+                    data_source_name=prov_name,
+                    quality_score=prov_quality,
+                    last_updated=sr.created_at or None,
+                    coverage_notes=prov_notes,
                 )
             )
 

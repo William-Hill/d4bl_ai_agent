@@ -2,14 +2,28 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.infra.database import ResearchJob
+from d4bl.infra.database import (
+    DataLineage,
+    DataSource,
+    IngestionRun,
+    ResearchJob,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ProvenanceInfo:
+    """Lineage metadata attached to a search result."""
+
+    data_source_name: str
+    quality_score: float | None = None
+    coverage_gaps: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -22,6 +36,7 @@ class StructuredResult:
     summary: str | None
     created_at: str
     relevance_score: float
+    provenance: list[ProvenanceInfo] = field(default_factory=list)
 
 
 class StructuredSearcher:
@@ -120,3 +135,50 @@ class StructuredSearcher:
             overlap = len(job_words & sq_words) / len(sq_words)
             max_score = max(max_score, overlap)
         return round(max_score, 2)
+
+    async def get_provenance_for_table(
+        self,
+        db: AsyncSession,
+        target_table: str,
+        limit: int = 20,
+    ) -> list[ProvenanceInfo]:
+        """Fetch aggregated provenance info for a target table.
+
+        Returns one ProvenanceInfo per data source that contributed records
+        to the given table, including average quality score.
+        """
+        try:
+            # Group by source only — don't group on JSON column
+            result = await db.execute(
+                select(
+                    DataSource.name,
+                    func.avg(DataLineage.quality_score).label("avg_quality"),
+                )
+                .join(
+                    IngestionRun,
+                    DataLineage.ingestion_run_id == IngestionRun.id,
+                )
+                .join(
+                    DataSource,
+                    IngestionRun.data_source_id == DataSource.id,
+                )
+                .where(DataLineage.target_table == target_table)
+                .group_by(DataSource.name)
+                .limit(limit)
+            )
+            rows = result.all()
+
+            provenance_list = []
+            for source_name, avg_quality in rows:
+                provenance_list.append(
+                    ProvenanceInfo(
+                        data_source_name=source_name,
+                        quality_score=(
+                            round(avg_quality, 2) if avg_quality else None
+                        ),
+                    )
+                )
+            return provenance_list
+        except Exception:
+            logger.warning("Provenance lookup failed", exc_info=True)
+            return []

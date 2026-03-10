@@ -24,6 +24,16 @@ python src/d4bl/main.py "your research question" --summary detailed
 python src/d4bl/main.py "query" --agents researcher writer  # Select specific agents
 ```
 
+### Dagster (Data Ingestion Pipelines)
+
+```bash
+# Local development
+(cd dagster && dagster dev -p 3003)
+
+# Or via Docker Compose overlay (from repo root)
+docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
+```
+
 ### Docker
 
 ```bash
@@ -36,6 +46,9 @@ docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up
 # Add Crawl4AI or Firecrawl
 docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
 docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up --build
+
+# Add Dagster pipelines
+docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
 
 # Full stack
 docker compose up --build
@@ -70,14 +83,24 @@ User Browser → Next.js Frontend (3000)
               ↓
          FastAPI Backend (8000)
               ↓
-         CrewAI Framework
+    ┌─────────────────────────────────────┐
+    │         CrewAI Framework            │
+    │              ↓                      │
+    │  AI Agents (Researcher, Analyst,    │
+    │  Writer, Fact Checker, Editor, etc.)│
+    └─────────────────────────────────────┘
               ↓
-    AI Agents (Researcher, Analyst, Writer, Fact Checker, Editor, etc.)
+    ┌─────────────────────────────────────┐
+    │    Dagster (Data Pipelines, 3003)   │
+    │  Assets: Census ACS, OpenStates,   │
+    │  API poller, RSS, Web scrape, MCP  │
+    │  Daemon: cron scheduling + sensors │
+    └─────────────────────────────────────┘
               ↓
     External Services:
     - Ollama LLM (localhost:11434)
     - Firecrawl/Crawl4AI (web crawling)
-    - PostgreSQL (job storage)
+    - PostgreSQL (job storage + data lineage)
     - Supabase (vector storage)
     - Langfuse (observability)
 ```
@@ -86,7 +109,8 @@ User Browser → Next.js Frontend (3000)
 
 - **`src/d4bl/app/`** - FastAPI application: `api.py` (REST/WebSocket endpoints, lifespan manager), `schemas.py` (Pydantic models), `websocket_manager.py` (connection state)
 - **`src/d4bl/agents/`** - CrewAI agents: `crew.py` (8 agent definitions), `tools/crawl_tools/` (modular crawl providers)
-- **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`), `vector_store.py` (Supabase pgvector)
+- **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`, `DataSource`, `IngestionRun`, `DataLineage`, `KeywordMonitor`), `vector_store.py` (Supabase pgvector)
+- **`dagster/`** - Dagster pipelines: `d4bl_pipelines/assets/` (Census ACS, OpenStates, API poller, RSS, web scrape, file upload, MCP, keyword monitors), `quality/lineage.py` (provenance recording), `resources/` (DB + Langfuse resources)
 - **`src/d4bl/query/`** - NL query engine: `parser.py` (intent extraction), `structured.py` (DB search), `fusion.py` (result merging + LLM synthesis), `engine.py` (orchestrator)
 - **`src/d4bl/evals/`** - Evaluation runner: `runner.py` (batch LLM evaluations on completed research jobs)
 - **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluators: hallucination, bias, relevance, quality)
@@ -117,6 +141,7 @@ CRAWL4AI_BASE_URL=http://crawl4ai:11235
 LANGFUSE_HOST=http://localhost:3002
 CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres
+DAGSTER_GRAPHQL_URL=http://localhost:3003/graphql  # Dagster webserver
 ```
 
 ## Authentication
@@ -159,6 +184,7 @@ To promote a user to admin: use the admin UI, `PATCH /api/admin/users/{id}` with
 |---------|------|
 | Frontend | 3000 |
 | Backend API | 8000 |
+| Dagster Webserver | 3003 |
 | Ollama | 11434 |
 | PostgreSQL | 5432 |
 | Langfuse Web | 3001 |
