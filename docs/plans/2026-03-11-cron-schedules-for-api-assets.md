@@ -86,7 +86,7 @@ STATIC_SCHEDULES: dict[str, str] = {
     "epa_ejscreen": "0 0 1 1 *",                  # Annually — Jan 1
     "hud_fair_housing": "0 0 1 1 *",              # Annually — Jan 1
     "usda_food_access": "0 0 1 1 *",              # Annually — Jan 1
-    "doe_civil_rights": "0 0 1 1 */2",            # Biennially — Jan 1, odd years
+    "doe_civil_rights": "0 0 1 1 *",              # Annually — Jan 1 (biennial n/a in cron)
     "mapping_police_violence": "0 0 1 * *",        # Monthly — 1st
     "openstates_bills": "0 6 * * 1-5",            # Weekdays — 6 AM
 }

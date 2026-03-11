@@ -206,7 +206,17 @@ def test_build_static_schedules_default_stopped():
 
 
 def test_build_static_schedules_cron_strings_valid():
+    expected = {
+        "refresh_census_acs_indicators": "0 0 1 1 *",
+        "refresh_cdc_places_health": "0 0 1 */3 *",
+        "refresh_bls_labor_stats": "0 0 1 * *",
+        "refresh_fbi_ucr_crime": "0 0 1 1 *",
+        "refresh_epa_ejscreen": "0 0 1 1 *",
+        "refresh_hud_fair_housing": "0 0 1 1 *",
+        "refresh_usda_food_access": "0 0 1 1 *",
+        "refresh_doe_civil_rights": "0 0 1 1 *",
+        "refresh_mapping_police_violence": "0 0 1 * *",
+        "refresh_openstates_bills": "0 6 * * 1-5",
+    }
     schedules = build_static_schedules()
-    for sched in schedules:
-        parts = sched.cron_schedule.split()
-        assert len(parts) == 5, f"Bad cron for {sched.name}: {sched.cron_schedule}"
+    assert {s.name: s.cron_schedule for s in schedules} == expected
