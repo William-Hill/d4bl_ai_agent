@@ -106,6 +106,27 @@ class QueryResponse(BaseModel):
 # --- Explore Data models ---
 
 
+class ExploreRow(BaseModel):
+    """A single row in a standardized explore API response."""
+
+    state_fips: str
+    state_name: str
+    value: float
+    metric: str
+    year: int
+    race: str | None = None
+
+
+class ExploreResponse(BaseModel):
+    """Standardized response shape for all explore endpoints."""
+
+    rows: list[ExploreRow]
+    national_average: float | None
+    available_metrics: list[str]
+    available_years: list[int]
+    available_races: list[str]
+
+
 class IndicatorItem(BaseModel):
     """Single Census ACS indicator observation for a geography/race/year."""
 
