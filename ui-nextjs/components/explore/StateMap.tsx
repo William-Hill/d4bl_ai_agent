@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
-import { scaleLinear } from 'd3-scale';
+import { interpolateRgb } from 'd3-interpolate';
 import { IndicatorRow } from '@/lib/types';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json';
@@ -11,33 +11,53 @@ interface Props {
   indicators: IndicatorRow[];
   selectedStateFips: string | null;
   onSelectState: (fips: string, name: string) => void;
+  accent?: string;
+  nationalAverage?: number | null;
 }
 
-export default function StateMap({ indicators, selectedStateFips, onSelectState }: Props) {
+export default function StateMap({
+  indicators,
+  selectedStateFips,
+  onSelectState,
+  accent,
+  nationalAverage,
+}: Props) {
   const [tooltip, setTooltip] = useState<{ name: string; value: number } | null>(null);
+
+  const accentColor = accent ?? '#00ff32';
 
   const { valueByFips, colorScale } = useMemo(() => {
     const vByFips: Record<string, number> = {};
     for (const row of indicators) {
-      if (row.fips_code.length === 2) {
-        vByFips[row.fips_code] = row.value;
+      const fips = row.fips_code ?? row.state_fips;
+      if (typeof fips === 'string' && fips.length === 2) {
+        vByFips[fips] = row.value;
       }
     }
 
     const values = Object.values(vByFips);
     const min = values.length ? Math.min(...values) : 0;
     const max = values.length ? Math.max(...values) : 100;
+    const avg = nationalAverage ?? (min + max) / 2;
 
-    const scale = scaleLinear<string>().domain([min, max]).range(['#1a3a1a', '#00ff32']);
+    const scale = (val: number): string => {
+      if (min === max) return accentColor;
+      if (val <= avg) {
+        const t = avg === min ? 0 : (val - min) / (avg - min);
+        return interpolateRgb('#444', '#888')(Math.min(Math.max(t, 0), 1));
+      }
+      const t = avg === max ? 1 : (val - avg) / (max - avg);
+      return interpolateRgb('#888', accentColor)(Math.min(Math.max(t, 0), 1));
+    };
 
     return { valueByFips: vByFips, colorScale: scale };
-  }, [indicators]);
+  }, [indicators, accentColor, nationalAverage]);
 
   return (
     <div className="relative bg-[#1a1a1a] rounded-lg border border-[#404040] overflow-hidden">
       {tooltip && (
         <div className="absolute top-2 left-2 z-10 bg-[#292929] border border-[#404040] rounded px-3 py-1.5 text-sm text-gray-200 pointer-events-none">
-          <span className="font-semibold text-[#00ff32]">{tooltip.name}</span>
+          <span className="font-semibold" style={{ color: accentColor }}>{tooltip.name}</span>
           <span className="ml-2">{tooltip.value.toLocaleString()}</span>
         </div>
       )}
@@ -57,11 +77,11 @@ export default function StateMap({ indicators, selectedStateFips, onSelectState 
                     tabIndex={0}
                     aria-label={`Select ${geo.properties.name}`}
                     fill={value !== undefined ? colorScale(value) : '#333'}
-                    stroke={isSelected ? '#00ff32' : '#404040'}
+                    stroke={isSelected ? accentColor : '#404040'}
                     strokeWidth={isSelected ? 2 : 0.5}
                     style={{
                       default: { cursor: 'pointer' },
-                      hover: { fill: '#00cc28', outline: 'none', cursor: 'pointer' },
+                      hover: { fill: accentColor, outline: 'none', cursor: 'pointer', opacity: 0.8 },
                       pressed: { outline: 'none' },
                     }}
                     onMouseEnter={() => {
@@ -87,4 +107,3 @@ export default function StateMap({ indicators, selectedStateFips, onSelectState 
     </div>
   );
 }
-
