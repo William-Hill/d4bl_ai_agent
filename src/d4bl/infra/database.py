@@ -367,6 +367,219 @@ class KeywordMonitor(Base):
         }
 
 
+class CdcHealthOutcome(Base):
+    """Health outcomes from CDC PLACES."""
+    __tablename__ = "cdc_health_outcomes"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    fips_code = Column(String(11), nullable=False, index=True)
+    geography_type = Column(String(10), nullable=False)
+    geography_name = Column(Text, nullable=False)
+    state_fips = Column(String(2), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    measure = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=True)
+    data_value = Column(Float, nullable=False)
+    data_value_type = Column(String(50), nullable=False)
+    low_confidence_limit = Column(Float, nullable=True)
+    high_confidence_limit = Column(Float, nullable=True)
+    total_population = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fips_code", "year", "measure", "data_value_type",
+            name="uq_cdc_health_outcome_key",
+        ),
+        Index("ix_cdc_health_state_measure", "state_fips", "measure", "year"),
+    )
+
+
+class EpaEnvironmentalJustice(Base):
+    """Environmental justice screening from EPA EJScreen."""
+    __tablename__ = "epa_environmental_justice"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tract_fips = Column(String(11), nullable=False, index=True)
+    state_fips = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=False)
+    year = Column(Integer, nullable=False)
+    indicator = Column(String(200), nullable=False)
+    raw_value = Column(Float, nullable=True)
+    percentile_state = Column(Float, nullable=True)
+    percentile_national = Column(Float, nullable=True)
+    demographic_index = Column(Float, nullable=True)
+    population = Column(Integer, nullable=True)
+    minority_pct = Column(Float, nullable=True)
+    low_income_pct = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tract_fips", "year", "indicator",
+            name="uq_epa_ej_key",
+        ),
+        Index("ix_epa_ej_state_indicator", "state_fips", "indicator", "year"),
+    )
+
+
+class FbiCrimeStat(Base):
+    """Crime statistics from FBI Crime Data Explorer."""
+    __tablename__ = "fbi_crime_stats"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    state_abbrev = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=False)
+    offense = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=False)
+    race = Column(String(50), nullable=False)
+    ethnicity = Column(String(50), nullable=True)
+    year = Column(Integer, nullable=False)
+    value = Column(Float, nullable=False)
+    population = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "state_abbrev", "offense", "race", "year", "category",
+            name="uq_fbi_crime_key",
+        ),
+        Index("ix_fbi_crime_state_race_year", "state_abbrev", "race", "year"),
+    )
+
+
+class BlsLaborStatistic(Base):
+    """Labor statistics from BLS."""
+    __tablename__ = "bls_labor_statistics"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    series_id = Column(String(50), nullable=False)
+    state_fips = Column(String(2), nullable=True)
+    state_name = Column(String(50), nullable=True)
+    metric = Column(String(200), nullable=False)
+    race = Column(String(50), nullable=False)
+    year = Column(Integer, nullable=False)
+    period = Column(String(10), nullable=False)
+    value = Column(Float, nullable=False)
+    footnotes = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "series_id", "year", "period",
+            name="uq_bls_labor_key",
+        ),
+        Index("ix_bls_labor_metric_race_year", "metric", "race", "year"),
+    )
+
+
+class HudFairHousing(Base):
+    """Fair housing data from HUD."""
+    __tablename__ = "hud_fair_housing"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    fips_code = Column(String(11), nullable=False, index=True)
+    geography_type = Column(String(10), nullable=False)
+    geography_name = Column(Text, nullable=False)
+    state_fips = Column(String(2), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    indicator = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=True)
+    value = Column(Float, nullable=False)
+    race_group_a = Column(String(50), nullable=True)
+    race_group_b = Column(String(50), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fips_code", "year", "indicator", "race_group_a", "race_group_b",
+            name="uq_hud_fair_housing_key",
+        ),
+        Index("ix_hud_fh_state_indicator", "state_fips", "indicator", "year"),
+    )
+
+
+class UsdaFoodAccess(Base):
+    """Food access data from USDA."""
+    __tablename__ = "usda_food_access"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tract_fips = Column(String(11), nullable=False, index=True)
+    state_fips = Column(String(2), nullable=False, index=True)
+    county_fips = Column(String(5), nullable=True)
+    state_name = Column(String(50), nullable=True)
+    county_name = Column(String(100), nullable=True)
+    year = Column(Integer, nullable=False)
+    indicator = Column(String(200), nullable=False)
+    value = Column(Float, nullable=False)
+    urban_rural = Column(String(10), nullable=True)
+    population = Column(Integer, nullable=True)
+    poverty_rate = Column(Float, nullable=True)
+    median_income = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tract_fips", "year", "indicator",
+            name="uq_usda_food_access_key",
+        ),
+        Index("ix_usda_fa_state_indicator", "state_fips", "indicator", "year"),
+    )
+
+
+class DoeCivilRights(Base):
+    """Civil rights data from DOE CRDC."""
+    __tablename__ = "doe_civil_rights"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    district_id = Column(String(20), nullable=False, index=True)
+    district_name = Column(Text, nullable=False)
+    state = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=False)
+    school_year = Column(String(9), nullable=False)
+    metric = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=True)
+    race = Column(String(50), nullable=False)
+    value = Column(Float, nullable=False)
+    total_enrollment = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "district_id", "school_year", "metric", "race",
+            name="uq_doe_civil_rights_key",
+        ),
+        Index("ix_doe_cr_state_metric_race", "state", "metric", "race"),
+    )
+
+
+class PoliceViolenceIncident(Base):
+    """Police violence incidents from Mapping Police Violence."""
+    __tablename__ = "police_violence_incidents"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    incident_id = Column(String(100), nullable=False, unique=True)
+    date = Column(Date, nullable=False)
+    year = Column(Integer, nullable=False, index=True)
+    state = Column(String(2), nullable=False, index=True)
+    city = Column(String(200), nullable=True)
+    county = Column(String(200), nullable=True)
+    race = Column(String(50), nullable=True)
+    age = Column(Integer, nullable=True)
+    gender = Column(String(20), nullable=True)
+    armed_status = Column(String(100), nullable=True)
+    cause_of_death = Column(String(200), nullable=True)
+    circumstances = Column(Text, nullable=True)
+    criminal_charges = Column(String(200), nullable=True)
+    agency = Column(String(200), nullable=True)
+    source_url = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        Index("ix_pv_state_race_year", "state", "race", "year"),
+    )
+
+
 # Database connection setup
 def get_database_url() -> str:
     """Get database URL from settings."""

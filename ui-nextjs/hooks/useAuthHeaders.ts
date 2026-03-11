@@ -12,7 +12,7 @@ export function useAuthHeaders() {
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
     return headers;
-  }, [session?.access_token]);
+  }, [session]);
 
   return { session, getHeaders };
 }

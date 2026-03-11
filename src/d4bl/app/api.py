@@ -12,7 +12,6 @@ from datetime import datetime
 from functools import lru_cache
 from uuid import UUID
 
-import jwt as pyjwt
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
