@@ -66,3 +66,22 @@ export type WsMessage =
   | WsStatusMessage
   | WsCompleteMessage
   | WsErrorMessage;
+
+/** Generic row returned by multi-source explore endpoints. */
+export interface ExploreRow {
+  state_fips: string;
+  state_name: string;
+  value: number;
+  metric: string;
+  year: number;
+  race: string | null;
+}
+
+/** Response envelope for explore endpoints. */
+export interface ExploreResponse {
+  rows: ExploreRow[];
+  national_average: number | null;
+  available_metrics: string[];
+  available_years: number[];
+  available_races: string[];
+}
