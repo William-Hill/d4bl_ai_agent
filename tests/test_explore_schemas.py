@@ -1,9 +1,10 @@
 """Tests for explore endpoint Pydantic schemas."""
+
 import pytest
 
 from d4bl.app.schemas import (
-    ExploreRow,
     ExploreResponse,
+    ExploreRow,
     IndicatorItem,
     PolicyBillItem,
     StateSummaryItem,
