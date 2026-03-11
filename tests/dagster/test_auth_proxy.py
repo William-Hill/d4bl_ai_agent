@@ -164,3 +164,52 @@ async def test_set_token_disallowed_origin(app):
         )
     assert resp.status_code == 200
     assert "Access-Control-Allow-Origin" not in resp.headers
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_cookie(app):
+    """Logout clears the cookie and redirects."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+    ) as client:
+        resp = await client.get("/auth/logout")
+    assert resp.status_code == 307
+    cookie = resp.headers.get("set-cookie", "")
+    assert "dagster_token" in cookie
+    # Cookie should be expired (max-age=0 or 'expires' in past)
+    assert 'max-age=0' in cookie.lower() or "expires" in cookie.lower()
+
+
+@pytest.mark.asyncio
+async def test_healthz_unhealthy(app):
+    """Healthz returns 503 when upstream Dagster is unreachable."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/healthz")
+    # No Dagster webserver running in tests, so upstream is unhealthy
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_set_token_invalid_json(app):
+    """Invalid JSON body returns 400."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/auth/set-token",
+            content=b"not-json",
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_set_token_missing_token(app):
+    """Missing token field returns 400."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post("/auth/set-token", json={"foo": "bar"})
+    assert resp.status_code == 400

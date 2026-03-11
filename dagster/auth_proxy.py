@@ -331,10 +331,11 @@ async def _proxy(request: Request) -> Response:
 
 async def _healthz(request: Request) -> Response:
     """Unauthenticated health check that also verifies the upstream Dagster webserver."""
+    if _http_client is None:
+        return Response("Proxy not initialized", status_code=503)
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{DAGSTER_UPSTREAM}/server_info", timeout=5.0)
-            resp.raise_for_status()
+        resp = await _http_client.get(f"{DAGSTER_UPSTREAM}/server_info", timeout=5.0)
+        resp.raise_for_status()
     except Exception:
         return Response("Dagster upstream unhealthy", status_code=503)
     return Response("ok", status_code=200)
