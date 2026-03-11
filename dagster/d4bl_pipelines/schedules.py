@@ -14,6 +14,32 @@ logger = logging.getLogger(__name__)
 # Backward-compatible alias for tests
 _slugify = slugify
 
+STATIC_SCHEDULES: dict[str, str] = {
+    "census_acs_indicators": "0 0 1 1 *",         # Annually — Jan 1
+    "cdc_places_health": "0 0 1 */3 *",           # Quarterly — 1st of every 3rd month
+    "bls_labor_stats": "0 0 1 * *",               # Monthly — 1st
+    "fbi_ucr_crime": "0 0 1 1 *",                 # Annually — Jan 1
+    "epa_ejscreen": "0 0 1 1 *",                  # Annually — Jan 1
+    "hud_fair_housing": "0 0 1 1 *",              # Annually — Jan 1
+    "usda_food_access": "0 0 1 1 *",              # Annually — Jan 1
+    "doe_civil_rights": "0 0 1 1 */2",            # Biennially — Jan 1, odd years
+    "mapping_police_violence": "0 0 1 * *",        # Monthly — 1st
+    "openstates_bills": "0 6 * * 1-5",            # Weekdays — 6 AM
+}
+
+
+def build_static_schedules() -> list[ScheduleDefinition]:
+    """Build schedules for the 10 hardcoded API assets."""
+    return [
+        ScheduleDefinition(
+            name=f"refresh_{asset_key}",
+            cron_schedule=cron,
+            target=AssetSelection.assets(asset_key),
+            default_status=DefaultScheduleStatus.STOPPED,
+        )
+        for asset_key, cron in STATIC_SCHEDULES.items()
+    ]
+
 
 def build_source_schedules(
     data_sources: list[dict],
