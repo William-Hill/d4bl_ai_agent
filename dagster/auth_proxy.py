@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from contextlib import asynccontextmanager
 
 import httpx
 import jwt
@@ -19,11 +21,18 @@ logger = logging.getLogger(__name__)
 
 DAGSTER_UPSTREAM = "http://127.0.0.1:3003"
 COOKIE_NAME = "dagster_token"
+_ADMIN_CACHE_TTL = 60  # seconds
 
 # Read config from env
 _jwt_secret = lambda: os.environ.get("SUPABASE_JWT_SECRET", "")
 _supabase_url = lambda: os.environ.get("SUPABASE_URL", "")
 _supabase_anon_key = lambda: os.environ.get("SUPABASE_ANON_KEY", "")
+
+# TTL cache for admin checks: {user_id: (is_admin, timestamp)}
+_admin_cache: dict[str, tuple[bool, float]] = {}
+
+# Shared httpx client, initialized in lifespan
+_http_client: httpx.AsyncClient | None = None
 
 
 def _decode_token(token: str) -> dict | None:
@@ -35,26 +44,37 @@ def _decode_token(token: str) -> dict | None:
 
 
 async def _check_admin(user_id: str) -> bool:
-    """Check if the user has admin role via the Supabase REST API."""
+    """Check if the user has admin role via the Supabase REST API.
+
+    Results are cached for _ADMIN_CACHE_TTL seconds to avoid hitting
+    the Supabase API on every proxied request (JS, CSS, assets, etc.).
+    """
+    now = time.monotonic()
+    cached = _admin_cache.get(user_id)
+    if cached and (now - cached[1]) < _ADMIN_CACHE_TTL:
+        return cached[0]
+
     supabase_url = _supabase_url()
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
     if not supabase_url or not service_key:
         logger.warning("Supabase config missing, denying admin check")
         return False
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{supabase_url}/rest/v1/profiles",
-                params={"id": f"eq.{user_id}", "select": "role"},
-                headers={
-                    "apikey": service_key,
-                    "Authorization": f"Bearer {service_key}",
-                },
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            rows = resp.json()
-            return len(rows) > 0 and rows[0].get("role") == "admin"
+        client = _http_client or httpx.AsyncClient()
+        resp = await client.get(
+            f"{supabase_url}/rest/v1/profiles",
+            params={"id": f"eq.{user_id}", "select": "role"},
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        is_admin = len(rows) > 0 and rows[0].get("role") == "admin"
+        _admin_cache[user_id] = (is_admin, now)
+        return is_admin
     except Exception:
         logger.exception("Admin check failed")
         return False
@@ -166,17 +186,17 @@ async def _proxy(request: Request) -> Response:
 
     try:
         body = await request.body()
-        async with httpx.AsyncClient() as client:
-            proxy_resp = await client.request(
-                method=request.method,
-                url=url,
-                headers={
-                    k: v for k, v in request.headers.items()
-                    if k.lower() not in ("host", "cookie")
-                },
-                content=body,
-                timeout=30.0,
-            )
+        client = _http_client or httpx.AsyncClient()
+        proxy_resp = await client.request(
+            method=request.method,
+            url=url,
+            headers={
+                k: v for k, v in request.headers.items()
+                if k.lower() not in ("host", "cookie")
+            },
+            content=body,
+            timeout=30.0,
+        )
         return Response(
             content=proxy_resp.content,
             status_code=proxy_resp.status_code,
@@ -189,6 +209,15 @@ async def _proxy(request: Request) -> Response:
         return HTMLResponse("Proxy error", status_code=502)
 
 
+@asynccontextmanager
+async def _lifespan(app):
+    global _http_client
+    _http_client = httpx.AsyncClient()
+    yield
+    await _http_client.aclose()
+    _http_client = None
+
+
 # Routes — auth endpoints first, then catch-all proxy
 routes = [
     Route("/auth/set-token", _set_token),
@@ -196,4 +225,4 @@ routes = [
     Route("/{path:path}", _proxy, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
 ]
 
-app = Starlette(routes=routes)
+app = Starlette(routes=routes, lifespan=_lifespan)
