@@ -161,7 +161,8 @@ export default function ExplorePage() {
     }
   }, [exploreData, filters.metric]);
 
-  const handleSelectState = (fips: string, _name: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSelectState = (fips: string, _name?: string) => {
     setFilters((prev) => ({
       ...prev,
       selectedState: prev.selectedState === fips ? null : fips,
