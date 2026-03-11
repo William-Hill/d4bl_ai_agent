@@ -10,6 +10,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
@@ -312,7 +313,7 @@ async def _proxy(request: Request) -> Response:
             url=url,
             headers={
                 k: v for k, v in request.headers.items()
-                if k.lower() not in ("host", "cookie")
+                if k.lower() not in _HOP_BY_HOP and k.lower() not in ("host", "cookie")
             },
             content=body,
             timeout=30.0,
@@ -342,7 +343,7 @@ async def _healthz(request: Request) -> Response:
 
 
 @asynccontextmanager
-async def _lifespan(app):
+async def _lifespan(app: Starlette) -> AsyncIterator[None]:
     global _http_client
     _http_client = httpx.AsyncClient()
     # Pre-fetch JWKS at startup so the first request doesn't block
