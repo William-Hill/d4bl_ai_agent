@@ -50,7 +50,7 @@ export default function ExplorePage() {
     try {
       const params = new URLSearchParams({
         metric: filters.metric,
-        race: filters.race,
+        ...(filters.race != null && { race: filters.race }),
         year: String(filters.year),
         geography_type: 'state',
       });
