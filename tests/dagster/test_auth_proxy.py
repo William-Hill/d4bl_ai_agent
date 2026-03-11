@@ -1,6 +1,7 @@
 """Tests for the Dagster auth proxy."""
 from __future__ import annotations
 
+import json
 import time
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -18,15 +19,17 @@ TEST_USER_ID = str(uuid4())
 
 # Load auth_proxy from the dagster directory without conflicting with the
 # installed dagster package.
-_AUTH_PROXY_PATH = Path(__file__).resolve().parent.parent / "auth_proxy.py"
+_AUTH_PROXY_PATH = Path(__file__).resolve().parent.parent.parent / "dagster" / "auth_proxy.py"
 
 
-def _load_auth_proxy():
+@pytest.fixture
+def _auth_proxy_module():
     spec = importlib.util.spec_from_file_location("auth_proxy", _AUTH_PROXY_PATH)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["auth_proxy"] = mod
     spec.loader.exec_module(mod)
-    return mod
+    yield mod
+    sys.modules.pop("auth_proxy", None)
 
 
 def _make_token(
@@ -49,10 +52,8 @@ def _env(monkeypatch):
 
 
 @pytest.fixture
-def app(_env):
-    # Load (or reload) to pick up env vars
-    mod = _load_auth_proxy()
-    return mod.app
+def app(_env, _auth_proxy_module):
+    return _auth_proxy_module.app
 
 
 @pytest.mark.asyncio
@@ -94,7 +95,6 @@ async def test_admin_proxies_request(app):
     token = _make_token()
     with patch("auth_proxy._check_admin", new_callable=AsyncMock, return_value=True):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            # Will fail to connect to upstream (no dagster running), but should attempt proxy
             resp = await client.get("/server_info", cookies={"dagster_token": token})
     # 502 is expected — proxy tried to reach upstream but nothing is running
     assert resp.status_code == 502
@@ -106,6 +106,9 @@ async def test_set_token_endpoint(app):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
     ) as client:
-        resp = await client.get(f"/auth/set-token?token={token}")
-    assert resp.status_code == 307
+        resp = await client.post(
+            "/auth/set-token",
+            json={"token": token},
+        )
+    assert resp.status_code == 200
     assert "dagster_token" in resp.headers.get("set-cookie", "")

@@ -33,9 +33,10 @@ Small FastAPI app (~100 lines):
 
 ### `dagster/Dockerfile` changes
 
-- Add `python-jose` dependency for JWT validation
+- Add `PyJWT` dependency for JWT validation (with JWKS support via `jwt.PyJWK`)
 - Change entrypoint to a script that starts both the auth proxy (port 8080) and Dagster webserver (port 3003)
 - Auth proxy is the externally-facing service
+- Both processes are supervised — the container exits if either process dies
 
 ### `fly.dagster-web.toml` changes
 
@@ -62,6 +63,7 @@ Starts both processes:
 
 The Dagster webserver container needs these additional env vars (already available in the API service):
 
-- `SUPABASE_JWT_SECRET` — for JWT signature verification
-- `SUPABASE_URL` — for the login redirect flow
+- `SUPABASE_JWT_SECRET` — for JWT signature verification (HS256)
+- `SUPABASE_URL` — for the login redirect flow and JWKS endpoint (ES256)
 - `SUPABASE_ANON_KEY` — for the login page's Supabase client
+- `SUPABASE_SERVICE_ROLE_KEY` — for admin role checks via the Supabase REST API

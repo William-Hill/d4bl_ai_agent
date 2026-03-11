@@ -5,12 +5,12 @@ requests to the Dagster webserver running on localhost:3003.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
-
 import threading
+from contextlib import asynccontextmanager
 
 import httpx
 import jwt
@@ -39,6 +39,7 @@ _supabase_url = lambda: os.environ.get("SUPABASE_URL", "")
 _supabase_anon_key = lambda: os.environ.get("SUPABASE_ANON_KEY", "")
 
 # TTL cache for admin checks: {user_id: (is_admin, timestamp)}
+_MAX_ADMIN_CACHE_SIZE = 1000
 _admin_cache: dict[str, tuple[bool, float]] = {}
 
 # Shared httpx client, initialized in lifespan
@@ -130,6 +131,10 @@ async def _check_admin(user_id: str) -> bool:
         resp.raise_for_status()
         rows = resp.json()
         is_admin = len(rows) > 0 and rows[0].get("role") == "admin"
+        # Evict oldest entries if cache is full
+        if len(_admin_cache) >= _MAX_ADMIN_CACHE_SIZE:
+            oldest_key = min(_admin_cache, key=lambda k: _admin_cache[k][1])
+            del _admin_cache[oldest_key]
         _admin_cache[user_id] = (is_admin, now)
         return is_admin
     except Exception:
@@ -187,8 +192,12 @@ def _login_page() -> HTMLResponse:
         errEl.style.display = "block";
         return;
       }}
-      // Set cookie via our endpoint, then redirect to Dagster
-      window.location.href = "/auth/set-token?token=" + data.session.access_token;
+      // Set cookie via POST, then redirect to Dagster
+      fetch("/auth/set-token", {{
+        method: "POST",
+        headers: {{"Content-Type": "application/json"}},
+        body: JSON.stringify({{token: data.session.access_token}})
+      }}).then(r => {{ if (r.ok) window.location.href = "/"; }});
     }});
   </script>
 </body>
@@ -197,11 +206,21 @@ def _login_page() -> HTMLResponse:
 
 
 async def _set_token(request: Request) -> Response:
-    """Set the JWT cookie and redirect to the Dagster UI root."""
-    token = request.query_params.get("token", "")
+    """Set the JWT cookie and redirect to the Dagster UI root.
+
+    Accepts the token via POST body (JSON: {"token": "..."}) to avoid
+    leaking JWTs in URLs, browser history, and server logs.
+    """
+    try:
+        body = await request.body()
+        data = json.loads(body)
+        token = data.get("token", "")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return HTMLResponse("Invalid request body", status_code=400)
     if not token:
         return HTMLResponse("Missing token", status_code=400)
-    response = RedirectResponse(url="/", status_code=307)
+    response = Response(status_code=200, headers={"Content-Type": "application/json"})
+    response.body = b'{"ok": true}'
     response.set_cookie(
         COOKIE_NAME, token, httponly=True, secure=True, samesite="lax", max_age=3600
     )
@@ -268,10 +287,25 @@ async def _proxy(request: Request) -> Response:
         return HTMLResponse("Proxy error", status_code=502)
 
 
+async def _healthz(request: Request) -> Response:
+    """Unauthenticated health check that also verifies the upstream Dagster webserver."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{DAGSTER_UPSTREAM}/server_info", timeout=5.0)
+            resp.raise_for_status()
+    except Exception:
+        return Response("Dagster upstream unhealthy", status_code=503)
+    return Response("ok", status_code=200)
+
+
 @asynccontextmanager
 async def _lifespan(app):
     global _http_client
     _http_client = httpx.AsyncClient()
+    # Pre-fetch JWKS at startup so the first request doesn't block
+    supabase_url = _supabase_url()
+    if supabase_url:
+        _refresh_jwks(supabase_url)
     yield
     await _http_client.aclose()
     _http_client = None
@@ -279,7 +313,8 @@ async def _lifespan(app):
 
 # Routes — auth endpoints first, then catch-all proxy
 routes = [
-    Route("/auth/set-token", _set_token),
+    Route("/healthz", _healthz),
+    Route("/auth/set-token", _set_token, methods=["POST"]),
     Route("/auth/logout", _logout),
     Route("/{path:path}", _proxy, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
 ]

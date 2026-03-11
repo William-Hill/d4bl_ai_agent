@@ -117,19 +117,30 @@ export default function AdminPage() {
         {/* External tools */}
         <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
           <h2 className="text-lg font-semibold text-white mb-4">Tools</h2>
-          <a
-            href={`${process.env.NEXT_PUBLIC_DAGSTER_URL || 'https://d4bl-dagster-web.fly.dev'}/auth/set-token?token=${session?.access_token}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={async () => {
+              const dagsterUrl = process.env.NEXT_PUBLIC_DAGSTER_URL || 'https://d4bl-dagster-web.fly.dev';
+              const resp = await fetch(`${dagsterUrl}/auth/set-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: session?.access_token }),
+                credentials: 'include',
+              });
+              if (resp.ok) {
+                window.open(`${dagsterUrl}/`, '_blank', 'noopener,noreferrer');
+              }
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#292929] border border-[#404040]
                        rounded text-white hover:border-[#00ff32] transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                 aria-hidden="true" focusable="false">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
             Open Dagster Pipelines
-          </a>
+          </button>
         </div>
 
         {/* Invite form */}

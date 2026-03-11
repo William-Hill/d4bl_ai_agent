@@ -71,4 +71,4 @@ jobs:
       - name: Check frontend
         run: curl --fail --retry 5 --retry-delay 10 https://d4bl-frontend.fly.dev/
       - name: Check Dagster UI (auth proxy)
-        run: curl --fail --retry 5 --retry-delay 10 https://d4bl-dagster-web.fly.dev/
+        run: curl --fail --retry 5 --retry-delay 10 https://d4bl-dagster-web.fly.dev/healthz
