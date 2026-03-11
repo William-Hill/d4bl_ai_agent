@@ -93,8 +93,16 @@ async def _fetch_acs(
     all_vars = ",".join(variables)
     url = f"{CENSUS_BASE_URL}/{year}/acs/acs5"
     params = {"get": f"NAME,{all_vars}", "for": geography}
-    if state_fips and geography == "state:*":
-        params["for"] = f"state:{state_fips}"
+    if state_fips:
+        if geography == "state:*":
+            params["for"] = f"state:{state_fips}"
+        elif geography == "county:*":
+            params["in"] = f"state:{state_fips}"
+        else:
+            raise ValueError(
+                f"Unsupported state_fips filter for "
+                f"geography {geography!r}"
+            )
     api_key = os.environ.get("CENSUS_API_KEY")
     if api_key:
         params["key"] = api_key
@@ -623,8 +631,11 @@ async def census_acs_county_indicators(
     )
 
     content_hash = hashlib.sha256(
-        f"{year}:county:{len(counties_covered)}:{records_ingested}"
-        .encode()
+        (
+            f"{year}:county:{sorted(counties_covered)}:"
+            f"{records_ingested}:"
+            f"{json.dumps(data_rows, sort_keys=True)}"
+        ).encode()
     ).hexdigest()[:32]
 
     context.log.info(

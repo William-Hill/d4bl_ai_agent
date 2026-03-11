@@ -1,6 +1,9 @@
 from d4bl_pipelines.assets.apis.bls_labor import bls_labor_stats
 from d4bl_pipelines.assets.apis.cdc_places import cdc_places_health
-from d4bl_pipelines.assets.apis.census_acs import census_acs_county_indicators, census_acs_indicators
+from d4bl_pipelines.assets.apis.census_acs import (
+    census_acs_county_indicators,
+    census_acs_indicators,
+)
 from d4bl_pipelines.assets.apis.doe_civil_rights import doe_civil_rights
 from d4bl_pipelines.assets.apis.epa_ejscreen import epa_ejscreen
 from d4bl_pipelines.assets.apis.fbi_ucr import fbi_ucr_crime

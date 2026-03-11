@@ -211,4 +211,8 @@ def test_build_static_schedules_cron_strings_valid():
         for key, cron in STATIC_SCHEDULES.items()
     }
     schedules = build_static_schedules()
-    assert {s.name: s.cron_schedule for s in schedules} == expected
+    actual = {s.name: s.cron_schedule for s in schedules}
+    assert actual == expected
+    # Spot-check known cron values to catch regressions in STATIC_SCHEDULES
+    assert actual["refresh_census_acs_indicators"] == "0 0 1 1 *"
+    assert actual["refresh_openstates_bills"] == "0 6 * * 1-5"
