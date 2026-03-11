@@ -4,6 +4,8 @@ from d4bl_pipelines.schedules import (
     _slugify,
     build_monitor_schedules,
     build_source_schedules,
+    build_static_schedules,
+    STATIC_SCHEDULES,
 )
 
 from dagster import DefaultScheduleStatus
@@ -178,3 +180,33 @@ def test_build_monitor_schedules_enabled_defaults_true():
     ]
     schedules = build_monitor_schedules(monitors)
     assert len(schedules) == 1
+
+
+# ---------------------------------------------------------------------------
+# build_static_schedules
+# ---------------------------------------------------------------------------
+
+
+def test_build_static_schedules_returns_all_ten():
+    schedules = build_static_schedules()
+    assert len(schedules) == 10
+
+
+def test_build_static_schedules_names_match_assets():
+    schedules = build_static_schedules()
+    names = {s.name for s in schedules}
+    for asset_key in STATIC_SCHEDULES:
+        assert f"refresh_{asset_key}" in names
+
+
+def test_build_static_schedules_default_stopped():
+    schedules = build_static_schedules()
+    for sched in schedules:
+        assert sched.default_status == DefaultScheduleStatus.STOPPED
+
+
+def test_build_static_schedules_cron_strings_valid():
+    schedules = build_static_schedules()
+    for sched in schedules:
+        parts = sched.cron_schedule.split()
+        assert len(parts) == 5, f"Bad cron for {sched.name}: {sched.cron_schedule}"
