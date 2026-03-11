@@ -87,18 +87,19 @@ async def _fetch_acs(
     year: int,
     variables: list[str],
     state_fips: str | None = None,
+    geography: str = "state:*",
 ) -> list[list[str]]:
     """Fetch data from the Census ACS 5-Year API."""
     all_vars = ",".join(variables)
     url = f"{CENSUS_BASE_URL}/{year}/acs/acs5"
-    params = {"get": f"NAME,{all_vars}", "for": "state:*"}
-    if state_fips:
+    params = {"get": f"NAME,{all_vars}", "for": geography}
+    if state_fips and geography == "state:*":
         params["for"] = f"state:{state_fips}"
     api_key = os.environ.get("CENSUS_API_KEY")
     if api_key:
         params["key"] = api_key
 
-    timeout = aiohttp.ClientTimeout(total=30)
+    timeout = aiohttp.ClientTimeout(total=120)
     async with session.get(url, params=params, timeout=timeout) as resp:
         resp.raise_for_status()
         return await resp.json()
