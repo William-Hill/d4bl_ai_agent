@@ -29,7 +29,7 @@ STATIC_SCHEDULES: dict[str, str] = {
 
 
 def build_static_schedules() -> list[ScheduleDefinition]:
-    """Build schedules for the 10 hardcoded API assets."""
+    """Build schedules for the hardcoded API assets."""
     return [
         ScheduleDefinition(
             name=f"refresh_{asset_key}",
