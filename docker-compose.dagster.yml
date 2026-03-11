@@ -3,11 +3,10 @@
 services:
   dagster-webserver:
     build:
-      context: ./dagster
-      dockerfile: Dockerfile
-    command: dagster-webserver -h 0.0.0.0 -p 3003
+      context: .
+      dockerfile: dagster/Dockerfile
     ports:
-      - "3003:3003"
+      - "3003:8080"
     environment:
       DAGSTER_POSTGRES_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}"
       POSTGRES_HOST: postgres
@@ -15,6 +14,10 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
       POSTGRES_DB: "${POSTGRES_DB:-postgres}"
+      SUPABASE_JWT_SECRET: "${SUPABASE_JWT_SECRET:-}"
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY:-}"
+      SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,8 +26,8 @@ services:
 
   dagster-daemon:
     build:
-      context: ./dagster
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dagster/Dockerfile.daemon
     command: dagster-daemon run
     environment:
       DAGSTER_POSTGRES_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}"
