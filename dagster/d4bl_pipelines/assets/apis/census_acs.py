@@ -388,3 +388,291 @@ async def census_acs_indicators(
             ),
         }
     )
+
+
+# Expected county count from Census (~3,243 counties + county-equivalents)
+EXPECTED_COUNTY_COUNT = 3243
+
+
+@asset(
+    group_name="apis",
+    description=(
+        "Race-disaggregated Census ACS indicators: "
+        "homeownership, income, poverty rates by county."
+    ),
+    metadata={
+        "source": "US Census Bureau ACS 5-Year Estimates",
+        "methodology": "D4BL equity-focused data collection",
+        "granularity": "county",
+    },
+    required_resource_keys={"db_url", "langfuse"},
+)
+async def census_acs_county_indicators(
+    context: AssetExecutionContext,
+) -> MaterializeResult:
+    """Fetch county-level Census ACS data and upsert into census_indicators."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        create_async_engine,
+    )
+    from sqlalchemy.orm import sessionmaker
+
+    year = int(os.environ.get("ACS_YEAR", "2022"))
+    db_url = context.resources.db_url
+
+    # --- Langfuse tracing (best-effort) ---
+    langfuse = context.resources.langfuse
+    trace = None
+    try:
+        if langfuse:
+            trace = langfuse.trace(
+                name="dagster:census_acs_county_indicators",
+                metadata={"year": year, "granularity": "county"},
+            )
+    except Exception as lf_exc:
+        context.log.warning(f"Langfuse trace init failed: {lf_exc}")
+        langfuse = None
+
+    engine = create_async_engine(
+        db_url, pool_size=3, max_overflow=5
+    )
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    records_ingested = 0
+    counties_covered = set()
+    races_covered = set()
+    all_variables = set()
+    for metric_vars in METRIC_VARIABLES.values():
+        for race_vars in metric_vars.values():
+            all_variables.update(race_vars.values())
+    variables = sorted(all_variables)
+
+    context.log.info(
+        f"Fetching county-level Census ACS data for year={year}"
+    )
+
+    try:
+        fetch_span = trace.span(name="fetch") if trace else None
+    except Exception:
+        fetch_span = None
+    async with aiohttp.ClientSession() as http_session:
+        rows = await _fetch_acs(
+            http_session, year, variables, geography="county:*"
+        )
+    try:
+        if fetch_span:
+            fetch_span.end(
+                metadata={"rows_fetched": len(rows) - 1 if rows else 0}
+            )
+    except Exception:
+        pass
+
+    if not rows or len(rows) < 2:
+        context.log.warning("No county data returned from Census API")
+        await engine.dispose()
+        flush_langfuse(langfuse, trace, records_ingested=0)
+        return MaterializeResult(
+            metadata={
+                "records_ingested": 0,
+                "status": "no_data",
+            }
+        )
+
+    headers = rows[0]
+    data_rows = rows[1:]
+    state_col = headers.index("state")
+    county_col = headers.index("county")
+    name_col = headers.index("NAME")
+
+    store_span = None
+    try:
+        try:
+            store_span = trace.span(name="store") if trace else None
+        except Exception:
+            pass
+        async with async_session() as session:
+            for row in data_rows:
+                st_fips = row[state_col]
+                county_code = row[county_col]
+                fips_code = st_fips + county_code  # 5-digit county FIPS
+                county_name = row[name_col]
+                counties_covered.add(fips_code)
+
+                for metric, race_vars in METRIC_VARIABLES.items():
+                    for race, var_map in race_vars.items():
+                        races_covered.add(race)
+                        if "val" in var_map:
+                            val_idx = headers.index(var_map["val"])
+                            raw_val = row[val_idx]
+                            try:
+                                value = float(raw_val)
+                            except (ValueError, TypeError):
+                                continue
+                        else:
+                            num_idx = headers.index(var_map["num"])
+                            den_idx = headers.index(var_map["den"])
+                            value = _compute_rate(
+                                row[num_idx], row[den_idx]
+                            )
+                            if value is None:
+                                continue
+
+                        record_id = uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"census:county:{fips_code}:{year}:{race}:{metric}",
+                        )
+
+                        upsert_sql = text("""
+                            INSERT INTO census_indicators
+                                (id, fips_code, geography_type,
+                                 geography_name, state_fips, year,
+                                 race, metric, value)
+                            VALUES
+                                (CAST(:id AS UUID), :fips, 'county',
+                                 :name, :state_fips, :year,
+                                 :race, :metric, :value)
+                            ON CONFLICT (fips_code, year, race, metric)
+                            DO UPDATE SET value = :value,
+                                geography_name = :name,
+                                geography_type = 'county',
+                                state_fips = :state_fips
+                        """)
+                        await session.execute(
+                            upsert_sql,
+                            {
+                                "id": str(record_id),
+                                "fips": fips_code,
+                                "name": county_name,
+                                "state_fips": st_fips,
+                                "year": year,
+                                "race": race,
+                                "metric": metric,
+                                "value": value,
+                            },
+                        )
+                        records_ingested += 1
+
+            await session.commit()
+
+            # --- Lineage recording ---
+            try:
+                from d4bl_pipelines.quality.lineage import (
+                    build_lineage_record,
+                    write_lineage_batch,
+                )
+
+                ingestion_run_id = uuid.uuid4()
+                lineage_records = []
+                for fips in counties_covered:
+                    rec_id = uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"census:county:lineage:{fips}:{year}",
+                    )
+                    lineage_records.append(
+                        build_lineage_record(
+                            ingestion_run_id=ingestion_run_id,
+                            target_table="census_indicators",
+                            record_id=rec_id,
+                            source_url=(
+                                f"{CENSUS_BASE_URL}/{year}/acs/acs5"
+                            ),
+                            transformation={
+                                "steps": [
+                                    "fetch_acs_api",
+                                    "compute_rate",
+                                    "upsert",
+                                ],
+                                "geography": "county",
+                            },
+                        )
+                    )
+                if lineage_records:
+                    await write_lineage_batch(
+                        session, lineage_records
+                    )
+                context.log.info(
+                    f"Wrote {len(lineage_records)} lineage records"
+                )
+            except Exception as lineage_exc:
+                context.log.warning(
+                    f"Lineage recording failed: {lineage_exc}"
+                )
+    finally:
+        try:
+            if store_span:
+                store_span.end(
+                    metadata={"records_ingested": records_ingested}
+                )
+        except Exception:
+            pass
+        await engine.dispose()
+
+    # Compute coverage metadata
+    all_races = {
+        "total", "black", "white", "hispanic",
+        "asian", "native_american", "multiracial",
+    }
+    missing_races = all_races - races_covered
+    coverage_pct = (
+        len(counties_covered) / EXPECTED_COUNTY_COUNT * 100
+        if EXPECTED_COUNTY_COUNT
+        else 0
+    )
+
+    content_hash = hashlib.sha256(
+        f"{year}:county:{len(counties_covered)}:{records_ingested}"
+        .encode()
+    ).hexdigest()[:32]
+
+    context.log.info(
+        f"Ingested {records_ingested} county records "
+        f"for {len(counties_covered)} counties "
+        f"({coverage_pct:.1f}% coverage)"
+    )
+
+    bias_flags = []
+    if coverage_pct < 95:
+        bias_flags.append(
+            f"low_coverage: only {len(counties_covered)} of "
+            f"{EXPECTED_COUNTY_COUNT} counties covered "
+            f"({coverage_pct:.1f}%)"
+        )
+    if missing_races:
+        bias_flags.append(
+            f"missing_races: {sorted(missing_races)}"
+        )
+    bias_flags.append(
+        "single_source: all data from Census ACS 5-Year only"
+    )
+
+    flush_langfuse(
+        langfuse, trace, records_ingested,
+        extra_metadata={
+            "counties_covered": len(counties_covered),
+            "quality_score": min(5.0, coverage_pct / 20),
+        },
+    )
+
+    return MaterializeResult(
+        metadata={
+            "records_ingested": records_ingested,
+            "year": year,
+            "counties_covered": len(counties_covered),
+            "coverage_pct": MetadataValue.float(coverage_pct),
+            "races_covered": sorted(races_covered),
+            "races_missing": sorted(missing_races),
+            "content_hash": content_hash,
+            "quality_score": MetadataValue.float(
+                min(5.0, coverage_pct / 20)
+            ),
+            "source_url": (
+                f"{CENSUS_BASE_URL}/{year}/acs/acs5"
+            ),
+            "bias_flags": MetadataValue.json_serializable(
+                bias_flags
+            ),
+        }
+    )

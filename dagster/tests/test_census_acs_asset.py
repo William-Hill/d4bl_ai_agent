@@ -2,6 +2,7 @@ import inspect
 
 from d4bl_pipelines.assets.apis.census_acs import (
     _fetch_acs,
+    census_acs_county_indicators,
     census_acs_indicators,
 )
 
@@ -23,3 +24,15 @@ def test_census_acs_asset_has_metadata():
     spec = census_acs_indicators.specs_by_key
     key = next(iter(spec))
     assert key.path[-1] == "census_acs_indicators"
+
+
+def test_census_acs_county_asset_exists():
+    """The census_acs_county_indicators asset should be importable."""
+    assert census_acs_county_indicators is not None
+
+
+def test_census_acs_county_asset_has_metadata():
+    """County asset should have correct group and description metadata."""
+    spec = census_acs_county_indicators.specs_by_key
+    key = next(iter(spec))
+    assert key.path[-1] == "census_acs_county_indicators"
