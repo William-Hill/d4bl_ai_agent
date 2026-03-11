@@ -14,8 +14,8 @@ from uuid import UUID
 
 import httpx
 import jwt
-from jwt import PyJWK
 from fastapi import Depends, HTTPException, Request
+from jwt import PyJWK
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 

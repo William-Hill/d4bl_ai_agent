@@ -12,6 +12,7 @@ import uuid
 
 import aiohttp
 
+from d4bl_pipelines.utils import flush_langfuse
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -65,19 +66,6 @@ STATE_FIPS = {
     "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
 }
 
-
-def _flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass  # tracing is best-effort
 
 
 def _compute_rate(
@@ -194,7 +182,7 @@ async def census_acs_indicators(
     if not rows or len(rows) < 2:
         context.log.warning("No data returned from Census API")
         await engine.dispose()
-        _flush_langfuse(langfuse, trace, records_ingested=0)
+        flush_langfuse(langfuse, trace, records_ingested=0)
         return MaterializeResult(
             metadata={
                 "records_ingested": 0,
@@ -368,7 +356,7 @@ async def census_acs_indicators(
         "single_source: all data from Census ACS 5-Year only"
     )
 
-    _flush_langfuse(
+    flush_langfuse(
         langfuse, trace, records_ingested,
         extra_metadata={
             "states_covered": len(covered_fips),
