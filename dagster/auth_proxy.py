@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import httpx
@@ -17,7 +17,7 @@ import jwt
 from jwt import PyJWK
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, Response, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 logger = logging.getLogger(__name__)
@@ -27,16 +27,30 @@ COOKIE_NAME = "dagster_token"
 _ADMIN_CACHE_TTL = 60  # seconds
 _JWKS_TTL = 3600  # seconds
 
+def _allowed_origins() -> list[str]:
+    """Allowed origins for cross-origin set-token requests from the admin page."""
+    return [
+        o.strip()
+        for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+        if o.strip()
+    ]
+
 # Headers that must not be forwarded by proxies (RFC 2616 Section 13.5.1)
 _HOP_BY_HOP = frozenset({
     "transfer-encoding", "connection", "keep-alive", "te",
     "trailers", "upgrade", "proxy-authorization", "proxy-authenticate",
 })
 
-# Read config from env
-_jwt_secret = lambda: os.environ.get("SUPABASE_JWT_SECRET", "")
-_supabase_url = lambda: os.environ.get("SUPABASE_URL", "")
-_supabase_anon_key = lambda: os.environ.get("SUPABASE_ANON_KEY", "")
+def _jwt_secret() -> str:
+    return os.environ.get("SUPABASE_JWT_SECRET", "")
+
+
+def _supabase_url() -> str:
+    return os.environ.get("SUPABASE_URL", "")
+
+
+def _supabase_anon_key() -> str:
+    return os.environ.get("SUPABASE_ANON_KEY", "")
 
 # TTL cache for admin checks: {user_id: (is_admin, timestamp)}
 _MAX_ADMIN_CACHE_SIZE = 1000
@@ -66,7 +80,7 @@ def _refresh_jwks(supabase_url: str) -> None:
             kid = key_data.get("kid")
             if kid:
                 new_cache[kid] = PyJWK(key_data)
-        _jwks_cache.update(new_cache)
+        _jwks_cache = new_cache
         _jwks_cache_time = time.monotonic()
     except Exception:
         logger.exception("Failed to fetch JWKS from Supabase")
@@ -205,12 +219,37 @@ def _login_page() -> HTMLResponse:
     return HTMLResponse(html)
 
 
-async def _set_token(request: Request) -> Response:
-    """Set the JWT cookie and redirect to the Dagster UI root.
+def _cors_origin(request: Request) -> str | None:
+    """Return the request Origin if it is in the allowed list, else None."""
+    origin = request.headers.get("origin", "")
+    if origin in _allowed_origins():
+        return origin
+    return None
 
-    Accepts the token via POST body (JSON: {"token": "..."}) to avoid
-    leaking JWTs in URLs, browser history, and server logs.
+
+def _add_cors_headers(response: Response, origin: str) -> None:
+    """Add CORS headers for credentialed cross-origin requests."""
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+
+
+async def _set_token(request: Request) -> Response:
+    """Set the JWT cookie via POST body (JSON: {"token": "..."}).
+
+    Supports cross-origin requests from the admin frontend by handling
+    CORS preflight and emitting the required CORS headers.
     """
+    origin = _cors_origin(request)
+
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        resp = Response(status_code=204)
+        if origin:
+            _add_cors_headers(resp, origin)
+            resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return resp
+
     try:
         body = await request.body()
         data = json.loads(body)
@@ -222,8 +261,11 @@ async def _set_token(request: Request) -> Response:
     response = Response(status_code=200, headers={"Content-Type": "application/json"})
     response.body = b'{"ok": true}'
     response.set_cookie(
-        COOKIE_NAME, token, httponly=True, secure=True, samesite="lax", max_age=3600
+        COOKIE_NAME, token, httponly=True, secure=True,
+        samesite="none", max_age=3600,
     )
+    if origin:
+        _add_cors_headers(response, origin)
     return response
 
 
@@ -314,7 +356,7 @@ async def _lifespan(app):
 # Routes — auth endpoints first, then catch-all proxy
 routes = [
     Route("/healthz", _healthz),
-    Route("/auth/set-token", _set_token, methods=["POST"]),
+    Route("/auth/set-token", _set_token, methods=["POST", "OPTIONS"]),
     Route("/auth/logout", _logout),
     Route("/{path:path}", _proxy, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
 ]

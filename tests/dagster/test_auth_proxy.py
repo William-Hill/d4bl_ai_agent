@@ -1,14 +1,12 @@
 """Tests for the Dagster auth proxy."""
 from __future__ import annotations
 
-import json
-import time
-from unittest.mock import AsyncMock, patch
-from uuid import uuid4
-
 import importlib.util
 import sys
+import time
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import jwt
 import pytest
@@ -49,6 +47,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("SUPABASE_JWT_SECRET", TEST_SECRET)
     monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
     monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
 
 
 @pytest.fixture
@@ -112,3 +111,56 @@ async def test_set_token_endpoint(app):
         )
     assert resp.status_code == 200
     assert "dagster_token" in resp.headers.get("set-cookie", "")
+
+
+@pytest.mark.asyncio
+async def test_set_token_cors_preflight(app):
+    """OPTIONS preflight from an allowed origin returns CORS headers."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.options(
+            "/auth/set-token",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+    assert resp.status_code == 204
+    assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+    assert resp.headers["Access-Control-Allow-Credentials"] == "true"
+    assert "POST" in resp.headers["Access-Control-Allow-Methods"]
+
+
+@pytest.mark.asyncio
+async def test_set_token_cross_origin_post(app):
+    """Cross-origin POST with credentials sets cookie and returns CORS headers."""
+    token = _make_token()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+    ) as client:
+        resp = await client.post(
+            "/auth/set-token",
+            json={"token": token},
+            headers={"Origin": "http://localhost:3000"},
+        )
+    assert resp.status_code == 200
+    assert "dagster_token" in resp.headers.get("set-cookie", "")
+    assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+    assert resp.headers["Access-Control-Allow-Credentials"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_set_token_disallowed_origin(app):
+    """Cross-origin POST from an unknown origin does not get CORS headers."""
+    token = _make_token()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+    ) as client:
+        resp = await client.post(
+            "/auth/set-token",
+            json={"token": token},
+            headers={"Origin": "http://evil.example.com"},
+        )
+    assert resp.status_code == 200
+    assert "Access-Control-Allow-Origin" not in resp.headers
