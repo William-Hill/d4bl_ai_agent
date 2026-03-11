@@ -109,7 +109,11 @@ def _decode_token(token: str) -> dict | None:
                 return None
             return jwt.decode(token, jwk.key, algorithms=["ES256"], audience="authenticated")
 
-        return jwt.decode(token, _jwt_secret(), algorithms=["HS256"], audience="authenticated")
+        secret = _jwt_secret()
+        if not secret:
+            logger.error("SUPABASE_JWT_SECRET is not configured; rejecting HS256 token")
+            return None
+        return jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated")
     except jwt.InvalidTokenError:
         return None
 
@@ -181,7 +185,9 @@ def _login_page() -> HTMLResponse:
     button:hover {{ background:#00cc28; }}
     .error {{ color:#ff6b6b; font-size:0.85rem; margin-top:0.5rem; text-align:center; display:none; }}
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"
+          integrity="sha384-2zrRDgDHSYB/GN3nFW3fsZXoxEhKIr3N2h63Tc6DEOB9JJdFIu8xMJT2Cph/gBil"
+          crossorigin="anonymous"></script>
 </head>
 <body>
   <div class="card">
@@ -240,7 +246,12 @@ async def _set_token(request: Request) -> Response:
     Supports cross-origin requests from the admin frontend by handling
     CORS preflight and emitting the required CORS headers.
     """
+    request_origin = request.headers.get("origin")
     origin = _cors_origin(request)
+
+    # Reject cross-origin requests from disallowed origins
+    if request_origin and origin is None:
+        return Response("Origin not allowed", status_code=403)
 
     # Handle CORS preflight
     if request.method == "OPTIONS":
@@ -250,6 +261,11 @@ async def _set_token(request: Request) -> Response:
             resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
             resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
+
+    # Require application/json to ensure browsers trigger preflight
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != "application/json":
+        return Response("Content-Type must be application/json", status_code=415)
 
     try:
         body = await request.body()

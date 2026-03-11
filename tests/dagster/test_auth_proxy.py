@@ -162,8 +162,7 @@ async def test_set_token_disallowed_origin(app):
             json={"token": token},
             headers={"Origin": "http://evil.example.com"},
         )
-    assert resp.status_code == 200
-    assert "Access-Control-Allow-Origin" not in resp.headers
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
