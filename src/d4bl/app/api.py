@@ -81,6 +81,23 @@ ABBREV_TO_FIPS: dict[str, str] = {v: k for k, v in {
 # Reverse lookup: FIPS -> abbreviation
 FIPS_TO_ABBREV: dict[str, str] = {v: k for k, v in ABBREV_TO_FIPS.items()}
 
+# FIPS -> full state name (for endpoints where model lacks state_name)
+FIPS_TO_NAME: dict[str, str] = {
+    "01": "Alabama", "02": "Alaska", "04": "Arizona", "05": "Arkansas",
+    "06": "California", "08": "Colorado", "09": "Connecticut", "10": "Delaware",
+    "11": "District of Columbia", "12": "Florida", "13": "Georgia", "15": "Hawaii",
+    "16": "Idaho", "17": "Illinois", "18": "Indiana", "19": "Iowa",
+    "20": "Kansas", "21": "Kentucky", "22": "Louisiana", "23": "Maine",
+    "24": "Maryland", "25": "Massachusetts", "26": "Michigan", "27": "Minnesota",
+    "28": "Mississippi", "29": "Missouri", "30": "Montana", "31": "Nebraska",
+    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey", "35": "New Mexico",
+    "36": "New York", "37": "North Carolina", "38": "North Dakota", "39": "Ohio",
+    "40": "Oklahoma", "41": "Oregon", "42": "Pennsylvania", "44": "Rhode Island",
+    "45": "South Carolina", "46": "South Dakota", "47": "Tennessee", "48": "Texas",
+    "49": "Utah", "50": "Vermont", "51": "Virginia", "53": "Washington",
+    "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
+}
+
 
 def parse_job_uuid(job_id: str) -> UUID:
     """Parse a string job ID into a UUID, raising HTTP 400 on failure."""
@@ -922,6 +939,7 @@ async def get_usda_food_access(
 
 @app.get("/api/explore/doe", response_model=ExploreResponse)
 async def get_doe_civil_rights(
+    state_fips: str | None = None,
     state: str | None = None,
     metric: str | None = None,
     race: str | None = None,
@@ -932,6 +950,11 @@ async def get_doe_civil_rights(
 ):
     """DOE Civil Rights Data Collection aggregated to state level."""
     try:
+        # Convert state_fips to abbreviation if provided
+        state_abbrev = state
+        if state_fips and not state_abbrev:
+            state_abbrev = FIPS_TO_ABBREV.get(state_fips)
+
         query = select(
             DoeCivilRights.state,
             DoeCivilRights.state_name,
@@ -946,8 +969,8 @@ async def get_doe_civil_rights(
             DoeCivilRights.race,
             DoeCivilRights.school_year,
         )
-        if state:
-            query = query.where(DoeCivilRights.state == state)
+        if state_abbrev:
+            query = query.where(DoeCivilRights.state == state_abbrev)
         if metric:
             query = query.where(DoeCivilRights.metric == metric)
         if race:
@@ -985,6 +1008,7 @@ async def get_doe_civil_rights(
 
 @app.get("/api/explore/police-violence", response_model=ExploreResponse)
 async def get_police_violence(
+    state_fips: str | None = None,
     state: str | None = None,
     race: str | None = None,
     year: int | None = None,
@@ -994,6 +1018,11 @@ async def get_police_violence(
 ):
     """Police violence incidents aggregated by state/race/year."""
     try:
+        # Convert state_fips to abbreviation if provided
+        state_abbrev = state
+        if state_fips and not state_abbrev:
+            state_abbrev = FIPS_TO_ABBREV.get(state_fips)
+
         query = select(
             PoliceViolenceIncident.state,
             PoliceViolenceIncident.race,
@@ -1004,8 +1033,8 @@ async def get_police_violence(
             PoliceViolenceIncident.race,
             PoliceViolenceIncident.year,
         )
-        if state:
-            query = query.where(PoliceViolenceIncident.state == state)
+        if state_abbrev:
+            query = query.where(PoliceViolenceIncident.state == state_abbrev)
         if race:
             query = query.where(PoliceViolenceIncident.race == race)
         if year:
@@ -1015,11 +1044,10 @@ async def get_police_violence(
         result = await db.execute(query)
         rows_raw = result.mappings().all()
 
-        # We need state names; build from abbreviation
         row_dicts = [
             {
                 "state_fips": ABBREV_TO_FIPS.get(r["state"], ""),
-                "state_name": r["state"],
+                "state_name": FIPS_TO_NAME.get(ABBREV_TO_FIPS.get(r["state"], ""), r["state"]),
                 "value": float(r["count"]),
                 "metric": "incidents",
                 "year": r["year"],
