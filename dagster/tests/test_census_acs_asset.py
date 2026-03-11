@@ -5,6 +5,7 @@ from d4bl_pipelines.assets.apis.census_acs import (
     census_acs_county_indicators,
     census_acs_indicators,
 )
+from d4bl_pipelines.schedules import STATIC_SCHEDULES
 
 
 def test_census_acs_asset_exists():
@@ -36,3 +37,8 @@ def test_census_acs_county_asset_has_metadata():
     spec = census_acs_county_indicators.specs_by_key
     key = next(iter(spec))
     assert key.path[-1] == "census_acs_county_indicators"
+
+
+def test_county_schedule_registered():
+    """County asset should have a static schedule."""
+    assert "census_acs_county_indicators" in STATIC_SCHEDULES
