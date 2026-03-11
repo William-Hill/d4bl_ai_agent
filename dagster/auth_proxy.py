@@ -10,8 +10,11 @@ import os
 import time
 from contextlib import asynccontextmanager
 
+import threading
+
 import httpx
 import jwt
+from jwt import PyJWK
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, RedirectResponse
@@ -22,6 +25,13 @@ logger = logging.getLogger(__name__)
 DAGSTER_UPSTREAM = "http://127.0.0.1:3003"
 COOKIE_NAME = "dagster_token"
 _ADMIN_CACHE_TTL = 60  # seconds
+_JWKS_TTL = 3600  # seconds
+
+# Headers that must not be forwarded by proxies (RFC 2616 Section 13.5.1)
+_HOP_BY_HOP = frozenset({
+    "transfer-encoding", "connection", "keep-alive", "te",
+    "trailers", "upgrade", "proxy-authorization", "proxy-authenticate",
+})
 
 # Read config from env
 _jwt_secret = lambda: os.environ.get("SUPABASE_JWT_SECRET", "")
@@ -34,12 +44,57 @@ _admin_cache: dict[str, tuple[bool, float]] = {}
 # Shared httpx client, initialized in lifespan
 _http_client: httpx.AsyncClient | None = None
 
+# JWKS cache for ES256 verification
+_jwks_cache: dict[str, PyJWK] = {}
+_jwks_cache_time: float = 0.0
+_jwks_lock = threading.Lock()
+
+
+def _refresh_jwks(supabase_url: str) -> None:
+    """Fetch and cache JWKS public keys from Supabase."""
+    global _jwks_cache, _jwks_cache_time
+    try:
+        resp = httpx.get(
+            f"{supabase_url}/auth/v1/.well-known/jwks.json",
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        keys = resp.json().get("keys", [])
+        new_cache = {}
+        for key_data in keys:
+            kid = key_data.get("kid")
+            if kid:
+                new_cache[kid] = PyJWK(key_data)
+        _jwks_cache.update(new_cache)
+        _jwks_cache_time = time.monotonic()
+    except Exception:
+        logger.exception("Failed to fetch JWKS from Supabase")
+
+
+def _get_jwks_key(kid: str, supabase_url: str) -> PyJWK | None:
+    """Get a JWKS key by kid, refreshing cache if needed."""
+    with _jwks_lock:
+        if kid not in _jwks_cache or (time.monotonic() - _jwks_cache_time) > _JWKS_TTL:
+            _refresh_jwks(supabase_url)
+    return _jwks_cache.get(kid)
+
 
 def _decode_token(token: str) -> dict | None:
-    """Decode and verify a Supabase JWT. Returns claims or None."""
+    """Decode and verify a Supabase JWT. Supports both ES256 (JWKS) and HS256."""
     try:
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg", "HS256")
+        kid = header.get("kid")
+        supabase_url = _supabase_url()
+
+        if alg == "ES256" and kid and supabase_url:
+            jwk = _get_jwks_key(kid, supabase_url)
+            if jwk is None:
+                return None
+            return jwt.decode(token, jwk.key, algorithms=["ES256"], audience="authenticated")
+
         return jwt.decode(token, _jwt_secret(), algorithms=["HS256"], audience="authenticated")
-    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
+    except jwt.InvalidTokenError:
         return None
 
 
@@ -60,7 +115,9 @@ async def _check_admin(user_id: str) -> bool:
         logger.warning("Supabase config missing, denying admin check")
         return False
     try:
-        client = _http_client or httpx.AsyncClient()
+        if _http_client is None:
+            raise RuntimeError("httpx client not initialized")
+        client = _http_client
         resp = await client.get(
             f"{supabase_url}/rest/v1/profiles",
             params={"id": f"eq.{user_id}", "select": "role"},
@@ -186,7 +243,9 @@ async def _proxy(request: Request) -> Response:
 
     try:
         body = await request.body()
-        client = _http_client or httpx.AsyncClient()
+        if _http_client is None:
+            raise RuntimeError("httpx client not initialized")
+        client = _http_client
         proxy_resp = await client.request(
             method=request.method,
             url=url,
@@ -200,7 +259,7 @@ async def _proxy(request: Request) -> Response:
         return Response(
             content=proxy_resp.content,
             status_code=proxy_resp.status_code,
-            headers=dict(proxy_resp.headers),
+            headers={k: v for k, v in proxy_resp.headers.items() if k.lower() not in _HOP_BY_HOP},
         )
     except httpx.ConnectError:
         return HTMLResponse("Dagster webserver is starting up. Refresh in a moment.", status_code=502)

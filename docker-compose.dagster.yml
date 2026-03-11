@@ -26,8 +26,8 @@ services:
 
   dagster-daemon:
     build:
-      context: ./dagster
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dagster/Dockerfile.daemon
     command: dagster-daemon run
     environment:
       DAGSTER_POSTGRES_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}"
