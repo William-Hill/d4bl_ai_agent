@@ -643,7 +643,7 @@ async def get_cdc_health(
             query = query.where(CdcHealthOutcome.measure == measure)
         if year:
             query = query.where(CdcHealthOutcome.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(CdcHealthOutcome.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.scalars().all()
@@ -700,7 +700,7 @@ async def get_epa_environmental_justice(
             query = query.where(EpaEnvironmentalJustice.indicator == indicator)
         if year:
             query = query.where(EpaEnvironmentalJustice.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(EpaEnvironmentalJustice.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
@@ -751,7 +751,7 @@ async def get_fbi_crime_stats(
             query = query.where(FbiCrimeStat.race == race)
         if year:
             query = query.where(FbiCrimeStat.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(FbiCrimeStat.state_abbrev).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.scalars().all()
@@ -803,7 +803,7 @@ async def get_bls_labor_stats(
             query = query.where(BlsLaborStatistic.race == race)
         if year:
             query = query.where(BlsLaborStatistic.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(BlsLaborStatistic.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.scalars().all()
@@ -852,7 +852,7 @@ async def get_hud_fair_housing(
             query = query.where(HudFairHousing.indicator == indicator)
         if year:
             query = query.where(HudFairHousing.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(HudFairHousing.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.scalars().all()
@@ -909,7 +909,7 @@ async def get_usda_food_access(
             query = query.where(UsdaFoodAccess.indicator == indicator)
         if year:
             query = query.where(UsdaFoodAccess.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(UsdaFoodAccess.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
@@ -977,7 +977,7 @@ async def get_doe_civil_rights(
             query = query.where(DoeCivilRights.race == race)
         if school_year:
             query = query.where(DoeCivilRights.school_year == school_year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(DoeCivilRights.state).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
@@ -1039,7 +1039,7 @@ async def get_police_violence(
             query = query.where(PoliceViolenceIncident.race == race)
         if year:
             query = query.where(PoliceViolenceIncident.year == year)
-        query = query.limit(min(limit, 5000))
+        query = query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
