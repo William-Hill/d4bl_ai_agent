@@ -429,6 +429,50 @@ class TestPoliceViolenceEndpoint:
         assert data["available_races"] == ["Black"]
 
 
+class TestAllExploreEndpointsStandardShape:
+    """Verify all 8 explore endpoints return the standardized ExploreResponse shape."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", [
+        "/api/explore/cdc",
+        "/api/explore/epa",
+        "/api/explore/fbi",
+        "/api/explore/bls",
+        "/api/explore/hud",
+        "/api/explore/usda",
+        "/api/explore/doe",
+        "/api/explore/police-violence",
+    ])
+    async def test_explore_endpoint_returns_standard_shape(self, override_auth, path):
+        """All explore endpoints return ExploreResponse shape even with empty data."""
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_result.mappings.return_value.all.return_value = []
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get(path)
+
+        assert res.status_code == 200, f"{path} returned {res.status_code}: {res.text}"
+        body = res.json()
+        assert isinstance(body["rows"], list), f"{path}: rows should be a list"
+        assert "national_average" in body, f"{path}: missing national_average"
+        assert isinstance(body["available_metrics"], list), f"{path}: available_metrics should be list"
+        assert isinstance(body["available_years"], list), f"{path}: available_years should be list"
+        assert isinstance(body["available_races"], list), f"{path}: available_races should be list"
+
+
 class TestStatesEndpoint:
     @pytest.mark.asyncio
     async def test_returns_200_with_state_list(self, override_auth):
