@@ -1,6 +1,7 @@
 from d4bl_pipelines.assets.apis import (
     bls_labor_stats,
     cdc_places_health,
+    census_acs_county_indicators,
     census_acs_indicators,
     doe_civil_rights,
     epa_ejscreen,
@@ -14,6 +15,7 @@ from d4bl_pipelines.assets.apis import (
 __all__ = [
     "bls_labor_stats",
     "cdc_places_health",
+    "census_acs_county_indicators",
     "census_acs_indicators",
     "doe_civil_rights",
     "epa_ejscreen",
