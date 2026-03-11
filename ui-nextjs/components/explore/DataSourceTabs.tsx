@@ -15,6 +15,7 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
         return (
           <button
             key={src.key}
+            type="button"
             onClick={() => onSelect(src)}
             className={`
               relative flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium

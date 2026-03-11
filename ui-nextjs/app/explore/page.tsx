@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import MetricFilterPanel, { ExploreFilters } from '@/components/explore/MetricFilterPanel';
 import StateMap from '@/components/explore/StateMap';
 import RacialGapChart from '@/components/explore/RacialGapChart';
@@ -27,10 +27,12 @@ export default function ExplorePage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const didAutoSelectMetric = useRef(false);
 
   /** Reset filters when switching data sources. */
   const handleSourceChange = (src: DataSourceConfig) => {
     setActiveSource(src);
+    didAutoSelectMetric.current = false;
     setFilters({
       metric: '',
       race: src.hasRace ? 'total' : null,
@@ -135,7 +137,8 @@ export default function ExplorePage() {
       setBills(billsData);
 
       // Auto-select first metric if none selected
-      if (!filters.metric && data.available_metrics?.length > 0) {
+      if (!filters.metric && data.available_metrics?.length > 0 && !didAutoSelectMetric.current) {
+        didAutoSelectMetric.current = true;
         setFilters(prev => ({ ...prev, metric: data.available_metrics[0] }));
       }
     } catch (e: unknown) {
@@ -255,7 +258,7 @@ export default function ExplorePage() {
                   indicators={exploreData.rows
                     .filter(r => r.state_fips === filters.selectedState)
                     .map(toIndicatorRow)}
-                  metric={filters.metric}
+                  metric={filters.metric || exploreData.available_metrics?.[0] || ''}
                   stateName={selectedStateName}
                 />
               )
@@ -264,7 +267,7 @@ export default function ExplorePage() {
                 stateValue={stateDetailValue}
                 nationalAverage={exploreData.national_average ?? 0}
                 stateName={selectedStateName}
-                metric={filters.metric}
+                metric={filters.metric || exploreData.available_metrics?.[0] || ''}
                 accent={activeSource.accent}
               />
             )}

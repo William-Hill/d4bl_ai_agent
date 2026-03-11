@@ -655,6 +655,7 @@ async def get_cdc_health(
                 "value": r.data_value,
                 "metric": r.measure,
                 "year": r.year,
+                "race": None,
             }
             for r in rows_raw
         ]
@@ -712,6 +713,7 @@ async def get_epa_environmental_justice(
                 "value": r["avg_value"],
                 "metric": r["indicator"],
                 "year": r["year"],
+                "race": None,
             }
             for r in rows_raw
         ]
@@ -864,6 +866,7 @@ async def get_hud_fair_housing(
                 "value": r.value,
                 "metric": r.indicator,
                 "year": r.year,
+                "race": None,
             }
             for r in rows_raw
         ]
@@ -921,6 +924,7 @@ async def get_usda_food_access(
                 "value": r["avg_value"],
                 "metric": r["indicator"],
                 "year": r["year"],
+                "race": None,
             }
             for r in rows_raw
         ]

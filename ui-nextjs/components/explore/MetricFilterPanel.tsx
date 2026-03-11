@@ -64,22 +64,22 @@ export default function MetricFilterPanel({
   primaryFilterLabel = 'Metric',
   accent = '#00ff32',
 }: Props) {
-  // Resolve effective lists
+  // Resolve effective lists — only fall back to Census defaults when the prop
+  // is truly absent (undefined).  An empty array means "no options yet" and
+  // should NOT be replaced with defaults.
   const metrics =
-    availableMetrics && availableMetrics.length > 0
-      ? availableMetrics.map((v) => ({ value: v, label: humanize(v) }))
-      : DEFAULT_METRICS;
+    availableMetrics === undefined
+      ? DEFAULT_METRICS
+      : availableMetrics.map((v) => ({ value: v, label: humanize(v) }));
 
-  const years =
-    availableYears && availableYears.length > 0 ? availableYears : DEFAULT_YEARS;
+  const years = availableYears === undefined ? DEFAULT_YEARS : availableYears;
+
+  const rawRaces = availableRaces === undefined ? DEFAULT_RACES : availableRaces.map((v) => ({ value: v, label: humanize(v) }));
 
   // Race section: show if availableRaces is explicitly provided (with items),
   // OR if no availableRaces prop was given (backward compat — show Census defaults).
   const showRace = availableRaces === undefined || availableRaces.length > 0;
-  const races =
-    availableRaces && availableRaces.length > 0
-      ? availableRaces.map((v) => ({ value: v, label: humanize(v) }))
-      : DEFAULT_RACES;
+  const races = rawRaces;
 
   return (
     <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-4 space-y-5">
@@ -93,8 +93,16 @@ export default function MetricFilterPanel({
             const isSelected = filters.metric === m.value;
             return (
               <label key={m.value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="metric"
+                  value={m.value}
+                  checked={isSelected}
+                  onChange={() => onChange({ ...filters, metric: m.value })}
+                  className="peer sr-only"
+                />
                 <span
-                  className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-500"
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-500 peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1"
                 >
                   {isSelected && (
                     <span
@@ -103,14 +111,6 @@ export default function MetricFilterPanel({
                     />
                   )}
                 </span>
-                <input
-                  type="radio"
-                  name="metric"
-                  value={m.value}
-                  checked={isSelected}
-                  onChange={() => onChange({ ...filters, metric: m.value })}
-                  className="sr-only"
-                />
                 <span className="text-sm text-gray-300">{m.label}</span>
               </label>
             );
@@ -132,8 +132,16 @@ export default function MetricFilterPanel({
                 const isSelected = filters.race === r.value;
                 return (
                   <label key={r.value} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="race"
+                      value={r.value ?? ''}
+                      checked={isSelected}
+                      onChange={() => onChange({ ...filters, race: r.value })}
+                      className="peer sr-only"
+                    />
                     <span
-                      className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-500"
+                      className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-500 peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1"
                     >
                       {isSelected && (
                         <span
@@ -142,14 +150,6 @@ export default function MetricFilterPanel({
                         />
                       )}
                     </span>
-                    <input
-                      type="radio"
-                      name="race"
-                      value={r.value ?? ''}
-                      checked={isSelected}
-                      onChange={() => onChange({ ...filters, race: r.value })}
-                      className="sr-only"
-                    />
                     <span className="text-sm text-gray-300">{r.label}</span>
                   </label>
                 );
@@ -169,7 +169,7 @@ export default function MetricFilterPanel({
         <select
           value={filters.year}
           onChange={(e) => onChange({ ...filters, year: Number(e.target.value) })}
-          className="w-full bg-[#292929] border border-[#404040] rounded px-2 py-1.5 text-sm text-gray-300 focus:outline-none"
+          className="w-full bg-[#292929] border border-[#404040] rounded px-2 py-1.5 text-sm text-gray-300 focus:ring-2 focus:ring-offset-1"
         >
           {years.map((y) => (
             <option key={y} value={y}>
