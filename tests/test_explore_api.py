@@ -114,6 +114,55 @@ class TestPoliciesEndpoint:
         assert data[0]["topic_tags"] == ["housing"]
 
 
+class TestCdcHealthEndpoint:
+    @pytest.mark.asyncio
+    async def test_returns_200_with_explore_response(self, override_auth):
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.geography_name = "Mississippi"
+        mock_row.data_value = 12.5
+        mock_row.measure = "Asthma"
+        mock_row.year = 2022
+        mock_row.geography_type = "state"
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_row]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/explore/cdc",
+                params={"state_fips": "28", "measure": "Asthma"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "rows" in data
+        assert "national_average" in data
+        assert "available_metrics" in data
+        assert "available_years" in data
+        assert "available_races" in data
+        assert len(data["rows"]) == 1
+        assert data["rows"][0]["state_fips"] == "28"
+        assert data["rows"][0]["value"] == 12.5
+        assert data["rows"][0]["metric"] == "Asthma"
+        assert data["national_average"] == 12.5
+        assert data["available_metrics"] == ["Asthma"]
+        assert data["available_years"] == [2022]
+        assert data["available_races"] == []
+
+
 class TestStatesEndpoint:
     @pytest.mark.asyncio
     async def test_returns_200_with_state_list(self, override_auth):
