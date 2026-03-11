@@ -53,7 +53,12 @@ async def db_session(db_url: str):
         await engine.dispose()
 
 
-def flush_langfuse(langfuse, trace, records_ingested=0, extra_metadata=None):
+def flush_langfuse(
+    langfuse: Any,
+    trace: Any,
+    records_ingested: int = 0,
+    extra_metadata: dict[str, Any] | None = None,
+) -> None:
     """Best-effort Langfuse trace finalization."""
     try:
         if trace:

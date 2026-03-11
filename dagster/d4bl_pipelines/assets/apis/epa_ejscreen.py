@@ -179,16 +179,17 @@ async def epa_ejscreen(
                 async with async_session() as session:
                     for indicator in EJ_INDICATORS:
                         indicator_lower = indicator.lower()
-                        # Try multiple key patterns
-                        raw_val = (
-                            raw_data.get(indicator)
-                            or raw_data.get(indicator_lower)
-                            or raw_data.get(f"RAW_{indicator}")
-                        )
-                        pctile = (
-                            raw_data.get(f"P_{indicator}")
-                            or raw_data.get(f"PCTILE_{indicator}")
-                        )
+                        # Try multiple key patterns (use `is not None`
+                        # so that legitimate zero values are preserved)
+                        raw_val = raw_data.get(indicator)
+                        if raw_val is None:
+                            raw_val = raw_data.get(indicator_lower)
+                        if raw_val is None:
+                            raw_val = raw_data.get(f"RAW_{indicator}")
+
+                        pctile = raw_data.get(f"P_{indicator}")
+                        if pctile is None:
+                            pctile = raw_data.get(f"PCTILE_{indicator}")
 
                         # Skip if no data at all
                         if raw_val is None and pctile is None:
@@ -213,9 +214,15 @@ async def epa_ejscreen(
                             f"epa:{fips}:{year}:{indicator}",
                         )
 
-                        minority = raw_data.get("MINORPCT") or raw_data.get("minorpct")
-                        lowinc = raw_data.get("LOWINCPCT") or raw_data.get("lowincpct")
-                        pop = raw_data.get("ACSTOTPOP") or raw_data.get("acstotpop")
+                        minority = raw_data.get("MINORPCT")
+                        if minority is None:
+                            minority = raw_data.get("minorpct")
+                        lowinc = raw_data.get("LOWINCPCT")
+                        if lowinc is None:
+                            lowinc = raw_data.get("lowincpct")
+                        pop = raw_data.get("ACSTOTPOP")
+                        if pop is None:
+                            pop = raw_data.get("acstotpop")
 
                         await session.execute(
                             upsert_sql,
@@ -232,9 +239,9 @@ async def epa_ejscreen(
                                 "raw_value": raw_float,
                                 "pctile_state": pctile_float,
                                 "pctile_national": pctile_float,
-                                "pop": int(pop) if pop else None,
-                                "minority": float(minority) if minority else None,
-                                "lowinc": float(lowinc) if lowinc else None,
+                                "pop": int(pop) if pop is not None else None,
+                                "minority": float(minority) if minority is not None else None,
+                                "lowinc": float(lowinc) if lowinc is not None else None,
                             },
                         )
                         records_ingested += 1

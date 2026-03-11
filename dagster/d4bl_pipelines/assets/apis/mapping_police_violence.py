@@ -246,11 +246,8 @@ async def mapping_police_violence(
                 if not date_raw or not name:
                     continue
 
-                incident_id = _derive_incident_id(
-                    date_raw, name, city, state
-                )
-
-                # Parse date to ISO format (YYYY-MM-DD)
+                # Parse date to ISO format (YYYY-MM-DD) BEFORE
+                # deriving incident ID so the ID is stable.
                 date_iso = None
                 year = None
                 try:
@@ -283,6 +280,15 @@ async def mapping_police_violence(
                         except ValueError:
                             continue
                     date_iso = date_raw
+
+                # Use the normalized ISO date for a stable ID;
+                # fall back to "unknown" if parsing failed entirely.
+                date_for_id = (
+                    date_iso if date_iso != date_raw else "unknown"
+                )
+                incident_id = _derive_incident_id(
+                    date_for_id, name, city, state
+                )
 
                 # Parse age as integer
                 age_int = None

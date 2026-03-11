@@ -63,21 +63,6 @@ STATE_FIPS = {
 }
 
 
-def flush_langfuse(langfuse, trace, records_ingested=0,
-                     extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
-
-
 @asset(
     group_name="apis",
     description=(
@@ -151,7 +136,7 @@ async def hud_fair_housing(
     try:
         async with aiohttp.ClientSession() as http_session:
             for fips_code, state_name in STATE_FIPS.items():
-                url = f"{HUD_FMR_URL}/{fips_code}"
+                url = f"{HUD_FMR_URL}/{fips_code}?year={year}"
                 timeout = aiohttp.ClientTimeout(total=60)
                 try:
                     async with http_session.get(

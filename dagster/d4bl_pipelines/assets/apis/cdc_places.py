@@ -150,6 +150,7 @@ async def cdc_places_health(
                                 continue
 
                             state_abbr = row.get("stateabbr", "")
+                            state_fips = fips[:2]
                             states_seen.add(state_abbr)
                             measures_seen.add(measure)
 
@@ -218,7 +219,7 @@ async def cdc_places_health(
                                         "locationname",
                                         row.get("countyname", ""),
                                     ),
-                                    "state_fips": state_abbr,
+                                    "state_fips": state_fips,
                                     "year": year,
                                     "measure": MEASURE_NAMES.get(
                                         measure, measure.lower()

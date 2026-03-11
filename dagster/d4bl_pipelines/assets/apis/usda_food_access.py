@@ -60,21 +60,6 @@ OUT_FIELDS = ",".join([
 ])
 
 
-def flush_langfuse(langfuse, trace, records_ingested=0,
-                     extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
-
-
 @asset(
     group_name="apis",
     description=(
@@ -185,20 +170,26 @@ async def usda_food_access(
                 async with async_session() as session:
                     for feature in features:
                         attrs = feature.get("attributes", {})
-                        tract_fips = str(
-                            attrs.get("CensusTract", "")
-                        ).strip()
-                        if not tract_fips:
+                        raw_tract = attrs.get("CensusTract", "")
+                        # Normalize: ArcGIS may return numeric
+                        # (losing leading zeros) or with ".0" suffix.
+                        # Convert to 11-digit zero-padded string.
+                        try:
+                            tract_fips = str(
+                                int(float(raw_tract))
+                            ).zfill(11)
+                        except (ValueError, TypeError):
+                            tract_fips = (
+                                str(raw_tract)
+                                .replace(".0", "")
+                                .strip()
+                                .zfill(11)
+                            )
+                        if not tract_fips or tract_fips == "0" * 11:
                             continue
 
-                        state_fips = (
-                            tract_fips[:2] if len(tract_fips) >= 2
-                            else None
-                        )
-                        county_fips = (
-                            tract_fips[:5] if len(tract_fips) >= 5
-                            else None
-                        )
+                        state_fips = tract_fips[:2]
+                        county_fips = tract_fips[:5]
                         state_name = attrs.get("State", "")
                         county_name = attrs.get("County", "")
                         urban = attrs.get("Urban", None)

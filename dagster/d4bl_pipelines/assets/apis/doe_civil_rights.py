@@ -77,21 +77,6 @@ _RACE_SUFFIXES = {
 }
 
 
-def flush_langfuse(langfuse, trace, records_ingested=0,
-                    extra_metadata=None):
-    """Best-effort Langfuse trace finalization."""
-    try:
-        if trace:
-            metadata = {"records_ingested": records_ingested}
-            if extra_metadata:
-                metadata.update(extra_metadata)
-            trace.update(metadata=metadata)
-        if langfuse:
-            langfuse.flush()
-    except Exception:
-        pass
-
-
 def _parse_crdc_row(row, school_year):
     """Parse a single CRDC CSV row into a list of metric records.
 

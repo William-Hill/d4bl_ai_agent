@@ -158,9 +158,14 @@ async def bls_labor_stats(
                         series_seen.add(sid)
 
                         for obs in series.get("data", []):
-                            year = obs.get("year", "")
+                            raw_year = obs.get("year", "")
                             period = obs.get("period", "")
                             raw_value = obs.get("value", "")
+
+                            try:
+                                year = int(raw_year)
+                            except (ValueError, TypeError):
+                                continue
 
                             try:
                                 value = float(raw_value)
