@@ -2,6 +2,8 @@
 import pytest
 
 from d4bl.app.schemas import (
+    ExploreRow,
+    ExploreResponse,
     IndicatorItem,
     PolicyBillItem,
     StateSummaryItem,
@@ -72,4 +74,49 @@ class TestStateSummaryItem:
         d = item.model_dump()
         assert d["bill_count"] == 12
         assert len(d["available_metrics"]) == 2
+
+
+def test_explore_row_minimal():
+    row = ExploreRow(
+        state_fips="06",
+        state_name="California",
+        value=12.3,
+        metric="Asthma",
+        year=2022,
+    )
+    assert row.state_fips == "06"
+    assert row.race is None
+
+
+def test_explore_row_with_race():
+    row = ExploreRow(
+        state_fips="06",
+        state_name="California",
+        value=5.1,
+        metric="Unemployment Rate",
+        race="black",
+        year=2022,
+    )
+    assert row.race == "black"
+
+
+def test_explore_response():
+    resp = ExploreResponse(
+        rows=[
+            ExploreRow(
+                state_fips="06",
+                state_name="California",
+                value=12.3,
+                metric="Asthma",
+                year=2022,
+            )
+        ],
+        national_average=10.5,
+        available_metrics=["Asthma", "Obesity"],
+        available_years=[2021, 2022],
+        available_races=[],
+    )
+    assert resp.national_average == 10.5
+    assert len(resp.rows) == 1
+    assert resp.available_races == []
 

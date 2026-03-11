@@ -19,8 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.data_routes import router as data_router
+from d4bl.app.explore_helpers import compute_national_avg, distinct_values
 from d4bl.app.schemas import (
     EvaluationResultItem,
+    ExploreResponse,
+    ExploreRow,
     IndicatorItem,
     InviteRequest,
     JobHistoryResponse,
@@ -38,10 +41,18 @@ from d4bl.app.schemas import (
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
+    BlsLaborStatistic,
+    CdcHealthOutcome,
     CensusIndicator,
+    DoeCivilRights,
+    EpaEnvironmentalJustice,
     EvaluationResult,
+    FbiCrimeStat,
+    HudFairHousing,
+    PoliceViolenceIncident,
     PolicyBill,
     ResearchJob,
+    UsdaFoodAccess,
     close_db,
     create_tables,
     get_db,
@@ -54,6 +65,38 @@ from d4bl.services.research_runner import run_research_job
 from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+ABBREV_TO_FIPS: dict[str, str] = {v: k for k, v in {
+    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO",
+    "09": "CT", "10": "DE", "11": "DC", "12": "FL", "13": "GA", "15": "HI",
+    "16": "ID", "17": "IL", "18": "IN", "19": "IA", "20": "KS", "21": "KY",
+    "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN",
+    "28": "MS", "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH",
+    "34": "NJ", "35": "NM", "36": "NY", "37": "NC", "38": "ND", "39": "OH",
+    "40": "OK", "41": "OR", "42": "PA", "44": "RI", "45": "SC", "46": "SD",
+    "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA",
+    "54": "WV", "55": "WI", "56": "WY",
+}.items()}
+
+# Reverse lookup: FIPS -> abbreviation
+FIPS_TO_ABBREV: dict[str, str] = {v: k for k, v in ABBREV_TO_FIPS.items()}
+
+# FIPS -> full state name (for endpoints where model lacks state_name)
+FIPS_TO_NAME: dict[str, str] = {
+    "01": "Alabama", "02": "Alaska", "04": "Arizona", "05": "Arkansas",
+    "06": "California", "08": "Colorado", "09": "Connecticut", "10": "Delaware",
+    "11": "District of Columbia", "12": "Florida", "13": "Georgia", "15": "Hawaii",
+    "16": "Idaho", "17": "Illinois", "18": "Indiana", "19": "Iowa",
+    "20": "Kansas", "21": "Kentucky", "22": "Louisiana", "23": "Maine",
+    "24": "Maryland", "25": "Massachusetts", "26": "Michigan", "27": "Minnesota",
+    "28": "Mississippi", "29": "Missouri", "30": "Montana", "31": "Nebraska",
+    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey", "35": "New Mexico",
+    "36": "New York", "37": "North Carolina", "38": "North Dakota", "39": "Ohio",
+    "40": "Oklahoma", "41": "Oregon", "42": "Pennsylvania", "44": "Rhode Island",
+    "45": "South Carolina", "46": "South Dakota", "47": "Tennessee", "48": "Texas",
+    "49": "Utah", "50": "Vermont", "51": "Virginia", "53": "Washington",
+    "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
+}
 
 
 def parse_job_uuid(job_id: str) -> UUID:
@@ -578,6 +621,455 @@ async def get_indicators(
     except Exception as e:
         logger.error("Error fetching indicators: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching indicators") from e
+
+
+@app.get("/api/explore/cdc", response_model=ExploreResponse)
+async def get_cdc_health(
+    state_fips: str | None = None,
+    measure: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """CDC health outcomes aggregated to state level."""
+    try:
+        query = select(CdcHealthOutcome).where(
+            CdcHealthOutcome.geography_type == "state"
+        )
+        if state_fips:
+            query = query.where(CdcHealthOutcome.state_fips == state_fips)
+        if measure:
+            query = query.where(CdcHealthOutcome.measure == measure)
+        if year:
+            query = query.where(CdcHealthOutcome.year == year)
+        query = query.order_by(CdcHealthOutcome.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+
+        row_dicts = [
+            {
+                "state_fips": r.state_fips,
+                "state_name": r.geography_name,
+                "value": r.data_value,
+                "metric": r.measure,
+                "year": r.year,
+                "race": None,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=[],
+        )
+    except Exception:
+        logger.error("Failed to fetch CDC health data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch CDC health data")
+
+
+@app.get("/api/explore/epa", response_model=ExploreResponse)
+async def get_epa_environmental_justice(
+    state_fips: str | None = None,
+    indicator: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """EPA EJScreen environmental justice data aggregated to state level."""
+    try:
+        query = select(
+            EpaEnvironmentalJustice.state_fips,
+            EpaEnvironmentalJustice.state_name,
+            func.avg(EpaEnvironmentalJustice.raw_value).label("avg_value"),
+            EpaEnvironmentalJustice.indicator,
+            EpaEnvironmentalJustice.year,
+        ).group_by(
+            EpaEnvironmentalJustice.state_fips,
+            EpaEnvironmentalJustice.state_name,
+            EpaEnvironmentalJustice.indicator,
+            EpaEnvironmentalJustice.year,
+        )
+        if state_fips:
+            query = query.where(EpaEnvironmentalJustice.state_fips == state_fips)
+        if indicator:
+            query = query.where(EpaEnvironmentalJustice.indicator == indicator)
+        if year:
+            query = query.where(EpaEnvironmentalJustice.year == year)
+        query = query.order_by(EpaEnvironmentalJustice.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.mappings().all()
+
+        row_dicts = [
+            {
+                "state_fips": r["state_fips"],
+                "state_name": r["state_name"],
+                "value": r["avg_value"],
+                "metric": r["indicator"],
+                "year": r["year"],
+                "race": None,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=[],
+        )
+    except Exception:
+        logger.error("Failed to fetch EPA EJ data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch EPA EJ data")
+
+
+@app.get("/api/explore/fbi", response_model=ExploreResponse)
+async def get_fbi_crime_stats(
+    state_fips: str | None = None,
+    offense: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """FBI Crime Data Explorer statistics."""
+    try:
+        query = select(FbiCrimeStat)
+        if state_fips:
+            abbrev = FIPS_TO_ABBREV.get(state_fips)
+            if abbrev:
+                query = query.where(FbiCrimeStat.state_abbrev == abbrev)
+        if offense:
+            query = query.where(FbiCrimeStat.offense == offense)
+        if race:
+            query = query.where(FbiCrimeStat.race == race)
+        if year:
+            query = query.where(FbiCrimeStat.year == year)
+        query = query.order_by(FbiCrimeStat.state_abbrev).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+
+        row_dicts = [
+            {
+                "state_fips": ABBREV_TO_FIPS.get(r.state_abbrev, ""),
+                "state_name": r.state_name,
+                "value": r.value,
+                "metric": r.offense,
+                "year": r.year,
+                "race": r.race,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch FBI crime data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch FBI crime data")
+
+
+@app.get("/api/explore/bls", response_model=ExploreResponse)
+async def get_bls_labor_stats(
+    state_fips: str | None = None,
+    metric: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """BLS labor statistics."""
+    try:
+        query = select(BlsLaborStatistic).where(
+            BlsLaborStatistic.state_fips.isnot(None)
+        )
+        if state_fips:
+            query = query.where(BlsLaborStatistic.state_fips == state_fips)
+        if metric:
+            query = query.where(BlsLaborStatistic.metric == metric)
+        if race:
+            query = query.where(BlsLaborStatistic.race == race)
+        if year:
+            query = query.where(BlsLaborStatistic.year == year)
+        query = query.order_by(BlsLaborStatistic.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+
+        row_dicts = [
+            {
+                "state_fips": r.state_fips,
+                "state_name": r.state_name or "",
+                "value": r.value,
+                "metric": r.metric,
+                "year": r.year,
+                "race": r.race,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch BLS labor data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch BLS labor data")
+
+
+@app.get("/api/explore/hud", response_model=ExploreResponse)
+async def get_hud_fair_housing(
+    state_fips: str | None = None,
+    indicator: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """HUD fair housing data filtered to state-level geography."""
+    try:
+        query = select(HudFairHousing).where(
+            HudFairHousing.geography_type == "state"
+        )
+        if state_fips:
+            query = query.where(HudFairHousing.state_fips == state_fips)
+        if indicator:
+            query = query.where(HudFairHousing.indicator == indicator)
+        if year:
+            query = query.where(HudFairHousing.year == year)
+        query = query.order_by(HudFairHousing.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+
+        row_dicts = [
+            {
+                "state_fips": r.state_fips,
+                "state_name": r.geography_name,
+                "value": r.value,
+                "metric": r.indicator,
+                "year": r.year,
+                "race": None,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=[],
+        )
+    except Exception:
+        logger.error("Failed to fetch HUD fair housing data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch HUD fair housing data")
+
+
+@app.get("/api/explore/usda", response_model=ExploreResponse)
+async def get_usda_food_access(
+    state_fips: str | None = None,
+    indicator: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """USDA food access data aggregated to state level."""
+    try:
+        query = select(
+            UsdaFoodAccess.state_fips,
+            UsdaFoodAccess.state_name,
+            func.avg(UsdaFoodAccess.value).label("avg_value"),
+            UsdaFoodAccess.indicator,
+            UsdaFoodAccess.year,
+        ).group_by(
+            UsdaFoodAccess.state_fips,
+            UsdaFoodAccess.state_name,
+            UsdaFoodAccess.indicator,
+            UsdaFoodAccess.year,
+        )
+        if state_fips:
+            query = query.where(UsdaFoodAccess.state_fips == state_fips)
+        if indicator:
+            query = query.where(UsdaFoodAccess.indicator == indicator)
+        if year:
+            query = query.where(UsdaFoodAccess.year == year)
+        query = query.order_by(UsdaFoodAccess.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.mappings().all()
+
+        row_dicts = [
+            {
+                "state_fips": r["state_fips"],
+                "state_name": r["state_name"] or "",
+                "value": r["avg_value"],
+                "metric": r["indicator"],
+                "year": r["year"],
+                "race": None,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=[],
+        )
+    except Exception:
+        logger.error("Failed to fetch USDA food access data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch USDA food access data")
+
+
+@app.get("/api/explore/doe", response_model=ExploreResponse)
+async def get_doe_civil_rights(
+    state_fips: str | None = None,
+    state: str | None = None,
+    metric: str | None = None,
+    race: str | None = None,
+    school_year: str | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """DOE Civil Rights Data Collection aggregated to state level."""
+    try:
+        # Convert state_fips to abbreviation if provided
+        state_abbrev = state
+        if state_fips and not state_abbrev:
+            state_abbrev = FIPS_TO_ABBREV.get(state_fips)
+
+        query = select(
+            DoeCivilRights.state,
+            DoeCivilRights.state_name,
+            DoeCivilRights.metric.label("metric_name"),
+            DoeCivilRights.race,
+            DoeCivilRights.school_year,
+            func.avg(DoeCivilRights.value).label("avg_value"),
+        ).group_by(
+            DoeCivilRights.state,
+            DoeCivilRights.state_name,
+            DoeCivilRights.metric,
+            DoeCivilRights.race,
+            DoeCivilRights.school_year,
+        )
+        if state_abbrev:
+            query = query.where(DoeCivilRights.state == state_abbrev)
+        if metric:
+            query = query.where(DoeCivilRights.metric == metric)
+        if race:
+            query = query.where(DoeCivilRights.race == race)
+        if school_year:
+            query = query.where(DoeCivilRights.school_year == school_year)
+        query = query.order_by(DoeCivilRights.state).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.mappings().all()
+
+        row_dicts = [
+            {
+                "state_fips": ABBREV_TO_FIPS.get(r["state"], ""),
+                "state_name": r["state_name"],
+                "value": r["avg_value"],
+                "metric": r["metric_name"],
+                "year": int(r["school_year"][:4]) if r["school_year"] else 0,
+                "race": r["race"],
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch DOE civil rights data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch DOE civil rights data")
+
+
+@app.get("/api/explore/police-violence", response_model=ExploreResponse)
+async def get_police_violence(
+    state_fips: str | None = None,
+    state: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Police violence incidents aggregated by state/race/year."""
+    try:
+        # Convert state_fips to abbreviation if provided
+        state_abbrev = state
+        if state_fips and not state_abbrev:
+            state_abbrev = FIPS_TO_ABBREV.get(state_fips)
+
+        query = select(
+            PoliceViolenceIncident.state,
+            PoliceViolenceIncident.race,
+            PoliceViolenceIncident.year,
+            func.count().label("count"),
+        ).group_by(
+            PoliceViolenceIncident.state,
+            PoliceViolenceIncident.race,
+            PoliceViolenceIncident.year,
+        )
+        if state_abbrev:
+            query = query.where(PoliceViolenceIncident.state == state_abbrev)
+        if race:
+            query = query.where(PoliceViolenceIncident.race == race)
+        if year:
+            query = query.where(PoliceViolenceIncident.year == year)
+        query = query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.mappings().all()
+
+        row_dicts = [
+            {
+                "state_fips": ABBREV_TO_FIPS.get(r["state"], ""),
+                "state_name": FIPS_TO_NAME.get(ABBREV_TO_FIPS.get(r["state"], ""), r["state"]),
+                "value": float(r["count"]),
+                "metric": "incidents",
+                "year": r["year"],
+                "race": r["race"],
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch police violence data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch police violence data")
 
 
 @app.get("/api/explore/policies", response_model=list[PolicyBillItem])
