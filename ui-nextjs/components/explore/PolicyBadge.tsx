@@ -7,9 +7,10 @@ import { PolicyBill } from '@/lib/types';
 interface Props {
   bills: PolicyBill[];
   stateName: string;
+  accent?: string;
 }
 
-export default function PolicyBadge({ bills, stateName }: Props) {
+export default function PolicyBadge({ bills, stateName, accent = '#00ff32' }: Props) {
   const [open, setOpen] = useState(false);
 
   if (!bills.length) return null;
@@ -19,10 +20,17 @@ export default function PolicyBadge({ bills, stateName }: Props) {
       <button
         onClick={() => setOpen(!open)}
         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
-          bg-[#00ff32]/10 text-[#00ff32] border border-[#00ff32]/30
-          hover:bg-[#00ff32]/20 transition-colors"
+          border transition-colors"
+        style={{
+          backgroundColor: `${accent}1a`,
+          color: accent,
+          borderColor: `${accent}4d`,
+        }}
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-[#00ff32]" />
+        <span
+          className="w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: accent }}
+        />
         {bills.length} bill{bills.length !== 1 ? 's' : ''}
       </button>
 
@@ -37,7 +45,7 @@ export default function PolicyBadge({ bills, stateName }: Props) {
           <div className="relative ml-auto h-full w-full max-w-lg bg-[#1a1a1a] border-l border-[#404040] overflow-y-auto p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">
-                Policy Tracker — <span className="text-[#00ff32]">{stateName}</span>
+                Policy Tracker — <span style={{ color: accent }}>{stateName}</span>
               </h2>
               <button
                 onClick={() => setOpen(false)}
