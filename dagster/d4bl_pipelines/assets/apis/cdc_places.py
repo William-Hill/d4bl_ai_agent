@@ -299,7 +299,7 @@ def _parse_row(row: dict, fips_field: str) -> dict[str, Any] | None:
 
     record_id = uuid.uuid5(
         uuid.NAMESPACE_URL,
-        f"cdc:{fips}:{row.get('year', '')}:{measure}:{dvt}",
+        f"cdc:{fips}:{year}:{measure}:{dvt}",
     )
 
     low_cl = None
