@@ -66,6 +66,17 @@ STATE_FIPS = {
     "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
 }
 
+# Precomputed set of all Census API variable codes from METRIC_VARIABLES
+CENSUS_VARIABLES = sorted(
+    {v for m in METRIC_VARIABLES.values() for r in m.values() for v in r.values()}
+)
+
+# All race categories tracked across Census assets
+ALL_TRACKED_RACES = {
+    "total", "black", "white", "hispanic",
+    "asian", "native_american", "multiracial",
+}
+
 
 
 def _compute_rate(
@@ -97,6 +108,8 @@ async def _fetch_acs(
         if geography == "state:*":
             params["for"] = f"state:{state_fips}"
         elif geography == "county:*":
+            params["in"] = f"state:{state_fips}"
+        elif geography == "tract:*":
             params["in"] = f"state:{state_fips}"
         else:
             raise ValueError(
@@ -685,5 +698,297 @@ async def census_acs_county_indicators(
             "bias_flags": MetadataValue.json_serializable(
                 bias_flags
             ),
+        }
+    )
+
+
+# Expected tract count from Census (~84,000 census tracts)
+EXPECTED_TRACT_COUNT = 84000
+
+
+@asset(
+    group_name="apis",
+    description=(
+        "Race-disaggregated Census ACS indicators: "
+        "homeownership, income, poverty rates by census tract."
+    ),
+    metadata={
+        "source": "US Census Bureau ACS 5-Year Estimates",
+        "methodology": "D4BL equity-focused data collection",
+        "granularity": "tract",
+    },
+    required_resource_keys={"db_url", "langfuse"},
+)
+async def census_acs_tract_indicators(
+    context: AssetExecutionContext,
+) -> MaterializeResult:
+    """Fetch tract-level Census ACS data and upsert into census_indicators.
+
+    Census API requires per-state queries for tract data, so this asset
+    iterates sequentially over all 51 states.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    year = int(os.environ.get("ACS_YEAR", "2022"))
+    db_url = context.resources.db_url
+
+    # --- Langfuse tracing (best-effort) ---
+    langfuse = context.resources.langfuse
+    trace = None
+    try:
+        if langfuse:
+            trace = langfuse.trace(
+                name="dagster:census_acs_tract_indicators",
+                metadata={"year": year, "granularity": "tract"},
+            )
+    except Exception as lf_exc:
+        context.log.warning(f"Langfuse trace init failed: {lf_exc}")
+        langfuse = None
+
+    engine = create_async_engine(db_url, pool_size=3, max_overflow=5)
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    records_ingested = 0
+    tracts_covered = set()
+    races_covered = set()
+    states_fetched = set()
+
+    context.log.info(
+        f"Fetching tract-level Census ACS data for year={year} "
+        f"across {len(STATE_FIPS)} states"
+    )
+
+    # --- Fetch data per state ---
+    all_data_rows = []
+    headers = None
+    try:
+        fetch_span = trace.span(name="fetch") if trace else None
+    except Exception:
+        fetch_span = None
+    async with aiohttp.ClientSession() as http_session:
+        for fips, state_name in STATE_FIPS.items():
+            context.log.info(f"Fetching tracts for {state_name} ({fips})")
+            try:
+                rows = await _fetch_acs(
+                    http_session, year, CENSUS_VARIABLES,
+                    state_fips=fips, geography="tract:*",
+                )
+            except Exception as fetch_exc:
+                context.log.warning(
+                    f"Failed to fetch tracts for {state_name} "
+                    f"({fips}): {fetch_exc}"
+                )
+                continue
+            if not rows or len(rows) < 2:
+                context.log.warning(
+                    f"No tract data for {state_name} ({fips})"
+                )
+                continue
+            if headers is None:
+                headers = rows[0]
+            all_data_rows.extend(rows[1:])
+            states_fetched.add(fips)
+    try:
+        if fetch_span:
+            fetch_span.end(
+                metadata={"rows_fetched": len(all_data_rows)}
+            )
+    except Exception:
+        pass
+
+    if not headers or not all_data_rows:
+        context.log.warning("No tract data returned from Census API")
+        await engine.dispose()
+        flush_langfuse(langfuse, trace, records_ingested=0)
+        return MaterializeResult(
+            metadata={"records_ingested": 0, "status": "no_data"}
+        )
+
+    state_col = headers.index("state")
+    county_col = headers.index("county")
+    tract_col = headers.index("tract")
+    name_col = headers.index("NAME")
+
+    # Precompute column indices for metric variables (avoid repeated list scans)
+    col_index = {h: i for i, h in enumerate(headers)}
+
+    # Prepare upsert SQL once (not per-record)
+    upsert_sql = text("""
+        INSERT INTO census_indicators
+            (id, fips_code, geography_type, geography_name,
+             state_fips, year, race, metric, value)
+        VALUES
+            (CAST(:id AS UUID), :fips, 'tract', :name,
+             :state_fips, :year, :race, :metric, :value)
+        ON CONFLICT (fips_code, year, race, metric)
+        DO UPDATE SET value = :value,
+            geography_name = :name,
+            geography_type = 'tract',
+            state_fips = :state_fips
+    """)
+
+    store_span = None
+    try:
+        try:
+            store_span = trace.span(name="store") if trace else None
+        except Exception:
+            pass
+        async with async_session() as session:
+            for row in all_data_rows:
+                st_fips = row[state_col]
+                county_code = row[county_col]
+                tract_code = row[tract_col]
+                fips_code = st_fips + county_code + tract_code
+                tract_name = row[name_col]
+                tracts_covered.add(fips_code)
+
+                for metric, race_vars in METRIC_VARIABLES.items():
+                    for race, var_map in race_vars.items():
+                        races_covered.add(race)
+                        if "val" in var_map:
+                            raw_val = row[col_index[var_map["val"]]]
+                            try:
+                                value = float(raw_val)
+                            except (ValueError, TypeError):
+                                continue
+                        else:
+                            value = _compute_rate(
+                                row[col_index[var_map["num"]]],
+                                row[col_index[var_map["den"]]],
+                            )
+                            if value is None:
+                                continue
+
+                        record_id = uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"census:tract:{fips_code}:{year}:{race}:{metric}",
+                        )
+
+                        await session.execute(
+                            upsert_sql,
+                            {
+                                "id": str(record_id),
+                                "fips": fips_code,
+                                "name": tract_name,
+                                "state_fips": st_fips,
+                                "year": year,
+                                "race": race,
+                                "metric": metric,
+                                "value": value,
+                            },
+                        )
+                        records_ingested += 1
+
+            await session.commit()
+
+            # --- Lineage recording (only for states that returned data) ---
+            try:
+                from d4bl_pipelines.quality.lineage import (
+                    build_lineage_record,
+                    write_lineage_batch,
+                )
+
+                ingestion_run_id = uuid.uuid4()
+                lineage_records = []
+                for fips in states_fetched:
+                    rec_id = uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"census:tract:lineage:{fips}:{year}",
+                    )
+                    lineage_records.append(
+                        build_lineage_record(
+                            ingestion_run_id=ingestion_run_id,
+                            target_table="census_indicators",
+                            record_id=rec_id,
+                            source_url=f"{CENSUS_BASE_URL}/{year}/acs/acs5",
+                            transformation={
+                                "steps": [
+                                    "fetch_acs_api",
+                                    "compute_rate",
+                                    "upsert",
+                                ],
+                                "geography": "tract",
+                                "state_fips": fips,
+                            },
+                        )
+                    )
+                if lineage_records:
+                    await write_lineage_batch(session, lineage_records)
+                context.log.info(
+                    f"Wrote {len(lineage_records)} lineage records"
+                )
+            except Exception as lineage_exc:
+                context.log.warning(
+                    f"Lineage recording failed: {lineage_exc}"
+                )
+    finally:
+        try:
+            if store_span:
+                store_span.end(
+                    metadata={"records_ingested": records_ingested}
+                )
+        except Exception:
+            pass
+        await engine.dispose()
+
+    # Compute coverage metadata
+    missing_races = ALL_TRACKED_RACES - races_covered
+    coverage_pct = (
+        len(tracts_covered) / EXPECTED_TRACT_COUNT * 100
+        if EXPECTED_TRACT_COUNT
+        else 0
+    )
+
+    # Content hash uses counts only (not raw data) — hashing ~84k rows
+    # would be expensive and the county/state assets are small enough to
+    # hash raw data, but tracts are not.
+    content_hash = hashlib.sha256(
+        f"{year}:tract:{len(tracts_covered)}:{records_ingested}".encode()
+    ).hexdigest()[:32]
+
+    context.log.info(
+        f"Ingested {records_ingested} tract records "
+        f"for {len(tracts_covered)} tracts "
+        f"({coverage_pct:.1f}% coverage)"
+    )
+
+    bias_flags = []
+    if coverage_pct < 95:
+        bias_flags.append(
+            f"low_coverage: only {len(tracts_covered)} of "
+            f"{EXPECTED_TRACT_COUNT} tracts covered ({coverage_pct:.1f}%)"
+        )
+    if missing_races:
+        bias_flags.append(f"missing_races: {sorted(missing_races)}")
+    bias_flags.append(
+        "single_source: all data from Census ACS 5-Year only"
+    )
+
+    flush_langfuse(
+        langfuse, trace, records_ingested,
+        extra_metadata={
+            "tracts_covered": len(tracts_covered),
+            "quality_score": min(5.0, coverage_pct / 20),
+        },
+    )
+
+    return MaterializeResult(
+        metadata={
+            "records_ingested": records_ingested,
+            "year": year,
+            "tracts_covered": len(tracts_covered),
+            "coverage_pct": MetadataValue.float(coverage_pct),
+            "races_covered": sorted(races_covered),
+            "races_missing": sorted(missing_races),
+            "content_hash": content_hash,
+            "quality_score": MetadataValue.float(
+                min(5.0, coverage_pct / 20)
+            ),
+            "source_url": f"{CENSUS_BASE_URL}/{year}/acs/acs5",
+            "bias_flags": MetadataValue.json_serializable(bias_flags),
         }
     )

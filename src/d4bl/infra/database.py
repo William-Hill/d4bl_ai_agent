@@ -112,7 +112,7 @@ class CensusIndicator(Base):
     __tablename__ = "census_indicators"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    fips_code = Column(String(5), nullable=False, index=True)
+    fips_code = Column(String(11), nullable=False, index=True)
     geography_type = Column(String(10), nullable=False)   # state | county | tract
     geography_name = Column(Text, nullable=False)
     state_fips = Column(String(2), nullable=False, index=True)
