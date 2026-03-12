@@ -179,3 +179,9 @@ def test_epa_ejscreen_tract_asset_group_name():
     spec = epa_ejscreen_tract.specs_by_key
     key = next(iter(spec))
     assert spec[key].group_name == "apis"
+
+
+def test_epa_ejscreen_tract_schedule_registered():
+    """Tract asset should have a static schedule."""
+    from d4bl_pipelines.schedules import STATIC_SCHEDULES
+    assert "epa_ejscreen_tract" in STATIC_SCHEDULES

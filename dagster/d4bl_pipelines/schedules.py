@@ -22,6 +22,7 @@ STATIC_SCHEDULES: dict[str, str] = {
     "bls_labor_stats": "0 0 1 * *",               # Monthly — 1st
     "fbi_ucr_crime": "0 0 1 1 *",                 # Annually — Jan 1
     "epa_ejscreen": "0 0 1 1 *",                  # Annually — Jan 1
+    "epa_ejscreen_tract": "0 0 1 1 *",             # Annually — Jan 1
     "hud_fair_housing": "0 0 1 1 *",              # Annually — Jan 1
     "usda_food_access": "0 0 1 1 *",              # Annually — Jan 1
     "doe_civil_rights": "0 0 1 1 *",               # Annually — Jan 1 (biennial n/a in cron)
