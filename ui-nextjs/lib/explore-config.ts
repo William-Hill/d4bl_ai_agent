@@ -57,6 +57,15 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     primaryFilterLabel: "Measure",
   },
   {
+    key: "cdc-race",
+    label: "CDC Health \u00d7 Race",
+    accent: "#ff6b6b",
+    endpoint: "/api/explore/cdc-race",
+    hasRace: true,
+    primaryFilterKey: "measure",
+    primaryFilterLabel: "Measure",
+  },
+  {
     key: "epa",
     label: "EPA Environment",
     accent: "#4ecdc4",
