@@ -37,13 +37,9 @@ _ACS_VAR_LIST = ",".join(sorted(_ACS_POP_VARS.keys()))
 
 CENSUS_BASE_URL = "https://api.census.gov/data"
 
-STATE_FIPS = [
-    "01", "02", "04", "05", "06", "08", "09", "10", "11", "12",
-    "13", "15", "16", "17", "18", "19", "20", "21", "22", "23",
-    "24", "25", "26", "27", "28", "29", "30", "31", "32", "33",
-    "34", "35", "36", "37", "38", "39", "40", "41", "42", "44",
-    "45", "46", "47", "48", "49", "50", "51", "53", "54", "55",
-    "56",
+BIAS_FLAGS = [
+    "computed estimate via proportional attribution, not direct measurement",
+    "assumes uniform health rate across racial groups within geography",
 ]
 
 BATCH_SIZE = 2000
@@ -397,12 +393,7 @@ async def cdc_acs_race_overlay(
                                     "upsert",
                                 ],
                             },
-                            bias_flags=[
-                                "computed estimate via proportional "
-                                "attribution, not direct measurement",
-                                "assumes uniform health rate across "
-                                "racial groups within geography",
-                            ],
+                            bias_flags=BIAS_FLAGS,
                         )
                     )
                 if lineage_records:
@@ -435,13 +426,6 @@ async def cdc_acs_race_overlay(
         f"{len(geographies_processed)} geographies"
     )
 
-    bias_flags = [
-        "computed estimate via proportional attribution, "
-        "not direct measurement",
-        "assumes uniform health rate across racial groups "
-        "within geography",
-    ]
-
     flush_langfuse(
         langfuse, trace, records_upserted,
         extra_metadata={
@@ -457,6 +441,6 @@ async def cdc_acs_race_overlay(
             "races": MetadataValue.json_serializable(RACES),
             "content_hash": content_hash,
             "source_url": f"{CENSUS_BASE_URL}/{year}/acs/acs5",
-            "bias_flags": MetadataValue.json_serializable(bias_flags),
+            "bias_flags": MetadataValue.json_serializable(BIAS_FLAGS),
         }
     )

@@ -42,6 +42,8 @@ def test_compute_race_estimates_basic():
     assert abs(black_result["race_population_share"] - 0.24) < 0.001
     assert abs(black_result["estimated_value"] - 2.88) < 0.01
     assert black_result["total_population"] == 5000000
+    assert abs(black_result["confidence_low"] - 2.4) < 0.01    # 10.0 * 0.24
+    assert abs(black_result["confidence_high"] - 3.36) < 0.01  # 14.0 * 0.24
 
 
 def test_compute_race_estimates_zero_total_pop():
