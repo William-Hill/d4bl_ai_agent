@@ -1,10 +1,8 @@
-"""EPA EJScreen environmental justice ingestion asset.
+"""EPA EJScreen environmental justice ingestion assets.
 
-Fetches environmental justice screening data by state from the
-EPA EJScreen API. No authentication required.
-
-Note: EJScreen data is fetched at state summary level.
-Tract-level data can be added as follow-up work.
+State-level asset fetches from the EJScreen REST API.
+Tract-level asset downloads the annual bulk CSV (block-group granularity)
+and aggregates to census tracts using population-weighted averages.
 """
 
 import os
@@ -70,11 +68,6 @@ STATE_FIPS = {
     "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
 }
 
-# CSV column names for the indicators we track.
-# These map 1:1 to EJ_INDICATORS (which are used for both
-# the REST API and the CSV download).
-CSV_INDICATOR_COLUMNS = list(EJ_INDICATORS)
-
 # Default download URL — EPA EJScreen annual CSV (US Percentiles).
 # EPA discontinued public access in Feb 2025; set EPA_EJSCREEN_CSV_URL
 # env var to point at a mirror (e.g. Zenodo, Harvard Dataverse).
@@ -84,13 +77,15 @@ DEFAULT_EJSCREEN_CSV_URL = (
 
 
 def aggregate_block_groups_to_tracts(
-    rows: list[dict],
+    rows,
 ) -> dict[str, dict]:
     """Aggregate block-group rows to tract-level using population-weighted averages.
 
     Args:
-        rows: List of dicts with keys matching the EJScreen CSV columns.
-              Each row is one block group.
+        rows: Iterable of dicts with keys matching the EJScreen CSV columns.
+              Each row is one block group.  Consumed in a single pass so
+              callers may pass a csv.DictReader directly to avoid buffering
+              all rows in memory.
 
     Returns:
         Dict keyed by 11-digit tract FIPS, values are dicts with:
@@ -136,7 +131,7 @@ def aggregate_block_groups_to_tracts(
         except (ValueError, TypeError):
             pass
 
-        for col in CSV_INDICATOR_COLUMNS:
+        for col in EJ_INDICATORS:
             col_lower = col.lower()
             if col_lower not in t["indicators"]:
                 t["indicators"][col_lower] = {
@@ -498,17 +493,16 @@ async def epa_ejscreen_tract(
                     ):
                         tmp.write(chunk)
 
+        file_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
         try:
             if download_span:
                 download_span.end(
-                    metadata={"file_size_mb": os.path.getsize(tmp_path) / (1024 * 1024)}
+                    metadata={"file_size_mb": file_size_mb}
                 )
         except Exception:
             pass
 
-        context.log.info(
-            f"Downloaded {os.path.getsize(tmp_path) / (1024*1024):.1f} MB"
-        )
+        context.log.info(f"Downloaded {file_size_mb:.1f} MB")
 
         # --- Extract and parse CSV ---
         try:
@@ -516,7 +510,6 @@ async def epa_ejscreen_tract(
         except Exception:
             parse_span = None
 
-        rows: list[dict] = []
         with zipfile.ZipFile(tmp_path, "r") as zf:
             csv_names = [
                 n for n in zf.namelist()
@@ -533,25 +526,23 @@ async def epa_ejscreen_tract(
                     }
                 )
             csv_name = csv_names[0]
-            context.log.info(f"Parsing {csv_name}")
+            context.log.info(f"Parsing and aggregating {csv_name}")
             with zf.open(csv_name) as csv_file:
                 reader = csv_mod.DictReader(
                     io.TextIOWrapper(csv_file, encoding="utf-8")
                 )
-                for row in reader:
-                    rows.append(row)
+                # Stream rows directly through aggregation — avoids
+                # buffering the entire CSV in memory.
+                tracts = aggregate_block_groups_to_tracts(reader)
 
-        context.log.info(f"Parsed {len(rows)} block-group rows")
         try:
             if parse_span:
                 parse_span.end(
-                    metadata={"block_groups": len(rows)}
+                    metadata={"tracts": len(tracts)}
                 )
         except Exception:
             pass
 
-        # --- Aggregate to tract level ---
-        tracts = aggregate_block_groups_to_tracts(rows)
         context.log.info(
             f"Aggregated to {len(tracts)} tracts"
         )
@@ -587,42 +578,40 @@ async def epa_ejscreen_tract(
         except Exception:
             store_span = None
 
-        async with async_session() as session:
-            for tract_fips, tract_data in tracts.items():
-                states_covered.add(tract_data["state_fips"])
-                state_name = STATE_FIPS.get(
-                    tract_data["state_fips"],
-                    tract_data["state_abbrev"],
+        # Build all upsert params upfront, then execute in batches
+        upsert_params = []
+        for tract_fips, tract_data in tracts.items():
+            states_covered.add(tract_data["state_fips"])
+            state_name = STATE_FIPS.get(
+                tract_data["state_fips"],
+                tract_data["state_abbrev"],
+            )
+            for indicator, ind_vals in tract_data["indicators"].items():
+                record_id = uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"epa:tract:{tract_fips}:{year}:{indicator}",
                 )
+                upsert_params.append({
+                    "id": str(record_id),
+                    "tract_fips": tract_fips,
+                    "state_fips": tract_data["state_fips"],
+                    "state_name": state_name,
+                    "year": year,
+                    "indicator": indicator,
+                    "raw_value": ind_vals["raw_value"],
+                    "pctile_state": None,
+                    "pctile_national": ind_vals["percentile_national"],
+                    "pop": tract_data["population"],
+                    "minority": tract_data["minority_pct"],
+                    "lowinc": tract_data["low_income_pct"],
+                })
 
-                for indicator, ind_vals in tract_data[
-                    "indicators"
-                ].items():
-                    record_id = uuid.uuid5(
-                        uuid.NAMESPACE_URL,
-                        f"epa:tract:{tract_fips}:{year}:{indicator}",
-                    )
-                    await session.execute(
-                        upsert_sql,
-                        {
-                            "id": str(record_id),
-                            "tract_fips": tract_fips,
-                            "state_fips": tract_data["state_fips"],
-                            "state_name": state_name,
-                            "year": year,
-                            "indicator": indicator,
-                            "raw_value": ind_vals["raw_value"],
-                            "pctile_state": None,
-                            "pctile_national": ind_vals[
-                                "percentile_national"
-                            ],
-                            "pop": tract_data["population"],
-                            "minority": tract_data["minority_pct"],
-                            "lowinc": tract_data["low_income_pct"],
-                        },
-                    )
-                    records_ingested += 1
-
+        batch_size = 2000
+        async with async_session() as session:
+            for i in range(0, len(upsert_params), batch_size):
+                batch = upsert_params[i : i + batch_size]
+                await session.execute(upsert_sql, batch)
+            records_ingested = len(upsert_params)
             await session.commit()
 
             # --- Lineage recording ---
@@ -707,9 +696,8 @@ async def epa_ejscreen_tract(
             "year": year,
             "tracts_covered": len(tracts),
             "states_covered": len(states_covered),
-            "block_groups_parsed": len(rows),
             "indicators": sorted(
-                ind.lower() for ind in CSV_INDICATOR_COLUMNS
+                ind.lower() for ind in EJ_INDICATORS
             ),
             "source_url": csv_url,
             "bias_flags": MetadataValue.json_serializable(

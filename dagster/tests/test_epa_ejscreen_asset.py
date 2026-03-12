@@ -1,5 +1,4 @@
 from d4bl_pipelines.assets.apis.epa_ejscreen import (
-    CSV_INDICATOR_COLUMNS,
     EJ_INDICATORS,
     aggregate_block_groups_to_tracts,
     epa_ejscreen,
@@ -148,18 +147,18 @@ def test_aggregate_skips_missing_population():
             "ACSTOTPOP": "",
             "MINORPCT": "0.50",
             "LOWINCPCT": "0.30",
-            **{ind: "1.0" for ind in CSV_INDICATOR_COLUMNS},
-            **{f"P_{ind}": "50" for ind in CSV_INDICATOR_COLUMNS},
+            **{ind: "1.0" for ind in EJ_INDICATORS},
+            **{f"P_{ind}": "50" for ind in EJ_INDICATORS},
         },
     ]
     result = aggregate_block_groups_to_tracts(rows)
     assert len(result) == 0
 
 
-def test_csv_indicator_columns_match_ej_indicators():
-    """CSV columns should cover all the EJ_INDICATORS we track."""
+def test_ej_indicators_keys_are_strings():
+    """EJ_INDICATORS keys should all be non-empty strings."""
     for ind in EJ_INDICATORS:
-        assert ind in CSV_INDICATOR_COLUMNS
+        assert isinstance(ind, str) and len(ind) > 0
 
 
 def test_epa_ejscreen_tract_asset_exists():
