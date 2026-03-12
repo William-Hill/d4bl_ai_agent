@@ -405,7 +405,7 @@ class CdcAcsRaceEstimate(Base):
     geography_name = Column(String(200), nullable=False)
     state_fips = Column(String(2), nullable=False, index=True)
     year = Column(Integer, nullable=False)
-    measure = Column(String(50), nullable=False)
+    measure = Column(String(200), nullable=False)
     race = Column(String(20), nullable=False)
     health_rate = Column(Float, nullable=False)
     race_population_share = Column(Float, nullable=False)

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS cdc_acs_race_estimates (
     geography_name VARCHAR(200) NOT NULL,
     state_fips VARCHAR(2) NOT NULL,
     year INTEGER NOT NULL,
-    measure VARCHAR(50) NOT NULL,
+    measure VARCHAR(200) NOT NULL,
     race VARCHAR(20) NOT NULL,
     health_rate FLOAT NOT NULL,
     race_population_share FLOAT NOT NULL,
