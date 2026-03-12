@@ -145,3 +145,8 @@ def test_census_acs_tract_asset_has_metadata():
 def test_county_schedule_registered():
     """County asset should have a static schedule."""
     assert "census_acs_county_indicators" in STATIC_SCHEDULES
+
+
+def test_tract_schedule_registered():
+    """Tract asset should have a static schedule."""
+    assert "census_acs_tract_indicators" in STATIC_SCHEDULES
