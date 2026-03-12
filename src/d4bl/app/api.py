@@ -686,31 +686,60 @@ async def get_cdc_race_estimates(
 ):
     """Race-weighted CDC health estimates via ACS overlay."""
     try:
-        query = select(CdcAcsRaceEstimate).where(
+        # Base filter applied to all queries (excludes race/limit)
+        base_filter = select(CdcAcsRaceEstimate).where(
             CdcAcsRaceEstimate.geography_type == geography_type
         )
-        race_options_query = select(
+        if state_fips:
+            base_filter = base_filter.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+        if measure:
+            base_filter = base_filter.where(
+                CdcAcsRaceEstimate.measure == measure
+            )
+        if year:
+            base_filter = base_filter.where(
+                CdcAcsRaceEstimate.year == year
+            )
+
+        # Distinct metadata queries from unpaginated base
+        race_q = select(
             CdcAcsRaceEstimate.race
         ).distinct().where(
             CdcAcsRaceEstimate.geography_type == geography_type
         )
+        metric_q = select(
+            CdcAcsRaceEstimate.measure
+        ).distinct().where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
+        year_q = select(
+            CdcAcsRaceEstimate.year
+        ).distinct().where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
         if state_fips:
-            query = query.where(
+            race_q = race_q.where(
                 CdcAcsRaceEstimate.state_fips == state_fips
             )
-            race_options_query = race_options_query.where(
+            metric_q = metric_q.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+            year_q = year_q.where(
                 CdcAcsRaceEstimate.state_fips == state_fips
             )
         if measure:
-            query = query.where(CdcAcsRaceEstimate.measure == measure)
-            race_options_query = race_options_query.where(
+            race_q = race_q.where(
                 CdcAcsRaceEstimate.measure == measure
             )
         if year:
-            query = query.where(CdcAcsRaceEstimate.year == year)
-            race_options_query = race_options_query.where(
+            race_q = race_q.where(
                 CdcAcsRaceEstimate.year == year
             )
+
+        # Paginated row query (includes race filter)
+        query = base_filter
         if race:
             query = query.where(CdcAcsRaceEstimate.race == race)
         query = query.order_by(
@@ -720,10 +749,23 @@ async def get_cdc_race_estimates(
         result = await db.execute(query)
         rows_raw = result.scalars().all()
         race_result = await db.execute(
-            race_options_query.order_by(CdcAcsRaceEstimate.race)
+            race_q.order_by(CdcAcsRaceEstimate.race)
+        )
+        metric_result = await db.execute(
+            metric_q.order_by(CdcAcsRaceEstimate.measure)
+        )
+        year_result = await db.execute(
+            year_q.order_by(CdcAcsRaceEstimate.year)
         )
         available_races = [
             v for v in race_result.scalars().all() if v is not None
+        ]
+        available_metrics = [
+            v for v in metric_result.scalars().all()
+            if v is not None
+        ]
+        available_years = [
+            v for v in year_result.scalars().all() if v is not None
         ]
 
         row_dicts = [
@@ -741,8 +783,8 @@ async def get_cdc_race_estimates(
         return ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
             national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
+            available_metrics=available_metrics,
+            available_years=available_years,
             available_races=available_races,
         )
     except Exception:
