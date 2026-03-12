@@ -7,6 +7,8 @@ and aggregates to census tracts using population-weighted averages.
 
 import os
 import uuid
+from collections.abc import Iterable
+from typing import Any
 
 import aiohttp
 
@@ -77,7 +79,7 @@ DEFAULT_EJSCREEN_CSV_URL = (
 
 
 def aggregate_block_groups_to_tracts(
-    rows,
+    rows: Iterable[dict[str, Any]],
 ) -> dict[str, dict]:
     """Aggregate block-group rows to tract-level using population-weighted averages.
 
