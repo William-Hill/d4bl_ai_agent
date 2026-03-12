@@ -167,145 +167,84 @@ async def cdc_places_health(
     )
 
     records_ingested = 0
-    states_seen = set()
-    measures_seen = set()
+    states_seen: set[str] = set()
+    measures_seen: set[str] = set()
 
     context.log.info(f"Fetching CDC PLACES data for year={year}")
 
+    upsert_sql = text("""
+        INSERT INTO cdc_health_outcomes
+            (id, fips_code, geography_type,
+             geography_name, state_fips, year,
+             measure, category, data_value,
+             data_value_type,
+             low_confidence_limit,
+             high_confidence_limit,
+             total_population)
+        VALUES
+            (CAST(:id AS UUID), :fips, 'county',
+             :geo_name, :state_fips, :year,
+             :measure, :category, :value,
+             :dvt, :low_cl, :high_cl, :pop)
+        ON CONFLICT (fips_code, year, measure,
+                     data_value_type)
+        DO UPDATE SET
+            data_value = :value,
+            low_confidence_limit = :low_cl,
+            high_confidence_limit = :high_cl,
+            total_population = :pop,
+            geography_name = :geo_name
+    """)
+
     try:
         async with aiohttp.ClientSession() as http_session:
-            for measure in CDC_MEASURES:
-                offset = 0
-                limit = 5000
-                while True:
-                    params = {
-                        "$where": f"year={year} AND measureid='{measure}'",
-                        "$limit": str(limit),
-                        "$offset": str(offset),
-                        "$select": (
-                            "year,stateabbr,statedesc,locationname,"
-                            "countyname,countyfips,measureid,measure,"
-                            "data_value,data_value_type,low_confidence_limit,"
-                            "high_confidence_limit,totalpopulation,category"
-                        ),
-                    }
-                    timeout = aiohttp.ClientTimeout(total=60)
-                    async with http_session.get(
-                        CDC_PLACES_URL, params=params, timeout=timeout
-                    ) as resp:
-                        resp.raise_for_status()
-                        rows = await resp.json()
+            all_rows = await _fetch_places_measures(
+                http_session=http_session,
+                url=CDC_PLACES_URL,
+                year=year,
+                measures=CDC_MEASURES,
+                fips_field="countyfips",
+                select_fields=(
+                    "year,stateabbr,statedesc,locationname,"
+                    "countyname,countyfips,measureid,measure,"
+                    "data_value,data_value_type,low_confidence_limit,"
+                    "high_confidence_limit,totalpopulation,category"
+                ),
+                context=context,
+            )
 
-                    if not rows:
-                        break
+            # Batch upsert in groups of 2000
+            batch: list[dict[str, Any]] = []
+            for row in all_rows:
+                parsed = _parse_row(row, fips_field="countyfips")
+                if parsed is None:
+                    continue
 
+                states_seen.add(row.get("stateabbr", ""))
+                measures_seen.add(row.get("measureid", ""))
+
+                batch.append(parsed)
+                records_ingested += 1
+
+                if len(batch) >= 2000:
                     async with async_session() as session:
-                        for row in rows:
-                            fips = row.get("countyfips")
-                            data_val = row.get("data_value")
-                            if not fips or data_val is None:
-                                continue
-                            try:
-                                value = float(data_val)
-                            except (ValueError, TypeError):
-                                continue
-
-                            state_abbr = row.get("stateabbr", "")
-                            state_fips = fips[:2]
-                            states_seen.add(state_abbr)
-                            measures_seen.add(measure)
-
-                            record_id = uuid.uuid5(
-                                uuid.NAMESPACE_URL,
-                                f"cdc:{fips}:{year}:{measure}:"
-                                f"{row.get('data_value_type', 'crude')}",
-                            )
-
-                            dvt = row.get(
-                                "data_value_type", "Crude prevalence"
-                            )
-
-                            low_cl = None
-                            high_cl = None
-                            try:
-                                low_cl = float(
-                                    row.get("low_confidence_limit", "")
-                                )
-                            except (ValueError, TypeError):
-                                pass
-                            try:
-                                high_cl = float(
-                                    row.get("high_confidence_limit", "")
-                                )
-                            except (ValueError, TypeError):
-                                pass
-
-                            pop = None
-                            try:
-                                pop = int(
-                                    row.get("totalpopulation", "")
-                                )
-                            except (ValueError, TypeError):
-                                pass
-
-                            upsert_sql = text("""
-                                INSERT INTO cdc_health_outcomes
-                                    (id, fips_code, geography_type,
-                                     geography_name, state_fips, year,
-                                     measure, category, data_value,
-                                     data_value_type,
-                                     low_confidence_limit,
-                                     high_confidence_limit,
-                                     total_population)
-                                VALUES
-                                    (CAST(:id AS UUID), :fips, 'county',
-                                     :geo_name, :state_fips, :year,
-                                     :measure, :category, :value,
-                                     :dvt, :low_cl, :high_cl, :pop)
-                                ON CONFLICT (fips_code, year, measure,
-                                             data_value_type)
-                                DO UPDATE SET
-                                    data_value = :value,
-                                    low_confidence_limit = :low_cl,
-                                    high_confidence_limit = :high_cl,
-                                    total_population = :pop,
-                                    geography_name = :geo_name
-                            """)
-                            await session.execute(
-                                upsert_sql,
-                                {
-                                    "id": str(record_id),
-                                    "fips": fips,
-                                    "geo_name": row.get(
-                                        "locationname",
-                                        row.get("countyname", ""),
-                                    ),
-                                    "state_fips": state_fips,
-                                    "year": year,
-                                    "measure": MEASURE_NAMES.get(
-                                        measure, measure.lower()
-                                    ),
-                                    "category": MEASURE_CATEGORIES.get(
-                                        measure, "other"
-                                    ),
-                                    "value": value,
-                                    "dvt": dvt,
-                                    "low_cl": low_cl,
-                                    "high_cl": high_cl,
-                                    "pop": pop,
-                                },
-                            )
-                            records_ingested += 1
-
+                        for params in batch:
+                            await session.execute(upsert_sql, params)
                         await session.commit()
-
                     context.log.info(
-                        f"  {measure}: fetched {len(rows)} rows "
-                        f"(offset={offset})"
+                        f"  Committed batch of {len(batch)} county records"
                     )
-                    if len(rows) < limit:
-                        break
-                    offset += limit
+                    batch = []
+
+            # Flush remaining records
+            if batch:
+                async with async_session() as session:
+                    for params in batch:
+                        await session.execute(upsert_sql, params)
+                    await session.commit()
+                context.log.info(
+                    f"  Committed final batch of {len(batch)} county records"
+                )
     finally:
         await engine.dispose()
 
@@ -381,10 +320,8 @@ def _parse_row(row: dict, fips_field: str) -> dict[str, Any] | None:
         "fips": fips,
         "geo_name": row.get("locationname", row.get("countyname", "")),
         "state_fips": state_fips,
-        "state_abbr": row.get("stateabbr", ""),
         "year": int(row.get("year", 0)),
         "measure": MEASURE_NAMES.get(measure, measure.lower()),
-        "measure_id": measure,
         "category": MEASURE_CATEGORIES.get(measure, "other"),
         "value": value,
         "dvt": dvt,
@@ -494,23 +431,10 @@ async def cdc_places_tract_health(
                 if parsed is None:
                     continue
 
-                states_seen.add(parsed["state_abbr"])
-                measures_seen.add(parsed["measure_id"])
+                states_seen.add(row.get("stateabbr", ""))
+                measures_seen.add(row.get("measureid", ""))
 
-                batch.append({
-                    "id": parsed["id"],
-                    "fips": parsed["fips"],
-                    "geo_name": parsed["geo_name"],
-                    "state_fips": parsed["state_fips"],
-                    "year": parsed["year"],
-                    "measure": parsed["measure"],
-                    "category": parsed["category"],
-                    "value": parsed["value"],
-                    "dvt": parsed["dvt"],
-                    "low_cl": parsed["low_cl"],
-                    "high_cl": parsed["high_cl"],
-                    "pop": parsed["pop"],
-                })
+                batch.append(parsed)
                 records_ingested += 1
 
                 if len(batch) >= 2000:
