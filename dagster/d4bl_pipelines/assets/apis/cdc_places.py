@@ -222,8 +222,12 @@ async def cdc_places_health(
                     if parsed is None:
                         continue
 
-                    states_seen.add(row.get("stateabbr", ""))
-                    measures_seen.add(row.get("measureid", ""))
+                    stateabbr = row.get("stateabbr", "")
+                    if stateabbr:
+                        states_seen.add(stateabbr)
+                    measureid = row.get("measureid", "")
+                    if measureid:
+                        measures_seen.add(measureid)
 
                     batch.append(parsed)
                     records_ingested += 1
@@ -294,6 +298,8 @@ def _parse_row(row: dict, fips_field: str) -> dict[str, Any] | None:
         return None
 
     measure = row.get("measureid", "")
+    if not isinstance(measure, str) or not measure:
+        return None
     state_fips = fips[:2]
     dvt = row.get("data_value_type", "Crude prevalence")
 
@@ -436,8 +442,12 @@ async def cdc_places_tract_health(
                     if parsed is None:
                         continue
 
-                    states_seen.add(row.get("stateabbr", ""))
-                    measures_seen.add(row.get("measureid", ""))
+                    stateabbr = row.get("stateabbr", "")
+                    if stateabbr:
+                        states_seen.add(stateabbr)
+                    measureid = row.get("measureid", "")
+                    if measureid:
+                        measures_seen.add(measureid)
 
                     batch.append(parsed)
                     records_ingested += 1
