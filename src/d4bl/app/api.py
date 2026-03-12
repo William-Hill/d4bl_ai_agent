@@ -679,32 +679,52 @@ async def get_cdc_race_estimates(
     measure: str | None = None,
     race: str | None = None,
     year: int | None = None,
-    geography_type: str | None = None,
+    geography_type: str = "state",
     limit: int = 1000,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Race-weighted CDC health estimates via ACS overlay."""
     try:
-        query = select(CdcAcsRaceEstimate)
+        query = select(CdcAcsRaceEstimate).where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
+        race_options_query = select(
+            CdcAcsRaceEstimate.race
+        ).distinct().where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
         if state_fips:
-            query = query.where(CdcAcsRaceEstimate.state_fips == state_fips)
+            query = query.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+            race_options_query = race_options_query.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
         if measure:
             query = query.where(CdcAcsRaceEstimate.measure == measure)
-        if race:
-            query = query.where(CdcAcsRaceEstimate.race == race)
+            race_options_query = race_options_query.where(
+                CdcAcsRaceEstimate.measure == measure
+            )
         if year:
             query = query.where(CdcAcsRaceEstimate.year == year)
-        if geography_type:
-            query = query.where(
-                CdcAcsRaceEstimate.geography_type == geography_type
+            race_options_query = race_options_query.where(
+                CdcAcsRaceEstimate.year == year
             )
+        if race:
+            query = query.where(CdcAcsRaceEstimate.race == race)
         query = query.order_by(
             CdcAcsRaceEstimate.state_fips
         ).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
         rows_raw = result.scalars().all()
+        race_result = await db.execute(
+            race_options_query.order_by(CdcAcsRaceEstimate.race)
+        )
+        available_races = [
+            v for v in race_result.scalars().all() if v is not None
+        ]
 
         row_dicts = [
             {
@@ -723,7 +743,7 @@ async def get_cdc_race_estimates(
             national_average=compute_national_avg(row_dicts),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
-            available_races=distinct_values(row_dicts, "race"),
+            available_races=available_races,
         )
     except Exception:
         logger.error("Failed to fetch CDC race estimates", exc_info=True)
