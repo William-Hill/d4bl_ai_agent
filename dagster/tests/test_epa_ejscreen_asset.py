@@ -1,6 +1,7 @@
 from d4bl_pipelines.assets.apis.epa_ejscreen import (
     EJ_INDICATORS,
     epa_ejscreen,
+    epa_ejscreen_tract,
     aggregate_block_groups_to_tracts,
     CSV_INDICATOR_COLUMNS,
 )
@@ -159,3 +160,22 @@ def test_csv_indicator_columns_match_ej_indicators():
     """CSV columns should cover all the EJ_INDICATORS we track."""
     for ind in EJ_INDICATORS:
         assert ind in CSV_INDICATOR_COLUMNS
+
+
+def test_epa_ejscreen_tract_asset_exists():
+    """The epa_ejscreen_tract asset should be importable."""
+    assert epa_ejscreen_tract is not None
+
+
+def test_epa_ejscreen_tract_asset_has_metadata():
+    """Tract asset should have correct group and description metadata."""
+    spec = epa_ejscreen_tract.specs_by_key
+    key = next(iter(spec))
+    assert key.path[-1] == "epa_ejscreen_tract"
+
+
+def test_epa_ejscreen_tract_asset_group_name():
+    """Tract asset should be in the apis group."""
+    spec = epa_ejscreen_tract.specs_by_key
+    key = next(iter(spec))
+    assert spec[key].group_name == "apis"
