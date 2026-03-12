@@ -6,6 +6,7 @@ from the CDC PLACES SODA API. No authentication required.
 
 import os
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import aiohttp
@@ -74,8 +75,11 @@ async def _fetch_places_measures(
     fips_field: str,
     select_fields: str,
     context: AssetExecutionContext,
-) -> list[dict[str, Any]]:
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Fetch paginated CDC PLACES data from a SODA endpoint.
+
+    Yields pages of rows so callers can process incrementally
+    without buffering the entire dataset in memory.
 
     Parameters
     ----------
@@ -87,12 +91,11 @@ async def _fetch_places_measures(
     select_fields: Comma-separated $select clause for the SODA query.
     context:       Dagster execution context for logging.
 
-    Returns
-    -------
+    Yields
+    ------
     list[dict]
-        Parsed row dicts with FIPS normalised to the ``fips`` key.
+        A page of row dicts from the SODA API.
     """
-    all_rows: list[dict[str, Any]] = []
     for measure in measures:
         offset = 0
         limit = 5000
@@ -113,16 +116,14 @@ async def _fetch_places_measures(
             if not rows:
                 break
 
-            all_rows.extend(rows)
-
             context.log.info(
                 f"  {measure}: fetched {len(rows)} rows "
                 f"(offset={offset})"
             )
+            yield rows
             if len(rows) < limit:
                 break
             offset += limit
-    return all_rows
 
 
 @asset(
@@ -198,7 +199,7 @@ async def cdc_places_health(
 
     try:
         async with aiohttp.ClientSession() as http_session:
-            all_rows = await _fetch_places_measures(
+            pages = _fetch_places_measures(
                 http_session=http_session,
                 url=CDC_PLACES_URL,
                 year=year,
@@ -215,32 +216,31 @@ async def cdc_places_health(
 
             # Batch upsert in groups of 2000
             batch: list[dict[str, Any]] = []
-            for row in all_rows:
-                parsed = _parse_row(row, fips_field="countyfips")
-                if parsed is None:
-                    continue
+            async for page in pages:
+                for row in page:
+                    parsed = _parse_row(row, fips_field="countyfips")
+                    if parsed is None:
+                        continue
 
-                states_seen.add(row.get("stateabbr", ""))
-                measures_seen.add(row.get("measureid", ""))
+                    states_seen.add(row.get("stateabbr", ""))
+                    measures_seen.add(row.get("measureid", ""))
 
-                batch.append(parsed)
-                records_ingested += 1
+                    batch.append(parsed)
+                    records_ingested += 1
 
-                if len(batch) >= 2000:
-                    async with async_session() as session:
-                        for params in batch:
-                            await session.execute(upsert_sql, params)
-                        await session.commit()
-                    context.log.info(
-                        f"  Committed batch of {len(batch)} county records"
-                    )
-                    batch = []
+                    if len(batch) >= 2000:
+                        async with async_session() as session:
+                            await session.execute(upsert_sql, batch)
+                            await session.commit()
+                        context.log.info(
+                            f"  Committed batch of {len(batch)} county records"
+                        )
+                        batch = []
 
             # Flush remaining records
             if batch:
                 async with async_session() as session:
-                    for params in batch:
-                        await session.execute(upsert_sql, params)
+                    await session.execute(upsert_sql, batch)
                     await session.commit()
                 context.log.info(
                     f"  Committed final batch of {len(batch)} county records"
@@ -414,7 +414,7 @@ async def cdc_places_tract_health(
 
     try:
         async with aiohttp.ClientSession() as http_session:
-            all_rows = await _fetch_places_measures(
+            pages = _fetch_places_measures(
                 http_session=http_session,
                 url=CDC_PLACES_TRACT_URL,
                 year=year,
@@ -426,32 +426,31 @@ async def cdc_places_tract_health(
 
             # Batch upsert in groups of 2000
             batch: list[dict[str, Any]] = []
-            for row in all_rows:
-                parsed = _parse_row(row, fips_field="locationid")
-                if parsed is None:
-                    continue
+            async for page in pages:
+                for row in page:
+                    parsed = _parse_row(row, fips_field="locationid")
+                    if parsed is None:
+                        continue
 
-                states_seen.add(row.get("stateabbr", ""))
-                measures_seen.add(row.get("measureid", ""))
+                    states_seen.add(row.get("stateabbr", ""))
+                    measures_seen.add(row.get("measureid", ""))
 
-                batch.append(parsed)
-                records_ingested += 1
+                    batch.append(parsed)
+                    records_ingested += 1
 
-                if len(batch) >= 2000:
-                    async with async_session() as session:
-                        for params in batch:
-                            await session.execute(upsert_sql, params)
-                        await session.commit()
-                    context.log.info(
-                        f"  Committed batch of {len(batch)} tract records"
-                    )
-                    batch = []
+                    if len(batch) >= 2000:
+                        async with async_session() as session:
+                            await session.execute(upsert_sql, batch)
+                            await session.commit()
+                        context.log.info(
+                            f"  Committed batch of {len(batch)} tract records"
+                        )
+                        batch = []
 
             # Flush remaining records
             if batch:
                 async with async_session() as session:
-                    for params in batch:
-                        await session.execute(upsert_sql, params)
+                    await session.execute(upsert_sql, batch)
                     await session.commit()
                 context.log.info(
                     f"  Committed final batch of {len(batch)} tract records"
