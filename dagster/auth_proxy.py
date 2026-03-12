@@ -5,6 +5,7 @@ requests to the Dagster webserver running on localhost:3003.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -15,15 +16,18 @@ from contextlib import asynccontextmanager
 
 import httpx
 import jwt
+import websockets
 from jwt import PyJWK
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
 DAGSTER_UPSTREAM = "http://127.0.0.1:3003"
+DAGSTER_WS_UPSTREAM = "ws://127.0.0.1:3003"
 COOKIE_NAME = "dagster_token"
 _ADMIN_CACHE_TTL = 60  # seconds
 _JWKS_TTL = 3600  # seconds
@@ -346,6 +350,93 @@ async def _proxy(request: Request) -> Response:
         return HTMLResponse("Proxy error", status_code=502)
 
 
+async def _ws_proxy(ws: WebSocket) -> None:
+    """Validate JWT cookie, check admin role, and proxy WebSocket to Dagster."""
+    token = ws.cookies.get(COOKIE_NAME)
+    if not token:
+        await ws.close(code=4401, reason="Authentication required")
+        return
+
+    claims = _decode_token(token)
+    if claims is None:
+        await ws.close(code=4401, reason="Invalid or expired token")
+        return
+
+    user_id = claims.get("sub")
+    if not user_id:
+        await ws.close(code=4401, reason="Invalid token claims")
+        return
+
+    if not await _check_admin(user_id):
+        await ws.close(code=4403, reason="Admin role required")
+        return
+
+    # Build upstream WebSocket URL
+    upstream_url = f"{DAGSTER_WS_UPSTREAM}{ws.url.path}"
+    if ws.url.query:
+        upstream_url += f"?{ws.url.query}"
+
+    # Forward subprotocols from client request
+    subprotocols = ws.headers.get("sec-websocket-protocol", "").split(", ")
+    subprotocols = [s.strip() for s in subprotocols if s.strip()]
+
+    await ws.accept(subprotocol=subprotocols[0] if subprotocols else None)
+
+    try:
+        async with websockets.connect(
+            upstream_url,
+            subprotocols=subprotocols or None,
+            additional_headers={
+                k: v for k, v in ws.headers.items()
+                if k.lower() not in _HOP_BY_HOP
+                and k.lower() not in (
+                    "host", "cookie", "upgrade", "connection",
+                    "sec-websocket-key", "sec-websocket-version",
+                    "sec-websocket-extensions", "sec-websocket-protocol",
+                )
+            },
+            open_timeout=10,
+        ) as upstream:
+
+            async def client_to_upstream() -> None:
+                try:
+                    while True:
+                        msg = await ws.receive()
+                        if msg["type"] == "websocket.receive":
+                            if "text" in msg and msg["text"] is not None:
+                                await upstream.send(msg["text"])
+                            elif "bytes" in msg and msg["bytes"] is not None:
+                                await upstream.send(msg["bytes"])
+                        elif msg["type"] == "websocket.disconnect":
+                            break
+                except WebSocketDisconnect:
+                    pass
+
+            async def upstream_to_client() -> None:
+                try:
+                    async for message in upstream:
+                        if isinstance(message, str):
+                            await ws.send_text(message)
+                        else:
+                            await ws.send_bytes(message)
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+
+            done, pending = await asyncio.wait(
+                [
+                    asyncio.create_task(client_to_upstream()),
+                    asyncio.create_task(upstream_to_client()),
+                ],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+    except (websockets.exceptions.WebSocketException, OSError) as exc:
+        logger.warning("WebSocket proxy error: %s", exc)
+    except Exception:
+        logger.exception("WebSocket proxy error")
+
+
 async def _healthz(request: Request) -> Response:
     """Unauthenticated health check that also verifies the upstream Dagster webserver."""
     if _http_client is None:
@@ -376,6 +467,7 @@ routes = [
     Route("/healthz", _healthz),
     Route("/auth/set-token", _set_token, methods=["POST", "OPTIONS"]),
     Route("/auth/logout", _logout),
+    WebSocketRoute("/{path:path}", _ws_proxy),
     Route("/{path:path}", _proxy, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
 ]
 
