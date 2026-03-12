@@ -93,54 +93,62 @@ def main():
             return 0
         raw_bytes = resp.content
 
-    # Handle ZIP or Excel
+    # Handle ZIP (may contain CSV or XLSX)
+    import csv
     import zipfile
+
+    csv_text = None
     if download_url.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
-            xlsx_names = [
+            # Prefer the main data CSV/XLSX (skip ReadMe, VariableLookup)
+            data_files = [
                 n for n in zf.namelist()
-                if n.lower().endswith(".xlsx")
+                if n.lower().endswith((".csv", ".xlsx"))
+                and "readme" not in n.lower()
+                and "variable" not in n.lower()
             ]
-            if not xlsx_names:
-                print("No Excel files found in USDA ZIP archive.")
+            if not data_files:
+                print("No data files found in USDA ZIP archive.")
                 return 0
-            print(f"Extracting {xlsx_names[0]} from ZIP")
-            raw_bytes = zf.read(xlsx_names[0])
+            chosen = data_files[0]
+            print(f"Extracting {chosen} from ZIP")
+            raw_bytes = zf.read(chosen)
 
-    import openpyxl
-    wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True)
-    ws = wb.active
+            if chosen.lower().endswith(".csv"):
+                csv_text = raw_bytes.decode("utf-8-sig")
 
-    rows_iter = ws.iter_rows(values_only=True)
-    header_raw = next(rows_iter)
-    header = [str(h).strip() if h else "" for h in header_raw]
+    if csv_text is not None:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        header = reader.fieldnames or []
+        rows_iter = reader
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True)
+        ws = wb.active
+        _rows = ws.iter_rows(values_only=True)
+        header_raw = next(_rows)
+        header = [str(h).strip() if h else "" for h in header_raw]
+        rows_iter = (dict(zip(header, row)) for row in _rows)
 
-    # Find column indices
-    def col_idx(name):
-        for i, h in enumerate(header):
-            if h.lower() == name.lower():
-                return i
-        return None
+    # Build a case-insensitive header lookup
+    header_lower = {h.lower(): h for h in header}
 
-    tract_col = col_idx("CensusTract")
-    state_col = col_idx("State")
-    county_col = col_idx("County")
-    urban_col = col_idx("Urban")
-    pop_col = col_idx("Pop2010")
-    pov_col = col_idx("PovertyRate")
-    income_col = col_idx("MedianFamilyIncome")
+    def get_col(row, name):
+        """Get a value from a dict row using case-insensitive key."""
+        key = header_lower.get(name.lower())
+        return row.get(key) if key else None
 
-    indicator_cols = {}
-    for ind in FOOD_ACCESS_INDICATORS:
-        idx = col_idx(ind)
-        if idx is not None:
-            indicator_cols[ind] = idx
-
-    if tract_col is None:
+    # Check required column exists
+    if not header_lower.get("censustract"):
         print(f"ERROR: CensusTract column not found. Headers: {header[:20]}")
         return 0
 
-    print(f"Found {len(indicator_cols)} indicator columns in Excel")
+    # Find which indicators are present
+    avail_indicators = [
+        ind for ind in FOOD_ACCESS_INDICATORS
+        if header_lower.get(ind.lower())
+    ]
+    print(f"Found {len(avail_indicators)} indicator columns in data")
 
     conn = get_db_connection()
     conn.autocommit = False
@@ -153,7 +161,7 @@ def main():
 
     try:
         for row in rows_iter:
-            raw_tract = row[tract_col] if tract_col < len(row) else None
+            raw_tract = get_col(row, "CensusTract")
             if not raw_tract:
                 continue
 
@@ -166,25 +174,25 @@ def main():
 
             state_fips = tract_fips[:2]
             county_fips = tract_fips[:5]
-            state_name = str(row[state_col]).strip() if state_col and state_col < len(row) else ""
-            county_name = str(row[county_col]).strip() if county_col and county_col < len(row) else ""
+            state_name = str(get_col(row, "State") or "").strip()
+            county_name = str(get_col(row, "County") or "").strip()
 
-            urban_val = row[urban_col] if urban_col and urban_col < len(row) else None
+            urban_val = get_col(row, "Urban")
             urban_rural = None
-            if urban_val == 1 or urban_val == "1":
+            if urban_val in (1, "1"):
                 urban_rural = "urban"
-            elif urban_val == 0 or urban_val == "0":
+            elif urban_val in (0, "0"):
                 urban_rural = "rural"
 
-            population = safe_int(row[pop_col] if pop_col and pop_col < len(row) else None)
-            poverty_rate = safe_float(row[pov_col] if pov_col and pov_col < len(row) else None)
-            median_income = safe_float(row[income_col] if income_col and income_col < len(row) else None)
+            population = safe_int(get_col(row, "Pop2010"))
+            poverty_rate = safe_float(get_col(row, "PovertyRate"))
+            median_income = safe_float(get_col(row, "MedianFamilyIncome"))
 
             states_seen.add(state_name)
             tracts_seen.add(tract_fips)
 
-            for indicator, idx in indicator_cols.items():
-                raw_val = row[idx] if idx < len(row) else None
+            for indicator in avail_indicators:
+                raw_val = get_col(row, indicator)
                 if raw_val is None:
                     continue
                 value = safe_float(raw_val)

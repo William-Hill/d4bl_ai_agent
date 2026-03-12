@@ -192,6 +192,16 @@ def main():
             if not date_raw or not name:
                 continue
 
+            # Truncate string fields to fit varchar(200) columns
+            name = name[:200]
+            city = city[:200]
+            state = state[:200]
+            race = race[:200]
+            gender = gender[:200]
+            armed_status = armed_status[:200]
+            cause = cause[:200]
+            agency = agency[:200]
+
             date_iso, year = _parse_date(date_raw)
 
             # Use the normalized ISO date for a stable ID

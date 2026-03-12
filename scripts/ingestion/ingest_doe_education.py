@@ -156,7 +156,16 @@ def main():
         # Handle ZIP or plain CSV
         csv_text = None
         if download_url.endswith(".zip"):
-            with zipfile.ZipFile(io.BytesIO(content_bytes)) as zf:
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(content_bytes))
+            except zipfile.BadZipFile:
+                print(
+                    "CRDC download is not a valid ZIP file. "
+                    "The DOE may have changed the download URL. "
+                    "Set CRDC_DOWNLOAD_URL env var to override. Skipping."
+                )
+                return 0
+            with zf:
                 csv_names = [
                     n for n in zf.namelist()
                     if n.lower().endswith(".csv")
