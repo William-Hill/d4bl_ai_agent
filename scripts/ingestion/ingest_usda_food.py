@@ -1,8 +1,8 @@
 """USDA Food Access Research Atlas ingestion script.
 
-Fetches food access indicators at the census-tract level from the
-USDA Economic Research Service ArcGIS FeatureServer and upserts into
-the usda_food_access table.
+Downloads the Food Access Research Atlas Excel file from the USDA ERS
+website and upserts tract-level food access indicators into the
+usda_food_access table.
 
 Usage:
     DAGSTER_POSTGRES_URL=postgresql://... python scripts/ingestion/ingest_usda_food.py
@@ -12,6 +12,7 @@ Environment variables:
     USDA_FOOD_ACCESS_YEAR  - Atlas year (default: 2019)
 """
 
+import io
 import os
 
 import httpx
@@ -20,10 +21,10 @@ from .helpers import (
     get_db_connection, execute_batch, make_record_id, safe_float, safe_int,
 )
 
-# ArcGIS FeatureServer endpoint for the Food Access Research Atlas
-USDA_FOOD_ACCESS_URL = (
-    "https://services1.arcgis.com/RLQu0rK7h4kbsBq5/arcgis/rest/services/"
-    "Food_Access_Research_Atlas/FeatureServer/0/query"
+# Direct download URL for the Food Access Research Atlas Excel file
+USDA_DOWNLOAD_URL = (
+    "https://www.ers.usda.gov/media/5627/"
+    "food-access-research-atlas-data-download-2019.zip"
 )
 
 # Indicator columns to pivot into rows
@@ -45,21 +46,6 @@ INDICATOR_NAMES = {
     "PovertyRate": "poverty_rate",
     "MedianFamilyIncome": "median_family_income",
 }
-
-# Fields to request from the ArcGIS service
-OUT_FIELDS = ",".join([
-    "CensusTract",
-    "State",
-    "County",
-    "Urban",
-    "Pop2010",
-    "PovertyRate",
-    "MedianFamilyIncome",
-    "lapop1",
-    "lapop10",
-    "lapop20",
-    "TractSNAP",
-])
 
 UPSERT_SQL = """
     INSERT INTO usda_food_access
@@ -90,8 +76,71 @@ UPSERT_SQL = """
         median_income = EXCLUDED.median_income
 """
 
+
 def main():
     year = int(os.environ.get("USDA_FOOD_ACCESS_YEAR", "2019"))
+    download_url = os.environ.get("USDA_FOOD_ACCESS_URL", USDA_DOWNLOAD_URL)
+
+    print(f"Downloading USDA Food Access Research Atlas (year={year})")
+
+    with httpx.Client(timeout=300, follow_redirects=True) as client:
+        resp = client.get(download_url)
+        if resp.status_code != 200:
+            print(
+                f"USDA download failed with status {resp.status_code}. "
+                f"Skipping."
+            )
+            return 0
+        raw_bytes = resp.content
+
+    # Handle ZIP or Excel
+    import zipfile
+    if download_url.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+            xlsx_names = [
+                n for n in zf.namelist()
+                if n.lower().endswith(".xlsx")
+            ]
+            if not xlsx_names:
+                print("No Excel files found in USDA ZIP archive.")
+                return 0
+            print(f"Extracting {xlsx_names[0]} from ZIP")
+            raw_bytes = zf.read(xlsx_names[0])
+
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True)
+    ws = wb.active
+
+    rows_iter = ws.iter_rows(values_only=True)
+    header_raw = next(rows_iter)
+    header = [str(h).strip() if h else "" for h in header_raw]
+
+    # Find column indices
+    def col_idx(name):
+        for i, h in enumerate(header):
+            if h.lower() == name.lower():
+                return i
+        return None
+
+    tract_col = col_idx("CensusTract")
+    state_col = col_idx("State")
+    county_col = col_idx("County")
+    urban_col = col_idx("Urban")
+    pop_col = col_idx("Pop2010")
+    pov_col = col_idx("PovertyRate")
+    income_col = col_idx("MedianFamilyIncome")
+
+    indicator_cols = {}
+    for ind in FOOD_ACCESS_INDICATORS:
+        idx = col_idx(ind)
+        if idx is not None:
+            indicator_cols[ind] = idx
+
+    if tract_col is None:
+        print(f"ERROR: CensusTract column not found. Headers: {header[:20]}")
+        return 0
+
+    print(f"Found {len(indicator_cols)} indicator columns in Excel")
 
     conn = get_db_connection()
     conn.autocommit = False
@@ -100,117 +149,77 @@ def main():
     records_ingested = 0
     states_seen = set()
     tracts_seen = set()
-
-    print(f"Fetching USDA Food Access Research Atlas data (year={year})")
+    batch = []
 
     try:
-        with httpx.Client(timeout=120) as client:
-            offset = 0
-            page_size = 2000
-            while True:
-                params = {
-                    "where": "1=1",
-                    "outFields": OUT_FIELDS,
-                    "f": "json",
-                    "resultRecordCount": str(page_size),
-                    "resultOffset": str(offset),
-                }
-                resp = client.get(USDA_FOOD_ACCESS_URL, params=params)
-                resp.raise_for_status()
-                payload = resp.json()
+        for row in rows_iter:
+            raw_tract = row[tract_col] if tract_col < len(row) else None
+            if not raw_tract:
+                continue
 
-                features = payload.get("features", [])
-                if not features:
-                    break
+            try:
+                tract_fips = str(int(float(raw_tract))).zfill(11)
+            except (ValueError, TypeError):
+                tract_fips = str(raw_tract).replace(".0", "").strip().zfill(11)
+            if not tract_fips or tract_fips == "0" * 11:
+                continue
 
-                batch = []
-                for feature in features:
-                    attrs = feature.get("attributes", {})
-                    raw_tract = attrs.get("CensusTract", "")
+            state_fips = tract_fips[:2]
+            county_fips = tract_fips[:5]
+            state_name = str(row[state_col]).strip() if state_col and state_col < len(row) else ""
+            county_name = str(row[county_col]).strip() if county_col and county_col < len(row) else ""
 
-                    # Normalize: ArcGIS may return numeric
-                    # (losing leading zeros) or with ".0" suffix.
-                    # Convert to 11-digit zero-padded string.
-                    try:
-                        tract_fips = str(int(float(raw_tract))).zfill(11)
-                    except (ValueError, TypeError):
-                        tract_fips = (
-                            str(raw_tract)
-                            .replace(".0", "")
-                            .strip()
-                            .zfill(11)
-                        )
-                    if not tract_fips or tract_fips == "0" * 11:
-                        continue
+            urban_val = row[urban_col] if urban_col and urban_col < len(row) else None
+            urban_rural = None
+            if urban_val == 1 or urban_val == "1":
+                urban_rural = "urban"
+            elif urban_val == 0 or urban_val == "0":
+                urban_rural = "rural"
 
-                    state_fips = tract_fips[:2]
-                    county_fips = tract_fips[:5]
-                    state_name = attrs.get("State", "")
-                    county_name = attrs.get("County", "")
-                    urban = attrs.get("Urban", None)
+            population = safe_int(row[pop_col] if pop_col and pop_col < len(row) else None)
+            poverty_rate = safe_float(row[pov_col] if pov_col and pov_col < len(row) else None)
+            median_income = safe_float(row[income_col] if income_col and income_col < len(row) else None)
 
-                    population = safe_int(attrs.get("Pop2010"))
-                    poverty_rate = safe_float(attrs.get("PovertyRate"))
-                    median_income = safe_float(attrs.get("MedianFamilyIncome"))
+            states_seen.add(state_name)
+            tracts_seen.add(tract_fips)
 
-                    states_seen.add(state_name)
-                    tracts_seen.add(tract_fips)
+            for indicator, idx in indicator_cols.items():
+                raw_val = row[idx] if idx < len(row) else None
+                if raw_val is None:
+                    continue
+                value = safe_float(raw_val)
+                if value is None:
+                    continue
 
-                    # Pivot each indicator into its own row
-                    for indicator in FOOD_ACCESS_INDICATORS:
-                        raw_val = attrs.get(indicator)
-                        if raw_val is None:
-                            continue
-                        value = safe_float(raw_val)
-                        if value is None:
-                            continue
+                indicator_name = INDICATOR_NAMES.get(indicator, indicator.lower())
 
-                        indicator_name = INDICATOR_NAMES.get(
-                            indicator, indicator.lower()
-                        )
+                batch.append({
+                    "id": make_record_id("usda_food", tract_fips, str(year), indicator),
+                    "tract_fips": tract_fips,
+                    "state_fips": state_fips,
+                    "county_fips": county_fips,
+                    "state_name": state_name,
+                    "county_name": county_name,
+                    "urban_rural": urban_rural,
+                    "population": population,
+                    "poverty_rate": poverty_rate,
+                    "median_income": median_income,
+                    "year": year,
+                    "indicator": indicator_name,
+                    "value": value,
+                })
 
-                        urban_rural = None
-                        if urban == 1:
-                            urban_rural = "urban"
-                        elif urban == 0:
-                            urban_rural = "rural"
-
-                        batch.append({
-                            "id": make_record_id(
-                                "usda_food", tract_fips,
-                                str(year), indicator,
-                            ),
-                            "tract_fips": tract_fips,
-                            "state_fips": state_fips,
-                            "county_fips": county_fips,
-                            "state_name": state_name,
-                            "county_name": county_name,
-                            "urban_rural": urban_rural,
-                            "population": population,
-                            "poverty_rate": poverty_rate,
-                            "median_income": median_income,
-                            "year": year,
-                            "indicator": indicator_name,
-                            "value": value,
-                        })
-
-                        if len(batch) >= 500:
-                            execute_batch(cur, UPSERT_SQL, batch)
-                            conn.commit()
-                            records_ingested += len(batch)
-                            print(f"  Committed batch: {records_ingested} records so far")
-                            batch = []
-
-                # Flush remaining batch for this page
-                if batch:
+                if len(batch) >= 500:
                     execute_batch(cur, UPSERT_SQL, batch)
                     conn.commit()
                     records_ingested += len(batch)
+                    print(f"  Committed batch: {records_ingested} records so far")
+                    batch = []
 
-                print(f"  Fetched {len(features)} features (offset={offset})")
-                if len(features) < page_size:
-                    break
-                offset += page_size
+        if batch:
+            execute_batch(cur, UPSERT_SQL, batch)
+            conn.commit()
+            records_ingested += len(batch)
 
     finally:
         cur.close()

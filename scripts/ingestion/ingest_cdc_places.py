@@ -109,7 +109,7 @@ def main():
                         f"&$limit={limit}"
                         f"&$offset={offset}"
                         f"&$select=year,stateabbr,statedesc,locationname,"
-                        f"countyname,locationid,measureid,measure,"
+                        f"locationid,measureid,measure,"
                         f"data_value,data_value_type,low_confidence_limit,"
                         f"high_confidence_limit,totalpopulation,category"
                     )
@@ -143,10 +143,7 @@ def main():
                                 row.get("data_value_type", "crude"),
                             ),
                             "fips": fips,
-                            "geo_name": row.get(
-                                "locationname",
-                                row.get("countyname", ""),
-                            ),
+                            "geo_name": row.get("locationname", ""),
                             "state_fips": state_fips,
                             "year": year,
                             "measure": MEASURE_NAMES.get(

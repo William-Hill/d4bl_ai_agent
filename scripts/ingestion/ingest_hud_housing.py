@@ -82,6 +82,11 @@ UPSERT_SQL = """
 def main():
     year = int(os.environ.get("HUD_FMR_YEAR", "2024"))
 
+    hud_token = os.environ.get("HUD_API_TOKEN")
+    if not hud_token:
+        print("HUD_API_TOKEN not set - skipping HUD FMR ingestion")
+        return 0
+
     conn = get_db_connection()
     conn.autocommit = False
     cur = conn.cursor()
@@ -95,8 +100,10 @@ def main():
         f"across {len(STATE_FIPS)} states"
     )
 
+    headers = {"Authorization": f"Bearer {hud_token}"}
+
     try:
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=60, headers=headers) as client:
             for fips_code, state_name in STATE_FIPS.items():
                 url = f"{HUD_FMR_URL}/{fips_code}?year={year}"
                 try:

@@ -143,7 +143,7 @@ def main():
     print(f"Fetching CRDC data for school_year={school_year} from {download_url}")
 
     try:
-        with httpx.Client(timeout=300) as client:
+        with httpx.Client(timeout=300, follow_redirects=True) as client:
             resp = client.get(download_url)
             if resp.status_code != 200:
                 print(

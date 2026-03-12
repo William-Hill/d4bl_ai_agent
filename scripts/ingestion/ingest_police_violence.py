@@ -107,7 +107,7 @@ def main():
     print(f"Downloading MPV data from {mpv_url}")
 
     try:
-        with httpx.Client(timeout=120) as client:
+        with httpx.Client(timeout=120, follow_redirects=True) as client:
             resp = client.get(mpv_url)
             if resp.status_code != 200:
                 print(f"Download failed with status {resp.status_code}")

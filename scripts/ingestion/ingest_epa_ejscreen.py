@@ -91,6 +91,10 @@ UPSERT_SQL = """
 def main() -> int:
     """Run EPA EJScreen ingestion for state-level data.
 
+    NOTE: The EPA took EJScreen offline in February 2025. This script
+    will likely return 0 records until the service is restored or an
+    alternative data source is configured via EPA_EJSCREEN_URL.
+
     Returns total records ingested.
     """
     year = int(os.environ.get("EPA_EJSCREEN_YEAR", "2024"))

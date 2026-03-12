@@ -3,9 +3,22 @@
 import os
 import sys
 import uuid
+from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
+
+# Load .env file if python-dotenv is installed and .env exists.
+# In the cloud, real env vars are used and .env is absent — this is a no-op.
+try:
+    from dotenv import load_dotenv
+    # Walk up from scripts/ingestion/ to find .env at repo root
+    _repo_root = Path(__file__).resolve().parent.parent.parent
+    _env_file = _repo_root / ".env"
+    if _env_file.is_file():
+        load_dotenv(_env_file)
+except ImportError:
+    pass
 
 BATCH_SIZE = 500
 
