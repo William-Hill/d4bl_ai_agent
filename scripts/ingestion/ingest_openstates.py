@@ -16,6 +16,7 @@ Environment variables:
 
 import json
 import os
+import time
 
 import httpx
 
@@ -146,14 +147,14 @@ def _map_status(status_text):
     return "other"
 
 
-def _fetch_bills_for_subject(client, api_key, state, session_id, subject):
-    """Fetch all pages of bills for a given state and subject via REST API."""
+def _fetch_bills_for_subject(client, api_key, jurisdiction, session_id, subject):
+    """Fetch all pages of bills for a given jurisdiction and subject via REST API."""
     bills = []
     page = 1
 
     while True:
         params = {
-            "jurisdiction": state,
+            "jurisdiction": jurisdiction,
             "subject": subject,
             "include": ["abstracts", "sources"],
             "per_page": 50,
@@ -163,7 +164,16 @@ def _fetch_bills_for_subject(client, api_key, state, session_id, subject):
         if session_id:
             params["session"] = session_id
 
+        # Rate limit: pause between requests to avoid 429
+        time.sleep(0.5)
+
         resp = client.get(OPENSTATES_URL, params=params, timeout=30)
+
+        # Retry once on 429 with backoff
+        if resp.status_code == 429:
+            time.sleep(5)
+            resp = client.get(OPENSTATES_URL, params=params, timeout=30)
+
         resp.raise_for_status()
         data = resp.json()
 
@@ -218,7 +228,7 @@ def main():
                 for subject in FOCUS_SUBJECTS:
                     try:
                         bills = _fetch_bills_for_subject(
-                            client, api_key, state_slug, session_id, subject
+                            client, api_key, full_name, session_id, subject
                         )
                     except Exception as exc:
                         print(f"  {state_slug}/{subject} failed: {exc}")
