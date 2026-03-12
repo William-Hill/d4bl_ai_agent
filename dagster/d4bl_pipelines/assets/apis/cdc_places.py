@@ -103,7 +103,7 @@ async def _fetch_places_measures(
                 "$offset": str(offset),
                 "$select": select_fields,
             }
-            timeout = aiohttp.ClientTimeout(total=60)
+            timeout = aiohttp.ClientTimeout(total=120)
             async with http_session.get(
                 url, params=params, timeout=timeout
             ) as resp:
@@ -113,10 +113,6 @@ async def _fetch_places_measures(
             if not rows:
                 break
 
-            for row in rows:
-                # Normalise the FIPS field to a common key
-                row["_fips"] = row.get(fips_field, "")
-                row["_measure"] = measure
             all_rows.extend(rows)
 
             context.log.info(
