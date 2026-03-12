@@ -42,6 +42,7 @@ from d4bl.app.websocket_manager import get_job_logs, register_connection, remove
 from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
     BlsLaborStatistic,
+    CdcAcsRaceEstimate,
     CdcHealthOutcome,
     CensusIndicator,
     DoeCivilRights,
@@ -670,6 +671,128 @@ async def get_cdc_health(
     except Exception:
         logger.error("Failed to fetch CDC health data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch CDC health data")
+
+
+@app.get("/api/explore/cdc-race", response_model=ExploreResponse)
+async def get_cdc_race_estimates(
+    state_fips: str | None = None,
+    measure: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    geography_type: str = "state",
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Race-weighted CDC health estimates via ACS overlay."""
+    try:
+        # Base filter applied to all queries (excludes race/limit)
+        base_filter = select(CdcAcsRaceEstimate).where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
+        if state_fips:
+            base_filter = base_filter.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+        if measure:
+            base_filter = base_filter.where(
+                CdcAcsRaceEstimate.measure == measure
+            )
+        if year:
+            base_filter = base_filter.where(
+                CdcAcsRaceEstimate.year == year
+            )
+
+        # Distinct metadata queries from unpaginated base
+        race_q = select(
+            CdcAcsRaceEstimate.race
+        ).distinct().where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
+        metric_q = select(
+            CdcAcsRaceEstimate.measure
+        ).distinct().where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
+        year_q = select(
+            CdcAcsRaceEstimate.year
+        ).distinct().where(
+            CdcAcsRaceEstimate.geography_type == geography_type
+        )
+        if state_fips:
+            race_q = race_q.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+            metric_q = metric_q.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+            year_q = year_q.where(
+                CdcAcsRaceEstimate.state_fips == state_fips
+            )
+        if measure:
+            race_q = race_q.where(
+                CdcAcsRaceEstimate.measure == measure
+            )
+        if year:
+            race_q = race_q.where(
+                CdcAcsRaceEstimate.year == year
+            )
+
+        # Paginated row query (includes race filter)
+        query = base_filter
+        if race:
+            query = query.where(CdcAcsRaceEstimate.race == race)
+        query = query.order_by(
+            CdcAcsRaceEstimate.state_fips
+        ).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+        race_result = await db.execute(
+            race_q.order_by(CdcAcsRaceEstimate.race)
+        )
+        metric_result = await db.execute(
+            metric_q.order_by(CdcAcsRaceEstimate.measure)
+        )
+        year_result = await db.execute(
+            year_q.order_by(CdcAcsRaceEstimate.year)
+        )
+        available_races = [
+            v for v in race_result.scalars().all() if v is not None
+        ]
+        available_metrics = [
+            v for v in metric_result.scalars().all()
+            if v is not None
+        ]
+        available_years = [
+            v for v in year_result.scalars().all() if v is not None
+        ]
+
+        row_dicts = [
+            {
+                "state_fips": r.state_fips,
+                "state_name": r.geography_name,
+                "value": r.estimated_value,
+                "metric": r.measure,
+                "year": r.year,
+                "race": r.race,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=available_metrics,
+            available_years=available_years,
+            available_races=available_races,
+        )
+    except Exception:
+        logger.error("Failed to fetch CDC race estimates", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch CDC race estimates",
+        )
 
 
 @app.get("/api/explore/epa", response_model=ExploreResponse)
