@@ -6,7 +6,10 @@ from d4bl_pipelines.assets.apis.census_acs import (
     census_acs_tract_indicators,
 )
 from d4bl_pipelines.assets.apis.doe_civil_rights import doe_civil_rights
-from d4bl_pipelines.assets.apis.epa_ejscreen import epa_ejscreen
+from d4bl_pipelines.assets.apis.epa_ejscreen import (
+    epa_ejscreen,
+    epa_ejscreen_tract,
+)
 from d4bl_pipelines.assets.apis.fbi_ucr import fbi_ucr_crime
 from d4bl_pipelines.assets.apis.hud_fair_housing import hud_fair_housing
 from d4bl_pipelines.assets.apis.mapping_police_violence import mapping_police_violence
@@ -21,6 +24,7 @@ __all__ = [
     "census_acs_tract_indicators",
     "doe_civil_rights",
     "epa_ejscreen",
+    "epa_ejscreen_tract",
     "fbi_ucr_crime",
     "hud_fair_housing",
     "mapping_police_violence",
