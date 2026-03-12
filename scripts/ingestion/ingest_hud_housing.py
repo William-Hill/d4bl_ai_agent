@@ -2,9 +2,11 @@
 
 Fetches Fair Market Rent data by state from the HUD User API.
 FMR values serve as a housing affordability proxy for equity analysis.
-No authentication required.
 
-Self-contained: uses psycopg2 + httpx only.
+Requires HUD_API_TOKEN env var (register at https://www.huduser.gov/hudapi/public/register).
+
+Usage:
+    DAGSTER_POSTGRES_URL=postgresql://... HUD_API_TOKEN=... python scripts/ingestion/ingest_hud_housing.py
 """
 
 import os
@@ -36,27 +38,35 @@ INDICATOR_FIELDS = {
     "fmr_4br": "Four-Bedroom",
 }
 
-# State FIPS codes (2-digit) to state name
-STATE_FIPS = {
-    "01": "Alabama", "02": "Alaska", "04": "Arizona",
-    "05": "Arkansas", "06": "California", "08": "Colorado",
-    "09": "Connecticut", "10": "Delaware",
-    "11": "District of Columbia", "12": "Florida",
-    "13": "Georgia", "15": "Hawaii", "16": "Idaho",
-    "17": "Illinois", "18": "Indiana", "19": "Iowa",
-    "20": "Kansas", "21": "Kentucky", "22": "Louisiana",
-    "23": "Maine", "24": "Maryland", "25": "Massachusetts",
-    "26": "Michigan", "27": "Minnesota", "28": "Mississippi",
-    "29": "Missouri", "30": "Montana", "31": "Nebraska",
-    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey",
-    "35": "New Mexico", "36": "New York",
-    "37": "North Carolina", "38": "North Dakota", "39": "Ohio",
-    "40": "Oklahoma", "41": "Oregon", "42": "Pennsylvania",
-    "44": "Rhode Island", "45": "South Carolina",
-    "46": "South Dakota", "47": "Tennessee", "48": "Texas",
-    "49": "Utah", "50": "Vermont", "51": "Virginia",
-    "53": "Washington", "54": "West Virginia",
-    "55": "Wisconsin", "56": "Wyoming",
+# State abbreviation → (FIPS code, state name)
+# The HUD API statedata endpoint requires 2-letter state abbreviations.
+STATES = {
+    "AL": ("01", "Alabama"), "AK": ("02", "Alaska"),
+    "AZ": ("04", "Arizona"), "AR": ("05", "Arkansas"),
+    "CA": ("06", "California"), "CO": ("08", "Colorado"),
+    "CT": ("09", "Connecticut"), "DE": ("10", "Delaware"),
+    "DC": ("11", "District of Columbia"), "FL": ("12", "Florida"),
+    "GA": ("13", "Georgia"), "HI": ("15", "Hawaii"),
+    "ID": ("16", "Idaho"), "IL": ("17", "Illinois"),
+    "IN": ("18", "Indiana"), "IA": ("19", "Iowa"),
+    "KS": ("20", "Kansas"), "KY": ("21", "Kentucky"),
+    "LA": ("22", "Louisiana"), "ME": ("23", "Maine"),
+    "MD": ("24", "Maryland"), "MA": ("25", "Massachusetts"),
+    "MI": ("26", "Michigan"), "MN": ("27", "Minnesota"),
+    "MS": ("28", "Mississippi"), "MO": ("29", "Missouri"),
+    "MT": ("30", "Montana"), "NE": ("31", "Nebraska"),
+    "NV": ("32", "Nevada"), "NH": ("33", "New Hampshire"),
+    "NJ": ("34", "New Jersey"), "NM": ("35", "New Mexico"),
+    "NY": ("36", "New York"), "NC": ("37", "North Carolina"),
+    "ND": ("38", "North Dakota"), "OH": ("39", "Ohio"),
+    "OK": ("40", "Oklahoma"), "OR": ("41", "Oregon"),
+    "PA": ("42", "Pennsylvania"), "RI": ("44", "Rhode Island"),
+    "SC": ("45", "South Carolina"), "SD": ("46", "South Dakota"),
+    "TN": ("47", "Tennessee"), "TX": ("48", "Texas"),
+    "UT": ("49", "Utah"), "VT": ("50", "Vermont"),
+    "VA": ("51", "Virginia"), "WA": ("53", "Washington"),
+    "WV": ("54", "West Virginia"), "WI": ("55", "Wisconsin"),
+    "WY": ("56", "Wyoming"),
 }
 
 UPSERT_SQL = """
@@ -97,15 +107,15 @@ def main():
 
     print(
         f"Fetching HUD FMR data for year={year} "
-        f"across {len(STATE_FIPS)} states"
+        f"across {len(STATES)} states"
     )
 
     headers = {"Authorization": f"Bearer {hud_token}"}
 
     try:
         with httpx.Client(timeout=60, headers=headers) as client:
-            for fips_code, state_name in STATE_FIPS.items():
-                url = f"{HUD_FMR_URL}/{fips_code}?year={year}"
+            for abbr, (fips_code, state_name) in STATES.items():
+                url = f"{HUD_FMR_URL}/{abbr}?year={year}"
                 try:
                     resp = client.get(url)
                     resp.raise_for_status()
@@ -113,65 +123,66 @@ def main():
                 except Exception as fetch_exc:
                     print(
                         f"WARNING: Failed to fetch FMR for {state_name} "
-                        f"({fips_code}): {fetch_exc}"
+                        f"({abbr}): {fetch_exc}"
                     )
                     continue
 
-                # The API returns data under a "data" key with
-                # basicdata or similar structure. Extract FMR values
-                # from the top-level or nested response.
+                # Response has "data" with "metroareas" and "counties"
+                # arrays. Each entry has FMR fields like "Efficiency",
+                # "One-Bedroom", etc. We ingest county-level records.
                 data = payload.get("data", payload)
+                counties = []
                 if isinstance(data, dict):
-                    fmr_data = data
-                elif isinstance(data, list) and len(data) > 0:
-                    fmr_data = data[0]
-                else:
+                    counties = data.get("counties", [])
+                    if not counties:
+                        # Fallback: maybe metroareas has data
+                        counties = data.get("metroareas", [])
+                elif isinstance(data, list):
+                    counties = data
+
+                if not counties:
                     print(f"WARNING: No FMR data for {state_name}")
                     continue
 
                 states_seen.add(state_name)
 
                 batch = []
-                for indicator in HUD_INDICATORS:
-                    field = INDICATOR_FIELDS.get(indicator)
-                    value = fmr_data.get(field)
-                    # Also try lowercase/snake variants
-                    if value is None:
-                        value = fmr_data.get(
-                            indicator.replace("fmr_", "") + "br"
-                        )
-                    if value is None:
-                        value = fmr_data.get(indicator)
-                    if value is None:
-                        # Try numeric keys like fmr_0, fmr_1, etc.
-                        br_num = indicator.replace(
-                            "fmr_", ""
-                        ).replace("br", "")
-                        value = fmr_data.get(f"fmr_{br_num}")
-                    if value is None:
+                for area in counties:
+                    area_code = str(
+                        area.get("code", area.get("fips_code", ""))
+                    ).strip()
+                    area_name = str(
+                        area.get("name", area.get("county_name", ""))
+                    ).strip()
+
+                    if not area_code:
                         continue
 
-                    value = safe_float(value)
-                    if value is None:
-                        continue
+                    for indicator in HUD_INDICATORS:
+                        field = INDICATOR_FIELDS.get(indicator)
+                        value = safe_float(area.get(field))
+                        if value is None:
+                            value = safe_float(area.get(indicator))
+                        if value is None:
+                            continue
 
-                    indicators_seen.add(indicator)
+                        indicators_seen.add(indicator)
 
-                    batch.append({
-                        "id": make_record_id(
-                            "hud_fmr", fips_code, str(year),
-                            indicator, "all", "all",
-                        ),
-                        "fips_code": fips_code,
-                        "geography_type": "state",
-                        "geography_name": state_name,
-                        "state_fips": fips_code,
-                        "year": year,
-                        "indicator": indicator,
-                        "value": value,
-                        "race_group_a": "all",
-                        "race_group_b": "all",
-                    })
+                        batch.append({
+                            "id": make_record_id(
+                                "hud_fmr", area_code, str(year),
+                                indicator, "all", "all",
+                            ),
+                            "fips_code": area_code,
+                            "geography_type": "county",
+                            "geography_name": area_name,
+                            "state_fips": fips_code,
+                            "year": year,
+                            "indicator": indicator,
+                            "value": value,
+                            "race_group_a": "all",
+                            "race_group_b": "all",
+                        })
 
                 if batch:
                     execute_batch(cur, UPSERT_SQL, batch)
@@ -179,7 +190,7 @@ def main():
                     records_ingested += len(batch)
 
                 print(
-                    f"  {state_name} ({fips_code}): upserted "
+                    f"  {state_name} ({abbr}): upserted "
                     f"{len(batch)} FMR records"
                 )
     finally:

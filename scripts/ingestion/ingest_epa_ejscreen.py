@@ -211,7 +211,7 @@ def main() -> int:
         # Flush remaining records
         if pending_batch:
             with conn.cursor() as cur:
-                psycopg2.extras.execute_batch(cur, UPSERT_SQL, pending_batch)
+                execute_batch(cur, UPSERT_SQL, pending_batch)
             conn.commit()
             records_ingested += len(pending_batch)
 
