@@ -12,9 +12,22 @@ import psycopg2.extras
 # In the cloud, real env vars are used and .env is absent — this is a no-op.
 try:
     from dotenv import load_dotenv
-    # Walk up from scripts/ingestion/ to find .env at repo root
+    # Walk up from scripts/ingestion/ to find .env at repo root.
+    # Also check the main repo root when running from a git worktree.
     _repo_root = Path(__file__).resolve().parent.parent.parent
     _env_file = _repo_root / ".env"
+    if not _env_file.is_file():
+        # In a worktree, the main repo .env may be elsewhere
+        import subprocess
+        try:
+            _main_root = subprocess.check_output(
+                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                cwd=_repo_root, stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            # git-common-dir returns the .git dir; parent is the main repo
+            _env_file = Path(_main_root).parent / ".env"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
     if _env_file.is_file():
         load_dotenv(_env_file)
 except ImportError:
