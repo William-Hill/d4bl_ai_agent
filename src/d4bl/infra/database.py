@@ -395,6 +395,36 @@ class CdcHealthOutcome(Base):
     )
 
 
+class CdcAcsRaceEstimate(Base):
+    """Race-weighted CDC health estimates via ACS demographic overlay."""
+    __tablename__ = "cdc_acs_race_estimates"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    fips_code = Column(String(11), nullable=False, index=True)
+    geography_type = Column(String(10), nullable=False)
+    geography_name = Column(String(200), nullable=False)
+    state_fips = Column(String(2), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    measure = Column(String(50), nullable=False)
+    race = Column(String(20), nullable=False)
+    health_rate = Column(Float, nullable=False)
+    race_population_share = Column(Float, nullable=False)
+    estimated_value = Column(Float, nullable=False)
+    total_population = Column(Integer, nullable=True)
+    confidence_low = Column(Float, nullable=True)
+    confidence_high = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fips_code", "year", "measure", "race",
+            name="uq_cdc_acs_race_key",
+        ),
+        Index("ix_cdc_acs_race_state", "state_fips", "measure", "year", "race"),
+        Index("ix_cdc_acs_race_geo_type", "geography_type", "year"),
+    )
+
+
 class EpaEnvironmentalJustice(Base):
     """Environmental justice screening from EPA EJScreen."""
     __tablename__ = "epa_environmental_justice"
