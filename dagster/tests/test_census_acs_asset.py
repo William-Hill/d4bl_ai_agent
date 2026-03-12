@@ -2,7 +2,6 @@ import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from d4bl_pipelines.assets.apis.census_acs import (
     _fetch_acs,
     census_acs_county_indicators,

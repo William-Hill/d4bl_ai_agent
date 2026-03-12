@@ -1,11 +1,11 @@
 """Unit tests for dynamic schedule generation."""
 
 from d4bl_pipelines.schedules import (
+    STATIC_SCHEDULES,
     _slugify,
     build_monitor_schedules,
     build_source_schedules,
     build_static_schedules,
-    STATIC_SCHEDULES,
 )
 
 from dagster import DefaultScheduleStatus
