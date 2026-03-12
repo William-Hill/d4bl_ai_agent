@@ -1,6 +1,6 @@
 """OpenStates policy bills ingestion script.
 
-Fetches state policy bills from the OpenStates GraphQL API v3
+Fetches state policy bills from the OpenStates REST API v3
 for D4BL focus subjects and upserts into the policy_bills table.
 
 Usage:
@@ -23,7 +23,7 @@ from .helpers import (
     get_db_connection, execute_batch, make_record_id,
 )
 
-OPENSTATES_URL = "https://v3.openstates.org/graphql"
+OPENSTATES_URL = "https://v3.openstates.org/bills"
 
 # D4BL focus topic tags to search for
 FOCUS_SUBJECTS = [
@@ -49,40 +49,6 @@ STATUS_MAP = {
     "failed": "failed",
     "dead": "failed",
 }
-
-BILLS_QUERY = """
-query BillsByState(
-    $state: String!,
-    $session: String,
-    $subject: String,
-    $after: String
-) {
-  bills(
-    jurisdiction: $state,
-    session: $session,
-    subject: $subject,
-    after: $after,
-    first: 50
-  ) {
-    pageInfo { hasNextPage endCursor }
-    edges {
-      node {
-        id
-        identifier
-        title
-        abstract
-        classification
-        subject
-        session { identifier }
-        createdAt
-        updatedAt
-        statusText
-        sources { url }
-      }
-    }
-  }
-}
-"""
 
 # Map OpenStates jurisdiction slug to 2-letter abbreviation and full name
 STATE_MAP = {
@@ -181,47 +147,33 @@ def _map_status(status_text):
 
 
 def _fetch_bills_for_subject(client, api_key, state, session_id, subject):
-    """Fetch all pages of bills for a given state and subject."""
+    """Fetch all pages of bills for a given state and subject via REST API."""
     bills = []
-    after = None
-    headers = {"X-API-Key": api_key}
+    page = 1
 
     while True:
-        variables = {
-            "state": state,
+        params = {
+            "jurisdiction": state,
             "subject": subject,
+            "include": ["abstracts", "sources"],
+            "per_page": 50,
+            "page": page,
+            "apikey": api_key,
         }
         if session_id:
-            variables["session"] = session_id
-        if after:
-            variables["after"] = after
+            params["session"] = session_id
 
-        resp = client.post(
-            OPENSTATES_URL,
-            json={"query": BILLS_QUERY, "variables": variables},
-            headers=headers,
-            timeout=30,
-        )
+        resp = client.get(OPENSTATES_URL, params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
 
-        edges = (
-            data.get("data", {})
-            .get("bills", {})
-            .get("edges", [])
-        )
-        page_info = (
-            data.get("data", {})
-            .get("bills", {})
-            .get("pageInfo", {})
-        )
+        results = data.get("results", [])
+        bills.extend(results)
 
-        for edge in edges:
-            bills.append(edge["node"])
-
-        if not page_info.get("hasNextPage"):
+        pagination = data.get("pagination", {})
+        if page >= pagination.get("max_page", 1):
             break
-        after = page_info["endCursor"]
+        page += 1
 
     return bills
 
@@ -276,20 +228,33 @@ def main():
                         topics_covered.add(subject)
 
                     for bill in bills:
-                        bill_id = bill["id"]
+                        bill_id = bill.get("id", "")
                         if bill_id in seen_ids:
                             continue
                         seen_ids.add(bill_id)
 
-                        url = (
-                            bill.get("sources", [{}])[0].get("url")
-                            if bill.get("sources")
-                            else None
+                        # Extract URL from sources list or openstates_url
+                        url = bill.get("openstates_url")
+                        sources = bill.get("sources", [])
+                        if sources and isinstance(sources, list):
+                            url = sources[0].get("url", url)
+
+                        # Session is a string in REST API
+                        sess = bill.get("session", session_id or "")
+
+                        # Extract abstract from abstracts list
+                        abstracts = bill.get("abstracts", [])
+                        summary = (
+                            abstracts[0].get("abstract", "")
+                            if abstracts
+                            else ""
                         )
-                        sess = (
-                            bill.get("session", {})
-                            .get("identifier", session_id or "")
+
+                        # Map latest_action_description to status
+                        status_text = bill.get(
+                            "latest_action_description", ""
                         )
+
                         batch.append({
                             "id": make_record_id(
                                 "openstates", abbrev, bill_id, sess,
@@ -299,14 +264,14 @@ def main():
                             "bill_id": bill_id,
                             "bill_number": bill.get("identifier", ""),
                             "title": bill.get("title", ""),
-                            "summary": bill.get("abstract"),
-                            "status": _map_status(bill.get("statusText")),
+                            "summary": summary,
+                            "status": _map_status(status_text),
                             "topic_tags": json.dumps(
                                 bill.get("subject", [])
                             ),
                             "session": sess,
-                            "introduced_date": bill.get("createdAt"),
-                            "last_action_date": bill.get("updatedAt"),
+                            "introduced_date": bill.get("first_action_date"),
+                            "last_action_date": bill.get("latest_action_date"),
                             "url": url,
                         })
                         state_count += 1
