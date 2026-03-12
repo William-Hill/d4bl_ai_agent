@@ -98,6 +98,8 @@ async def _fetch_acs(
             params["for"] = f"state:{state_fips}"
         elif geography == "county:*":
             params["in"] = f"state:{state_fips}"
+        elif geography == "tract:*":
+            params["in"] = f"state:{state_fips}"
         else:
             raise ValueError(
                 f"Unsupported state_fips filter for "

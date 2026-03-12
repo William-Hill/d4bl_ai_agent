@@ -100,6 +100,35 @@ def test_census_acs_county_asset_has_metadata():
     assert key.path[-1] == "census_acs_county_indicators"
 
 
+@pytest.mark.asyncio
+async def test_fetch_acs_tract_params():
+    """_fetch_acs should set for=tract:* and in=state:06 for tracts."""
+    mock_session = _make_mock_session(
+        [["NAME", "state", "county", "tract"], ["X", "06", "001", "000100"]]
+    )
+    await _fetch_acs(
+        mock_session, 2022, ["B01001_001E"],
+        state_fips="06", geography="tract:*",
+    )
+    params = mock_session.get.call_args.kwargs["params"]
+    assert params["for"] == "tract:*"
+    assert params["in"] == "state:06"
+
+
+@pytest.mark.asyncio
+async def test_fetch_acs_tract_without_state_fips():
+    """_fetch_acs should set for=tract:* without in= when no state_fips."""
+    mock_session = _make_mock_session(
+        [["NAME", "state", "county", "tract"], ["X", "06", "001", "000100"]]
+    )
+    await _fetch_acs(
+        mock_session, 2022, ["B01001_001E"], geography="tract:*",
+    )
+    params = mock_session.get.call_args.kwargs["params"]
+    assert params["for"] == "tract:*"
+    assert "in" not in params
+
+
 def test_county_schedule_registered():
     """County asset should have a static schedule."""
     assert "census_acs_county_indicators" in STATIC_SCHEDULES
