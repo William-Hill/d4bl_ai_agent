@@ -19,6 +19,7 @@ STATIC_SCHEDULES: dict[str, str] = {
     "census_acs_county_indicators": "0 0 1 1 *",  # Annually — Jan 1
     "census_acs_tract_indicators": "0 0 1 1 *",  # Annually — Jan 1
     "cdc_places_health": "0 0 1 */3 *",           # Quarterly — 1st of every 3rd month
+    "cdc_places_tract_health": "0 0 1 */3 *",     # Quarterly — 1st of every 3rd month
     "bls_labor_stats": "0 0 1 * *",               # Monthly — 1st
     "fbi_ucr_crime": "0 0 1 1 *",                 # Annually — Jan 1
     "epa_ejscreen": "0 0 1 1 *",                  # Annually — Jan 1
