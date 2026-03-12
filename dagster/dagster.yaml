@@ -7,5 +7,8 @@ run_launcher:
   module: dagster.core.launcher
   class: DefaultRunLauncher
 
+code_servers:
+  local_startup_timeout: 120
+
 telemetry:
   enabled: false
