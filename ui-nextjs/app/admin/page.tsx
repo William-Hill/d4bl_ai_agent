@@ -23,6 +23,24 @@ export default function AdminPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // --- Data ingestion state ---
+  const INGEST_SOURCES = [
+    { key: 'cdc', label: 'CDC Health Outcomes' },
+    { key: 'census', label: 'Census ACS' },
+    { key: 'epa', label: 'EPA Environmental Justice' },
+    { key: 'fbi', label: 'FBI Crime Stats' },
+    { key: 'bls', label: 'BLS Labor Statistics' },
+    { key: 'hud', label: 'HUD Fair Housing' },
+    { key: 'usda', label: 'USDA Food Access' },
+    { key: 'doe', label: 'DOE Civil Rights' },
+    { key: 'police', label: 'Police Violence' },
+    { key: 'openstates', label: 'OpenStates Legislation' },
+  ] as const;
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [ingestJobId, setIngestJobId] = useState<string | null>(null);
+  const [ingestStatus, setIngestStatus] = useState<string | null>(null);
+  const [ingestLoading, setIngestLoading] = useState(false);
+
   const getHeaders = useCallback(() => ({
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${session?.access_token}`,
@@ -83,6 +101,63 @@ export default function AdminPage() {
     }
   };
 
+  // --- Data ingestion helpers ---
+  const toggleSource = (key: string) => {
+    setSelectedSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const triggerIngestion = async (sources?: string[]) => {
+    setIngestLoading(true);
+    setIngestStatus(null);
+    setIngestJobId(null);
+    try {
+      const body: Record<string, unknown> = {};
+      if (sources && sources.length > 0) body.sources = sources;
+      const resp = await fetch(`${API_BASE}/api/admin/ingest`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setIngestJobId(data.job_id);
+        setIngestStatus('running');
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        setError(data.detail || 'Failed to start ingestion');
+      }
+    } catch {
+      setError('Failed to start ingestion');
+    } finally {
+      setIngestLoading(false);
+    }
+  };
+
+  // Poll ingestion status while running
+  useEffect(() => {
+    if (!ingestJobId || ingestStatus !== 'running') return;
+    const interval = setInterval(async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/admin/ingest/status/${ingestJobId}`, {
+          headers: getHeaders(),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setIngestStatus(data.status);
+          if (data.status !== 'running') clearInterval(interval);
+        }
+      } catch {
+        /* ignore transient fetch errors */
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [ingestJobId, ingestStatus, getHeaders]);
+
   const handleRoleChange = async (userId: string, newRole: string) => {
     try {
       const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
@@ -141,6 +216,55 @@ export default function AdminPage() {
             </svg>
             Open Dagster Pipelines
           </button>
+        </div>
+
+        {/* Data Ingestion */}
+        <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
+          <h2 className="text-lg font-semibold text-white mb-4">Data Ingestion</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+            {INGEST_SOURCES.map((s) => (
+              <label key={s.key} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedSources.has(s.key)}
+                  onChange={() => toggleSource(s.key)}
+                  className="accent-[#00ff32]"
+                />
+                {s.label}
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={ingestLoading || selectedSources.size === 0}
+              onClick={() => triggerIngestion(Array.from(selectedSources))}
+              className="px-4 py-2 bg-[#00ff32] text-black font-semibold rounded
+                         hover:bg-[#00cc28] disabled:opacity-50 transition-colors"
+            >
+              Run Selected
+            </button>
+            <button
+              type="button"
+              disabled={ingestLoading}
+              onClick={() => triggerIngestion()}
+              className="px-4 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                         hover:border-[#00ff32] disabled:opacity-50 transition-colors"
+            >
+              Run All
+            </button>
+            {ingestStatus && (
+              <span className={`text-sm font-medium ${
+                ingestStatus === 'running' ? 'text-yellow-400' :
+                ingestStatus === 'done' ? 'text-green-400' :
+                'text-red-400'
+              }`}>
+                {ingestStatus === 'running' && 'Running...'}
+                {ingestStatus === 'done' && 'Done'}
+                {ingestStatus === 'error' && 'Error'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Invite form */}
