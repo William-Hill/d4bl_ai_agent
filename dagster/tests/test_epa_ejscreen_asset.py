@@ -1,9 +1,9 @@
 from d4bl_pipelines.assets.apis.epa_ejscreen import (
+    CSV_INDICATOR_COLUMNS,
     EJ_INDICATORS,
+    aggregate_block_groups_to_tracts,
     epa_ejscreen,
     epa_ejscreen_tract,
-    aggregate_block_groups_to_tracts,
-    CSV_INDICATOR_COLUMNS,
 )
 
 
