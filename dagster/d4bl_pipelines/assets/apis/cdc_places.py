@@ -288,6 +288,10 @@ def _parse_row(row: dict, fips_field: str) -> dict[str, Any] | None:
         value = float(data_val)
     except (ValueError, TypeError):
         return None
+    try:
+        year = int(row.get("year", ""))
+    except (ValueError, TypeError):
+        return None
 
     measure = row.get("measureid", "")
     state_fips = fips[:2]
@@ -320,7 +324,7 @@ def _parse_row(row: dict, fips_field: str) -> dict[str, Any] | None:
         "fips": fips,
         "geo_name": row.get("locationname", row.get("countyname", "")),
         "state_fips": state_fips,
-        "year": int(row.get("year", 0)),
+        "year": year,
         "measure": MEASURE_NAMES.get(measure, measure.lower()),
         "category": MEASURE_CATEGORIES.get(measure, "other"),
         "value": value,

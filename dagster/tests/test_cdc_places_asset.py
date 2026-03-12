@@ -99,5 +99,33 @@ def test_parse_row_invalid_value():
         "countyfips": "17031",
         "data_value": "not_a_number",
         "measureid": "DIABETES",
+        "year": "2023",
+    }
+    assert _parse_row(row, fips_field="countyfips") is None
+
+
+def test_parse_row_valid_tract():
+    """_parse_row should handle tract rows via locationid."""
+    row = {
+        "locationid": "17031010100",
+        "locationname": "Census Tract 010100",
+        "data_value": "12.5",
+        "measureid": "DIABETES",
+        "year": "2023",
+        "data_value_type": "Crude prevalence",
+    }
+    result = _parse_row(row, fips_field="locationid")
+    assert result is not None
+    assert result["fips"] == "17031010100"
+    assert result["geo_name"] == "Census Tract 010100"
+    assert result["state_fips"] == "17"
+
+
+def test_parse_row_missing_year():
+    """_parse_row should return None when year is missing."""
+    row = {
+        "countyfips": "17031",
+        "data_value": "12.5",
+        "measureid": "DIABETES",
     }
     assert _parse_row(row, fips_field="countyfips") is None
