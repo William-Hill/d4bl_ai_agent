@@ -70,7 +70,133 @@ STATE_FIPS = {
     "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
 }
 
+# CSV column names for the indicators we track.
+# These map 1:1 to EJ_INDICATORS (which are used for both
+# the REST API and the CSV download).
+CSV_INDICATOR_COLUMNS = list(EJ_INDICATORS)
 
+# Default download URL — EPA EJScreen annual CSV (US Percentiles).
+# EPA discontinued public access in Feb 2025; set EPA_EJSCREEN_CSV_URL
+# env var to point at a mirror (e.g. Zenodo, Harvard Dataverse).
+DEFAULT_EJSCREEN_CSV_URL = (
+    "https://gaftp.epa.gov/EJSCREEN/{year}/EJSCREEN_{year}_USPR.csv.zip"
+)
+
+
+def aggregate_block_groups_to_tracts(
+    rows: list[dict],
+) -> dict[str, dict]:
+    """Aggregate block-group rows to tract-level using population-weighted averages.
+
+    Args:
+        rows: List of dicts with keys matching the EJScreen CSV columns.
+              Each row is one block group.
+
+    Returns:
+        Dict keyed by 11-digit tract FIPS, values are dicts with:
+        - state_fips, state_abbrev, population, minority_pct, low_income_pct
+        - indicators: dict[indicator_lower -> {raw_value, percentile_national}]
+    """
+    accum: dict[str, dict] = {}
+
+    for row in rows:
+        bg_id = row.get("ID", "").strip()
+        if len(bg_id) < 11:
+            continue
+        tract_fips = bg_id[:11]
+
+        try:
+            pop = int(float(row.get("ACSTOTPOP", "") or "0"))
+        except (ValueError, TypeError):
+            pop = 0
+        if pop <= 0:
+            continue
+
+        if tract_fips not in accum:
+            accum[tract_fips] = {
+                "state_fips": tract_fips[:2],
+                "state_abbrev": row.get("ST_ABBREV", ""),
+                "pop_total": 0,
+                "minority_weighted": 0.0,
+                "lowinc_weighted": 0.0,
+                "indicators": {},
+            }
+
+        t = accum[tract_fips]
+        t["pop_total"] += pop
+
+        try:
+            minority = float(row.get("MINORPCT", "") or "0")
+            t["minority_weighted"] += minority * pop
+        except (ValueError, TypeError):
+            pass
+        try:
+            lowinc = float(row.get("LOWINCPCT", "") or "0")
+            t["lowinc_weighted"] += lowinc * pop
+        except (ValueError, TypeError):
+            pass
+
+        for col in CSV_INDICATOR_COLUMNS:
+            col_lower = col.lower()
+            if col_lower not in t["indicators"]:
+                t["indicators"][col_lower] = {
+                    "raw_weighted": 0.0,
+                    "pctile_weighted": 0.0,
+                    "pop_with_data": 0,
+                }
+            ind = t["indicators"][col_lower]
+
+            raw_str = row.get(col, "")
+            if raw_str is None or str(raw_str).strip() == "":
+                raw_val = None
+            else:
+                try:
+                    raw_val = float(raw_str)
+                except (ValueError, TypeError):
+                    raw_val = None
+
+            pctile_str = row.get(f"P_{col}", "")
+            if pctile_str is None or str(pctile_str).strip() == "":
+                pctile_val = None
+            else:
+                try:
+                    pctile_val = float(pctile_str)
+                except (ValueError, TypeError):
+                    pctile_val = None
+
+            if raw_val is not None or pctile_val is not None:
+                ind["pop_with_data"] += pop
+                if raw_val is not None:
+                    ind["raw_weighted"] += raw_val * pop
+                if pctile_val is not None:
+                    ind["pctile_weighted"] += pctile_val * pop
+
+    result: dict[str, dict] = {}
+    for tract_fips, t in accum.items():
+        pop = t["pop_total"]
+        if pop <= 0:
+            continue
+
+        indicators: dict[str, dict] = {}
+        for ind_name, ind_data in t["indicators"].items():
+            p = ind_data["pop_with_data"]
+            if p <= 0:
+                continue
+            indicators[ind_name] = {
+                "raw_value": ind_data["raw_weighted"] / p,
+                "percentile_national": ind_data["pctile_weighted"] / p,
+            }
+
+        result[tract_fips] = {
+            "state_fips": t["state_fips"],
+            "state_abbrev": t["state_abbrev"],
+            "population": pop,
+            "minority_pct": t["minority_weighted"] / pop,
+            "low_income_pct": t["lowinc_weighted"] / pop,
+            "indicators": indicators,
+        }
+
+    return result
 
 
 @asset(
