@@ -1,5 +1,6 @@
 from d4bl_pipelines.assets.apis import (
     bls_labor_stats,
+    cdc_acs_race_overlay,
     cdc_places_health,
     cdc_places_tract_health,
     census_acs_county_indicators,
@@ -17,6 +18,7 @@ from d4bl_pipelines.assets.apis import (
 
 __all__ = [
     "bls_labor_stats",
+    "cdc_acs_race_overlay",
     "cdc_places_health",
     "cdc_places_tract_health",
     "census_acs_county_indicators",

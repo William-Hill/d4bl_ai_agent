@@ -29,6 +29,7 @@ STATIC_SCHEDULES: dict[str, str] = {
     "doe_civil_rights": "0 0 1 1 *",               # Annually — Jan 1 (biennial n/a in cron)
     "mapping_police_violence": "0 0 1 * *",        # Monthly — 1st
     "openstates_bills": "0 6 * * 1-5",            # Weekdays — 6 AM
+    "cdc_acs_race_overlay": "0 6 1 */3 *",        # Quarterly — 1st of every 3rd month
 }
 
 

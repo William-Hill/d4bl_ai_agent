@@ -1,4 +1,5 @@
 from d4bl_pipelines.assets.apis.bls_labor import bls_labor_stats
+from d4bl_pipelines.assets.apis.cdc_acs_overlay import cdc_acs_race_overlay
 from d4bl_pipelines.assets.apis.cdc_places import (
     cdc_places_health,
     cdc_places_tract_health,
@@ -21,6 +22,7 @@ from d4bl_pipelines.assets.apis.usda_food_access import usda_food_access
 
 __all__ = [
     "bls_labor_stats",
+    "cdc_acs_race_overlay",
     "cdc_places_health",
     "cdc_places_tract_health",
     "census_acs_county_indicators",
