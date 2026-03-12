@@ -12,8 +12,15 @@ Usage:
 
 import argparse
 import importlib
+import os
 import sys
 import time
+
+# Ensure the scripts/ directory is on sys.path so that
+# `import ingestion.ingest_xxx` (with relative helpers) works.
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
 
 SOURCES = {
     "cdc": "ingest_cdc_places",
@@ -57,7 +64,7 @@ def run_source(name: str, module_name: str) -> tuple[int, float, str]:
 
     start = time.time()
     try:
-        module = importlib.import_module(f"scripts.ingestion.{module_name}")
+        module = importlib.import_module(f"ingestion.{module_name}")
         records = module.main()
         duration = time.time() - start
         print(f"  -> {name}: {records} records in {format_duration(duration)}")

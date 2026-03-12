@@ -19,7 +19,7 @@ import os
 
 import httpx
 
-from scripts.ingestion.helpers import (
+from .helpers import (
     get_db_connection, execute_batch, make_record_id,
 )
 
