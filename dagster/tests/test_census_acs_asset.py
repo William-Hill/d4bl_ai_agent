@@ -7,6 +7,7 @@ from d4bl_pipelines.assets.apis.census_acs import (
     _fetch_acs,
     census_acs_county_indicators,
     census_acs_indicators,
+    census_acs_tract_indicators,
 )
 from d4bl_pipelines.schedules import STATIC_SCHEDULES
 
@@ -127,6 +128,18 @@ async def test_fetch_acs_tract_without_state_fips():
     params = mock_session.get.call_args.kwargs["params"]
     assert params["for"] == "tract:*"
     assert "in" not in params
+
+
+def test_census_acs_tract_asset_exists():
+    """The census_acs_tract_indicators asset should be importable."""
+    assert census_acs_tract_indicators is not None
+
+
+def test_census_acs_tract_asset_has_metadata():
+    """Tract asset should have correct group and description metadata."""
+    spec = census_acs_tract_indicators.specs_by_key
+    key = next(iter(spec))
+    assert key.path[-1] == "census_acs_tract_indicators"
 
 
 def test_county_schedule_registered():
