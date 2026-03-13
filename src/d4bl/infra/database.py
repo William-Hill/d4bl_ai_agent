@@ -580,6 +580,182 @@ class PoliceViolenceIncident(Base):
     )
 
 
+class CensusDemographics(Base):
+    """Decennial census race/ethnicity population counts."""
+    __tablename__ = "census_demographics"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    geo_id = Column(String(11), nullable=False, index=True)
+    geo_type = Column(String(10), nullable=False)
+    state_fips = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=True)
+    county_name = Column(String(200), nullable=True)
+    year = Column(Integer, nullable=False)
+    race = Column(String(50), nullable=False)
+    population = Column(Integer, nullable=True)
+    pct_of_total = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("geo_id", "year", "race",
+                        name="uq_census_demographics_key"),
+        Index("ix_census_demo_state_year", "state_fips", "year"),
+    )
+
+
+class CdcMortality(Base):
+    """CDC WONDER mortality data by race and cause of death."""
+    __tablename__ = "cdc_mortality"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    county_fips = Column(String(5), nullable=False, index=True)
+    state_fips = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=True)
+    county_name = Column(String(200), nullable=True)
+    year = Column(Integer, nullable=False)
+    cause_of_death = Column(String(200), nullable=False)
+    icd_code = Column(String(10), nullable=True)
+    race = Column(String(50), nullable=False)
+    age_group = Column(String(50), nullable=False)
+    deaths = Column(Integer, nullable=True)
+    population = Column(Integer, nullable=True)
+    crude_rate = Column(Float, nullable=True)
+    age_adjusted_rate = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("county_fips", "year", "cause_of_death", "race", "age_group",
+                        name="uq_cdc_mortality_key"),
+        Index("ix_cdc_mortality_state_cause", "state_fips", "cause_of_death", "year"),
+    )
+
+
+class BjsIncarceration(Base):
+    """DOJ Bureau of Justice Statistics incarceration data by race."""
+    __tablename__ = "bjs_incarceration"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    state_abbrev = Column(String(2), nullable=False, index=True)
+    state_name = Column(String(50), nullable=True)
+    year = Column(Integer, nullable=False)
+    facility_type = Column(String(20), nullable=False)
+    metric = Column(String(100), nullable=False)
+    race = Column(String(50), nullable=False)
+    gender = Column(String(20), nullable=False)
+    value = Column(Float, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("state_abbrev", "year", "facility_type", "metric", "race", "gender",
+                        name="uq_bjs_incarceration_key"),
+        Index("ix_bjs_inc_state_race_year", "state_abbrev", "race", "year"),
+    )
+
+
+class CongressVote(Base):
+    """Congressional voting records from ProPublica."""
+    __tablename__ = "congress_votes"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    bill_id = Column(String(50), nullable=False)
+    bill_number = Column(String(20), nullable=True)
+    title = Column(Text, nullable=True)
+    subject = Column(String(200), nullable=True)
+    congress = Column(Integer, nullable=False)
+    chamber = Column(String(10), nullable=False)
+    vote_date = Column(Date, nullable=True)
+    result = Column(String(50), nullable=True)
+    yes_votes = Column(Integer, nullable=True)
+    no_votes = Column(Integer, nullable=True)
+    topic_tags = Column(JSON, nullable=True)
+    url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("bill_id", "congress", "chamber",
+                        name="uq_congress_votes_key"),
+        Index("ix_congress_votes_congress_subject", "congress", "subject"),
+    )
+
+
+class VeraIncarceration(Base):
+    """Vera Institute county-level incarceration trends by race."""
+    __tablename__ = "vera_incarceration"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    fips = Column(String(5), nullable=False, index=True)
+    state = Column(String(2), nullable=False, index=True)
+    county_name = Column(String(200), nullable=True)
+    year = Column(Integer, nullable=False)
+    urbanicity = Column(String(20), nullable=True)
+    facility_type = Column(String(20), nullable=False)
+    race = Column(String(50), nullable=False)
+    population = Column(Integer, nullable=True)
+    total_pop = Column(Integer, nullable=True)
+    rate_per_100k = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("fips", "year", "facility_type", "race",
+                        name="uq_vera_incarceration_key"),
+        Index("ix_vera_inc_state_race_year", "state", "race", "year"),
+    )
+
+
+class TrafficStop(Base):
+    """Stanford Open Policing Project traffic stop data by race."""
+    __tablename__ = "traffic_stops"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    state = Column(String(2), nullable=False, index=True)
+    county_name = Column(String(200), nullable=True)
+    department = Column(String(200), nullable=True)
+    year = Column(Integer, nullable=False)
+    race = Column(String(50), nullable=False)
+    total_stops = Column(Integer, nullable=True)
+    search_conducted = Column(Integer, nullable=True)
+    contraband_found = Column(Integer, nullable=True)
+    arrest_made = Column(Integer, nullable=True)
+    citation_issued = Column(Integer, nullable=True)
+    search_rate = Column(Float, nullable=True)
+    hit_rate = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("state", "department", "year", "race",
+                        name="uq_traffic_stops_key"),
+        Index("ix_traffic_stops_state_race_year", "state", "race", "year"),
+    )
+
+
+class EvictionData(Base):
+    """Eviction Lab eviction rates by geography."""
+    __tablename__ = "eviction_data"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    geo_id = Column(String(11), nullable=False, index=True)
+    geo_type = Column(String(10), nullable=False)
+    state_fips = Column(String(2), nullable=True, index=True)
+    geo_name = Column(String(200), nullable=True)
+    year = Column(Integer, nullable=False)
+    population = Column(Integer, nullable=True)
+    poverty_rate = Column(Float, nullable=True)
+    pct_renter_occupied = Column(Float, nullable=True)
+    median_gross_rent = Column(Float, nullable=True)
+    eviction_filings = Column(Integer, nullable=True)
+    evictions = Column(Integer, nullable=True)
+    eviction_rate = Column(Float, nullable=True)
+    eviction_filing_rate = Column(Float, nullable=True)
+    pct_nonwhite = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("geo_id", "year",
+                        name="uq_eviction_data_key"),
+        Index("ix_eviction_data_state_year", "state_fips", "year"),
+    )
+
+
 # Database connection setup
 def get_database_url() -> str:
     """Get database URL from settings."""
