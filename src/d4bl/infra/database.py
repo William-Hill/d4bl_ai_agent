@@ -604,29 +604,28 @@ class CensusDemographics(Base):
 
 
 class CdcMortality(Base):
-    """CDC WONDER mortality data by race and cause of death."""
+    """Mortality data from CDC WONDER / NCHS via SODA API."""
     __tablename__ = "cdc_mortality"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    county_fips = Column(String(5), nullable=False, index=True)
-    state_fips = Column(String(2), nullable=False, index=True)
-    state_name = Column(String(50), nullable=True)
-    county_name = Column(String(200), nullable=True)
+    geo_id = Column(String(20), nullable=False)
+    geography_type = Column(String(10), nullable=False)
+    state_fips = Column(String(2), nullable=True)
+    state_name = Column(String(100), nullable=True)
     year = Column(Integer, nullable=False)
     cause_of_death = Column(String(200), nullable=False)
-    icd_code = Column(String(10), nullable=True)
-    race = Column(String(50), nullable=False)
-    age_group = Column(String(50), nullable=False)
+    race = Column(String(100), nullable=False, default="total")
     deaths = Column(Integer, nullable=True)
-    population = Column(Integer, nullable=True)
-    crude_rate = Column(Float, nullable=True)
     age_adjusted_rate = Column(Float, nullable=True)
     created_at = Column(DateTime, nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("county_fips", "year", "cause_of_death", "race", "age_group",
-                        name="uq_cdc_mortality_key"),
-        Index("ix_cdc_mortality_state_cause", "state_fips", "cause_of_death", "year"),
+        UniqueConstraint(
+            "geo_id", "year", "cause_of_death", "race",
+            name="uq_cdc_mortality_key",
+        ),
+        Index("ix_cdc_mortality_state_year", "state_fips", "year", "cause_of_death", "race"),
+        Index("ix_cdc_mortality_geo_type", "geography_type", "year"),
     )
 
 

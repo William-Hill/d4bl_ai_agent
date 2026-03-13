@@ -18,29 +18,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_census_demographics_key
 CREATE INDEX IF NOT EXISTS ix_census_demo_state_year
     ON census_demographics(state_fips, year);
 
--- CDC WONDER Mortality (death rates by race)
+-- CDC WONDER Mortality (state + national, via SODA API)
 CREATE TABLE IF NOT EXISTS cdc_mortality (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    county_fips VARCHAR(5) NOT NULL,
-    state_fips VARCHAR(2) NOT NULL,
-    state_name VARCHAR(50),
-    county_name VARCHAR(200),
+    geo_id VARCHAR(20) NOT NULL,
+    geography_type VARCHAR(10) NOT NULL,
+    state_fips VARCHAR(2),
+    state_name VARCHAR(100),
     year INTEGER NOT NULL,
     cause_of_death VARCHAR(200) NOT NULL,
-    icd_code VARCHAR(10),
-    race VARCHAR(50) NOT NULL,
-    age_group VARCHAR(50) NOT NULL,
+    race VARCHAR(100) NOT NULL DEFAULT 'total',
     deaths INTEGER,
-    population INTEGER,
-    crude_rate FLOAT,
-    age_adjusted_rate FLOAT,
+    age_adjusted_rate REAL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_cdc_mortality_key
-    ON cdc_mortality(county_fips, year, cause_of_death, race, age_group);
-CREATE INDEX IF NOT EXISTS ix_cdc_mortality_state_cause
-    ON cdc_mortality(state_fips, cause_of_death, year);
+    ON cdc_mortality(geo_id, year, cause_of_death, race);
+CREATE INDEX IF NOT EXISTS ix_cdc_mortality_state_year
+    ON cdc_mortality(state_fips, year, cause_of_death, race);
+CREATE INDEX IF NOT EXISTS ix_cdc_mortality_geo_type
+    ON cdc_mortality(geography_type, year);
 
 -- DOJ Bureau of Justice Statistics Incarceration
 CREATE TABLE IF NOT EXISTS bjs_incarceration (
