@@ -68,6 +68,11 @@ def get_db_connection() -> psycopg2.extensions.connection:
     return psycopg2.connect(db_url)
 
 
-def execute_batch(cur: psycopg2.extensions.cursor, sql: str, params_list: list[dict], page_size: int = BATCH_SIZE) -> None:
+def execute_batch(
+    cur: psycopg2.extensions.cursor,
+    sql: str,
+    params_list: list[dict],
+    page_size: int = BATCH_SIZE,
+) -> None:
     """Wrapper around psycopg2.extras.execute_batch."""
     psycopg2.extras.execute_batch(cur, sql, params_list, page_size=page_size)

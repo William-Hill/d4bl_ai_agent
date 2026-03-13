@@ -84,7 +84,11 @@ def main() -> int:
 
     Returns total records ingested.
     """
-    year = int(os.environ.get("USDA_FOOD_ACCESS_YEAR", "2019"))
+    try:
+        year = int(os.environ.get("USDA_FOOD_ACCESS_YEAR", "2019"))
+    except ValueError:
+        print("ERROR: USDA_FOOD_ACCESS_YEAR must be a valid integer")
+        return 0
     # NOTE: The download URL is for the 2019 atlas regardless of year setting.
     # USDA_FOOD_ACCESS_URL can override to point at a different edition.
     download_url = os.environ.get("USDA_FOOD_ACCESS_URL", USDA_DOWNLOAD_URL)

@@ -145,19 +145,22 @@ def _build_records(
 
         for metric, race_vars in METRIC_VARIABLES.items():
             for race, var_map in race_vars.items():
-                if "val" in var_map:
-                    val_idx = headers.index(var_map["val"])
-                    raw_val = row[val_idx]
-                    try:
-                        value = float(raw_val)
-                    except (ValueError, TypeError):
-                        continue
-                else:
-                    num_idx = headers.index(var_map["num"])
-                    den_idx = headers.index(var_map["den"])
-                    value = _compute_rate(row[num_idx], row[den_idx])
-                    if value is None:
-                        continue
+                try:
+                    if "val" in var_map:
+                        val_idx = headers.index(var_map["val"])
+                        raw_val = row[val_idx]
+                        try:
+                            value = float(raw_val)
+                        except (ValueError, TypeError):
+                            continue
+                    else:
+                        num_idx = headers.index(var_map["num"])
+                        den_idx = headers.index(var_map["den"])
+                        value = _compute_rate(row[num_idx], row[den_idx])
+                        if value is None:
+                            continue
+                except ValueError:
+                    continue
 
                 records.append({
                     "id": make_record_id(
@@ -209,7 +212,11 @@ def main() -> int:
 
     Returns total records ingested.
     """
-    year = int(os.environ.get("ACS_YEAR", "2022"))
+    try:
+        year = int(os.environ.get("ACS_YEAR", "2022"))
+    except ValueError:
+        print("ERROR: ACS_YEAR must be a valid integer")
+        return 0
 
     print(f"Census ACS ingestion starting (year={year})")
 
