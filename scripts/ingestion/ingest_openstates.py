@@ -160,7 +160,7 @@ def _fetch_bills_for_subject(client, api_key, jurisdiction, session_id, subject)
         params = {
             "jurisdiction": jurisdiction,
             "q": subject,
-            "per_page": 50,
+            "per_page": 20,
             "page": page,
             "apikey": api_key,
         }
