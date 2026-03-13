@@ -24,6 +24,7 @@ if _SCRIPTS_DIR not in sys.path:
 
 SOURCES = {
     "cdc": "ingest_cdc_places",
+    "cdc_mortality": "ingest_cdc_mortality",
     "census": "ingest_census_acs",
     "epa": "ingest_epa_ejscreen",
     "fbi": "ingest_fbi_ucr",
