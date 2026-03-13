@@ -12,8 +12,10 @@ Environment variables:
     USDA_FOOD_ACCESS_YEAR  - Atlas year (default: 2019)
 """
 
+import csv
 import io
 import os
+import zipfile
 
 import httpx
 
@@ -77,8 +79,14 @@ UPSERT_SQL = """
 """
 
 
-def main():
+def main() -> int:
+    """Run USDA Food Access Research Atlas ingestion.
+
+    Returns total records ingested.
+    """
     year = int(os.environ.get("USDA_FOOD_ACCESS_YEAR", "2019"))
+    # NOTE: The download URL is for the 2019 atlas regardless of year setting.
+    # USDA_FOOD_ACCESS_URL can override to point at a different edition.
     download_url = os.environ.get("USDA_FOOD_ACCESS_URL", USDA_DOWNLOAD_URL)
 
     print(f"Downloading USDA Food Access Research Atlas (year={year})")
@@ -94,9 +102,6 @@ def main():
         raw_bytes = resp.content
 
     # Handle ZIP (may contain CSV or XLSX)
-    import csv
-    import zipfile
-
     csv_text = None
     if download_url.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:

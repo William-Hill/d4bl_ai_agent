@@ -1,5 +1,7 @@
 """Shared helpers for ingestion scripts."""
 
+from __future__ import annotations
+
 import os
 import sys
 import uuid
@@ -36,7 +38,7 @@ except ImportError:
 BATCH_SIZE = 500
 
 
-def safe_float(val, default=None):
+def safe_float(val: object, default: float | None = None) -> float | None:
     """Convert to float, returning default on failure."""
     try:
         return float(val)
@@ -44,7 +46,7 @@ def safe_float(val, default=None):
         return default
 
 
-def safe_int(val, default=None):
+def safe_int(val: object, default: int | None = None) -> int | None:
     """Convert to int, returning default on failure."""
     try:
         return int(val)
@@ -57,7 +59,7 @@ def make_record_id(*parts: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, ":".join(parts)))
 
 
-def get_db_connection():
+def get_db_connection() -> psycopg2.extensions.connection:
     """Get a psycopg2 connection from DAGSTER_POSTGRES_URL env var."""
     db_url = os.environ.get("DAGSTER_POSTGRES_URL")
     if not db_url:
@@ -66,6 +68,6 @@ def get_db_connection():
     return psycopg2.connect(db_url)
 
 
-def execute_batch(cur, sql, params_list, page_size=BATCH_SIZE):
+def execute_batch(cur: psycopg2.extensions.cursor, sql: str, params_list: list[dict], page_size: int = BATCH_SIZE) -> None:
     """Wrapper around psycopg2.extras.execute_batch."""
     psycopg2.extras.execute_batch(cur, sql, params_list, page_size=page_size)

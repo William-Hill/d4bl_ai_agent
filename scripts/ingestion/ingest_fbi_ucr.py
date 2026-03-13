@@ -210,7 +210,7 @@ def main() -> int:
                         "state_name": STATE_ABBREVS[state_abbr],
                         "offense": offense,
                         "race": race,
-                        "year": int(year),
+                        "year": safe_int(year),
                         "category": "arrest",
                         "value": value,
                     })
@@ -266,6 +266,7 @@ def main() -> int:
                     continue
 
                 bias_motivation = row.get("bias_motivation", "all")
+                states_seen.add(state_abbr)
 
                 pending_batch.append({
                     "id": make_record_id(
@@ -276,7 +277,7 @@ def main() -> int:
                     "state_name": STATE_ABBREVS[state_abbr],
                     "offense": "hate-crime",
                     "race": bias_motivation,
-                    "year": int(year),
+                    "year": safe_int(year),
                     "category": "hate_crime",
                     "value": value,
                 })

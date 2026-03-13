@@ -76,7 +76,7 @@ UPSERT_SQL = """
         state_name = EXCLUDED.state_name
 """
 
-def _parse_crdc_row(row, school_year):
+def _parse_crdc_row(row: dict, school_year: str) -> list[dict]:
     """Parse a single CRDC CSV row into a list of metric records."""
     records = []
     district_id = row.get("LEA_STATE_LEAID", row.get("LEAID", ""))
@@ -99,7 +99,7 @@ def _parse_crdc_row(row, school_year):
             if col_upper.startswith(prefix):
                 suffix = col_upper[len(prefix):]
                 for race_suffix, race in _RACE_SUFFIXES.items():
-                    if race_suffix in suffix:
+                    if suffix.endswith(race_suffix):
                         matched_metric = metric
                         matched_race = race
                         break
@@ -127,7 +127,7 @@ def _parse_crdc_row(row, school_year):
     return records
 
 
-def main():
+def main() -> int:
     school_year = os.environ.get("CRDC_SCHOOL_YEAR", "2020-2021")
     download_url = os.environ.get("CRDC_DOWNLOAD_URL", CRDC_BASE_URL)
 
@@ -173,8 +173,14 @@ def main():
                 if not csv_names:
                     print("No CSV files found in CRDC ZIP archive.")
                     return 0
-                csv_text = zf.read(csv_names[0]).decode("utf-8", errors="replace")
-                print(f"Extracted {csv_names[0]} from ZIP ({len(csv_names)} CSVs total)")
+                # Prefer CSV whose name contains the school year
+                chosen = csv_names[0]
+                for name in csv_names:
+                    if school_year.replace("-", "") in name or school_year in name:
+                        chosen = name
+                        break
+                csv_text = zf.read(chosen).decode("utf-8", errors="replace")
+                print(f"Extracted {chosen} from ZIP ({len(csv_names)} CSVs total)")
         else:
             csv_text = content_bytes.decode("utf-8", errors="replace")
 

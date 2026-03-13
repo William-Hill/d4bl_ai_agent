@@ -97,7 +97,14 @@ def main() -> int:
 
     Returns total records ingested.
     """
-    year = int(os.environ.get("EPA_EJSCREEN_YEAR", "2024"))
+    try:
+        year = int(os.environ.get("EPA_EJSCREEN_YEAR", "2024"))
+    except ValueError:
+        print("ERROR: EPA_EJSCREEN_YEAR must be a valid integer")
+        return 0
+    # NOTE: The year label is written into each row but the EJScreen API
+    # always returns the latest available dataset regardless of year param.
+    # This is acceptable — each run captures a point-in-time snapshot.
 
     print(f"EPA EJScreen ingestion starting (year={year})")
 
@@ -191,6 +198,8 @@ def main() -> int:
                     "year": year,
                     "indicator": indicator_lower,
                     "raw_value": raw_float,
+                    # State-level aggregation provides only one percentile;
+                    # tract-level ingestion would populate these separately.
                     "pctile_state": pctile_float,
                     "pctile_national": pctile_float,
                     "pop": safe_int(pop),

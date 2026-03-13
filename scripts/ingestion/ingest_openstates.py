@@ -160,13 +160,14 @@ _MAX_PAGES = 10
 def _api_get(client, params):
     """GET with retry on 429 (exponential backoff, up to 3 attempts)."""
     for attempt in range(3):
-        time.sleep(2)  # base rate-limit delay
+        if attempt > 0:
+            wait = 10 * (2 ** (attempt - 1))  # 10s, 20s on retries
+            print(f"    429 rate-limited, waiting {wait}s...")
+            time.sleep(wait)
         resp = client.get(OPENSTATES_URL, params=params, timeout=60)
         if resp.status_code != 429:
+            time.sleep(2)  # rate-limit courtesy delay after success
             return resp
-        wait = 10 * (2 ** attempt)  # 10s, 20s, 40s
-        print(f"    429 rate-limited, waiting {wait}s...")
-        time.sleep(wait)
     return resp
 
 

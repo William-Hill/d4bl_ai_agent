@@ -118,10 +118,14 @@ def _build_records(
     year: int,
 ) -> list[dict]:
     """Parse API rows into upsert-ready dicts."""
-    state_col = headers.index("state")
+    try:
+        state_col = headers.index("state")
+        name_col = headers.index("NAME")
+    except ValueError as exc:
+        print(f"WARNING: Census API response missing expected column: {exc}")
+        return []
     has_county = "county" in headers
     county_col = headers.index("county") if has_county else None
-    name_col = headers.index("NAME")
 
     records = []
     for row in data_rows:

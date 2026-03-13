@@ -89,10 +89,10 @@ def _parse_date(date_raw):
         except ValueError:
             continue
 
-    return date_raw, year
+    return None, year
 
 
-def main():
+def main() -> int:
     mpv_url = os.environ.get("MPV_DATA_URL", MPV_DEFAULT_URL)
 
     conn = get_db_connection()
@@ -195,10 +195,10 @@ def main():
             # Truncate string fields to fit varchar(200) columns
             name = name[:200]
             city = city[:200]
-            state = state[:200]
-            race = race[:200]
-            gender = gender[:200]
-            armed_status = armed_status[:200]
+            state = state[:2]
+            race = race[:50]
+            gender = gender[:20]
+            armed_status = armed_status[:100]
             cause = cause[:200]
             agency = agency[:200]
 
@@ -246,6 +246,11 @@ def main():
 
     except httpx.HTTPError as exc:
         print(f"Download failed: {exc}")
+        if records_ingested > 0:
+            print(
+                f"Partial ingestion: {records_ingested} records "
+                f"from {len(states_seen)} states before failure"
+            )
         return records_ingested
     finally:
         cur.close()

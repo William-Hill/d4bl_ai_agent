@@ -12,6 +12,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -1334,21 +1335,23 @@ async def start_ingestion(
         )
 
     job_id = str(uuid4())
-    script = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-        "scripts",
-        "run_ingestion.py",
+    script = str(
+        Path(__file__).resolve().parents[3] / "scripts" / "run_ingestion.py"
     )
     cmd = [sys.executable, script, "--sources", ",".join(sources)]
+    log_dir = Path(__file__).resolve().parents[3] / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = open(log_dir / f"ingest-{job_id}.log", "w")
     proc = subprocess.Popen(
         cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
     )
     _ingestion_jobs[job_id] = {
         "process": proc,
         "sources": sources,
         "started_at": datetime.utcnow().isoformat(),
+        "log_file": log_file,
     }
     return {"status": "started", "sources": sources, "job_id": job_id}
 

@@ -89,7 +89,7 @@ UPSERT_SQL = """
 """
 
 
-def main():
+def main() -> int:
     year = int(os.environ.get("HUD_FMR_YEAR", "2024"))
 
     hud_token = os.environ.get("HUD_API_TOKEN")
@@ -131,23 +131,25 @@ def main():
                 # arrays. Each entry has FMR fields like "Efficiency",
                 # "One-Bedroom", etc. We ingest county-level records.
                 data = payload.get("data", payload)
-                counties = []
+                areas = []
+                geo_type = "county"
                 if isinstance(data, dict):
-                    counties = data.get("counties", [])
-                    if not counties:
-                        # Fallback: maybe metroareas has data
-                        counties = data.get("metroareas", [])
+                    areas = data.get("counties", [])
+                    if not areas:
+                        areas = data.get("metroareas", [])
+                        if areas:
+                            geo_type = "metro"
                 elif isinstance(data, list):
-                    counties = data
+                    areas = data
 
-                if not counties:
+                if not areas:
                     print(f"WARNING: No FMR data for {state_name}")
                     continue
 
                 states_seen.add(state_name)
 
                 batch = []
-                for area in counties:
+                for area in areas:
                     area_code = str(
                         area.get("code", area.get("fips_code", ""))
                     ).strip()
@@ -174,7 +176,7 @@ def main():
                                 indicator, "all", "all",
                             ),
                             "fips_code": area_code,
-                            "geography_type": "county",
+                            "geography_type": geo_type,
                             "geography_name": area_name,
                             "state_fips": fips_code,
                             "year": year,

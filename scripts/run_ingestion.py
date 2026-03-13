@@ -126,7 +126,23 @@ def main() -> int:
         action="store_true",
         help="Print what would run without executing.",
     )
+    parser.add_argument(
+        "--year",
+        type=str,
+        default=None,
+        help="Override data year for sources that support it "
+        "(sets ACS_YEAR, CDC_PLACES_YEAR, etc.).",
+    )
     args = parser.parse_args()
+
+    # Forward --year to source-specific env vars
+    if args.year:
+        year_vars = [
+            "ACS_YEAR", "CDC_PLACES_YEAR", "EPA_EJSCREEN_YEAR",
+            "HUD_FMR_YEAR", "USDA_FOOD_ACCESS_YEAR",
+        ]
+        for var in year_vars:
+            os.environ.setdefault(var, args.year)
 
     if args.list_sources:
         list_sources()

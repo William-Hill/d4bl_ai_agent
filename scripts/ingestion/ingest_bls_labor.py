@@ -48,7 +48,11 @@ UPSERT_SQL = """
 """
 
 
-def main():
+def main() -> int:
+    """Run BLS labor statistics ingestion.
+
+    Returns total records ingested.
+    """
     start_year = os.environ.get("BLS_START_YEAR", "2019")
     end_year = os.environ.get("BLS_END_YEAR", "2024")
     api_key = os.environ.get("BLS_API_KEY")

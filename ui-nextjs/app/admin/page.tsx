@@ -112,6 +112,7 @@ export default function AdminPage() {
   };
 
   const triggerIngestion = async (sources?: string[]) => {
+    setError(null);
     setIngestLoading(true);
     setIngestStatus(null);
     setIngestJobId(null);
@@ -226,6 +227,7 @@ export default function AdminPage() {
               <label key={s.key} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                 <input
                   type="checkbox"
+                  aria-label={`Select ${s.label} for ingestion`}
                   checked={selectedSources.has(s.key)}
                   onChange={() => toggleSource(s.key)}
                   className="accent-[#00ff32]"

@@ -83,7 +83,11 @@ UPSERT_SQL = """
 """
 
 
-def main():
+def main() -> int:
+    """Run CDC PLACES health outcomes ingestion.
+
+    Returns total records ingested.
+    """
     year = int(os.environ.get("CDC_PLACES_YEAR", "2023"))
 
     conn = get_db_connection()
