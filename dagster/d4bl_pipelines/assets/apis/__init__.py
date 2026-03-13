@@ -3,7 +3,10 @@ from d4bl_pipelines.assets.apis.cdc_mortality import (
     cdc_mortality_national_race,
     cdc_mortality_state,
 )
-from d4bl_pipelines.assets.apis.cdc_places import cdc_places_health
+from d4bl_pipelines.assets.apis.cdc_places import (
+    cdc_places_health,
+    cdc_places_tract_health,
+)
 from d4bl_pipelines.assets.apis.census_acs import (
     census_acs_county_indicators,
     census_acs_indicators,
@@ -25,6 +28,7 @@ __all__ = [
     "cdc_mortality_national_race",
     "cdc_mortality_state",
     "cdc_places_health",
+    "cdc_places_tract_health",
     "census_acs_county_indicators",
     "census_acs_indicators",
     "census_acs_tract_indicators",
