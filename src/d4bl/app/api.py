@@ -6,11 +6,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
-from uuid import UUID
+from pathlib import Path
+from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -187,6 +190,27 @@ app.add_middleware(
 )
 
 app.include_router(data_router)
+
+# ---------------------------------------------------------------------------
+# Admin ingestion: track background subprocess jobs
+# ---------------------------------------------------------------------------
+VALID_INGEST_SOURCES = frozenset(
+    ["cdc", "census", "epa", "fbi", "bls", "hud", "usda", "doe", "police", "openstates"]
+)
+
+_MAX_INGESTION_JOBS = 50
+_ingestion_jobs: dict[str, dict] = {}  # job_id -> {process, sources, started_at}
+
+
+def _evict_finished_jobs() -> None:
+    """Remove completed jobs to prevent unbounded growth."""
+    to_remove = [
+        jid for jid, entry in _ingestion_jobs.items()
+        if entry["process"].poll() is not None
+    ]
+    for jid in to_remove:
+        _ingestion_jobs.pop(jid, None)
+
 
 @app.get("/")
 async def read_root():
@@ -1282,6 +1306,82 @@ async def update_user_role(
         raise HTTPException(status_code=404, detail="User not found")
     await db.commit()
     return {"message": f"User {user_id} role updated to {request.role}"}
+
+
+# ---------------------------------------------------------------------------
+# Admin ingestion endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/admin/ingest")
+async def start_ingestion(
+    body: dict = Body(default={}),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Spawn a background ingestion subprocess (admin only)."""
+    _evict_finished_jobs()
+    if len(_ingestion_jobs) >= _MAX_INGESTION_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many ingestion jobs. Wait for running jobs to finish.",
+        )
+    sources: list[str] = body.get("sources") or sorted(VALID_INGEST_SOURCES)
+    invalid = set(sources) - VALID_INGEST_SOURCES
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid source(s): {', '.join(sorted(invalid))}. "
+            f"Valid: {', '.join(sorted(VALID_INGEST_SOURCES))}",
+        )
+
+    job_id = str(uuid4())
+    script = str(
+        Path(__file__).resolve().parents[3] / "scripts" / "run_ingestion.py"
+    )
+    cmd = [sys.executable, script, "--sources", ",".join(sources)]
+    log_dir = Path(__file__).resolve().parents[3] / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = open(log_dir / f"ingest-{job_id}.log", "w")
+    proc = subprocess.Popen(
+        cmd,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+    )
+    _ingestion_jobs[job_id] = {
+        "process": proc,
+        "sources": sources,
+        "started_at": datetime.utcnow().isoformat(),
+        "log_file": log_file,
+    }
+    return {"status": "started", "sources": sources, "job_id": job_id}
+
+
+@app.get("/api/admin/ingest/status/{job_id}")
+async def ingestion_status(
+    job_id: str,
+    user: CurrentUser = Depends(require_admin),
+):
+    """Check whether an ingestion subprocess is still running (admin only)."""
+    entry = _ingestion_jobs.get(job_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Ingestion job not found")
+
+    proc: subprocess.Popen = entry["process"]
+    returncode = proc.poll()
+    if returncode is None:
+        status = "running"
+    elif returncode == 0:
+        status = "done"
+    else:
+        status = "error"
+
+    return {
+        "job_id": job_id,
+        "status": status,
+        "sources": entry["sources"],
+        "started_at": entry["started_at"],
+        "returncode": returncode,
+    }
 
 
 if __name__ == "__main__":
