@@ -151,6 +151,19 @@ def _map_status(status_text):
 _MAX_PAGES = 10
 
 
+def _api_get(client, params):
+    """GET with retry on 429 (exponential backoff, up to 3 attempts)."""
+    for attempt in range(3):
+        time.sleep(2)  # base rate-limit delay
+        resp = client.get(OPENSTATES_URL, params=params, timeout=30)
+        if resp.status_code != 429:
+            return resp
+        wait = 5 * (2 ** attempt)  # 5s, 10s, 20s
+        print(f"    429 rate-limited, waiting {wait}s...")
+        time.sleep(wait)
+    return resp
+
+
 def _fetch_bills_for_subject(client, api_key, jurisdiction, session_id, subject):
     """Fetch bills for a given jurisdiction matching a keyword via REST API."""
     bills = []
@@ -167,16 +180,7 @@ def _fetch_bills_for_subject(client, api_key, jurisdiction, session_id, subject)
         if session_id:
             params["session"] = session_id
 
-        # Rate limit: pause between requests to avoid 429
-        time.sleep(0.5)
-
-        resp = client.get(OPENSTATES_URL, params=params, timeout=30)
-
-        # Retry once on 429 with backoff
-        if resp.status_code == 429:
-            time.sleep(5)
-            resp = client.get(OPENSTATES_URL, params=params, timeout=30)
-
+        resp = _api_get(client, params)
         resp.raise_for_status()
         data = resp.json()
 
@@ -256,6 +260,10 @@ def main():
                             "latest_action_description", ""
                         )
 
+                        # Convert empty date strings to None for SQL
+                        intro_date = bill.get("first_action_date") or None
+                        last_date = bill.get("latest_action_date") or None
+
                         batch.append({
                             "id": make_record_id(
                                 "openstates", abbrev, bill_id, sess,
@@ -271,8 +279,8 @@ def main():
                                 bill.get("subject", [])
                             ),
                             "session": sess,
-                            "introduced_date": bill.get("first_action_date"),
-                            "last_action_date": bill.get("latest_action_date"),
+                            "introduced_date": intro_date,
+                            "last_action_date": last_date,
                             "url": url,
                         })
                         state_count += 1
