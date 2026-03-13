@@ -147,16 +147,19 @@ def _map_status(status_text):
     return "other"
 
 
+# Cap pages per query to avoid over-fetching
+_MAX_PAGES = 10
+
+
 def _fetch_bills_for_subject(client, api_key, jurisdiction, session_id, subject):
-    """Fetch all pages of bills for a given jurisdiction and subject via REST API."""
+    """Fetch bills for a given jurisdiction matching a keyword via REST API."""
     bills = []
     page = 1
 
-    while True:
+    while page <= _MAX_PAGES:
         params = {
             "jurisdiction": jurisdiction,
-            "subject": subject,
-            "include": ["abstracts", "sources"],
+            "q": subject,
             "per_page": 50,
             "page": page,
             "apikey": api_key,
@@ -243,22 +246,10 @@ def main():
                             continue
                         seen_ids.add(bill_id)
 
-                        # Extract URL from sources list or openstates_url
                         url = bill.get("openstates_url")
-                        sources = bill.get("sources", [])
-                        if sources and isinstance(sources, list):
-                            url = sources[0].get("url", url)
 
                         # Session is a string in REST API
                         sess = bill.get("session", session_id or "")
-
-                        # Extract abstract from abstracts list
-                        abstracts = bill.get("abstracts", [])
-                        summary = (
-                            abstracts[0].get("abstract", "")
-                            if abstracts
-                            else ""
-                        )
 
                         # Map latest_action_description to status
                         status_text = bill.get(
@@ -274,7 +265,7 @@ def main():
                             "bill_id": bill_id,
                             "bill_number": bill.get("identifier", ""),
                             "title": bill.get("title", ""),
-                            "summary": summary,
+                            "summary": bill.get("title", ""),
                             "status": _map_status(status_text),
                             "topic_tags": json.dumps(
                                 bill.get("subject", [])
