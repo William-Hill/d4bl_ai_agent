@@ -26,16 +26,22 @@ from .helpers import (
 
 OPENSTATES_URL = "https://v3.openstates.org/bills"
 
-# D4BL focus topic tags to search for
-FOCUS_SUBJECTS = [
-    "housing",
-    "wealth",
-    "education",
-    "criminal justice",
-    "voting rights",
-    "economic development",
-    "health care",
-]
+# D4BL focus keywords — used to tag bills locally after fetch
+FOCUS_KEYWORDS = {
+    "housing": ["housing", "rent", "tenant", "landlord", "eviction",
+                 "homelessness", "affordable housing"],
+    "wealth": ["wealth", "income", "poverty", "economic inequality"],
+    "education": ["education", "school", "student", "teacher",
+                   "curriculum", "university"],
+    "criminal justice": ["criminal", "justice", "police", "prison",
+                         "incarceration", "sentencing", "bail"],
+    "voting rights": ["voting", "election", "ballot", "voter",
+                       "redistricting", "gerrymandering"],
+    "economic development": ["economic development", "jobs", "workforce",
+                              "small business", "employment"],
+    "health care": ["health", "medicaid", "medicare", "hospital",
+                     "insurance", "mental health"],
+}
 
 # Map OpenStates status strings to simplified enum
 STATUS_MAP = {
@@ -155,26 +161,36 @@ def _api_get(client, params):
     """GET with retry on 429 (exponential backoff, up to 3 attempts)."""
     for attempt in range(3):
         time.sleep(2)  # base rate-limit delay
-        resp = client.get(OPENSTATES_URL, params=params, timeout=30)
+        resp = client.get(OPENSTATES_URL, params=params, timeout=60)
         if resp.status_code != 429:
             return resp
-        wait = 5 * (2 ** attempt)  # 5s, 10s, 20s
+        wait = 10 * (2 ** attempt)  # 10s, 20s, 40s
         print(f"    429 rate-limited, waiting {wait}s...")
         time.sleep(wait)
     return resp
 
 
-def _fetch_bills_for_subject(client, api_key, jurisdiction, session_id, subject):
-    """Fetch bills for a given jurisdiction matching a keyword via REST API."""
+def _match_topics(title, subjects):
+    """Return list of matching D4BL focus topics based on bill title and subjects."""
+    text = (title + " " + " ".join(subjects)).lower()
+    matched = []
+    for topic, keywords in FOCUS_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            matched.append(topic)
+    return matched
+
+
+def _fetch_bills_for_state(client, api_key, jurisdiction, session_id):
+    """Fetch recent bills for a jurisdiction (no subject filter)."""
     bills = []
     page = 1
 
     while page <= _MAX_PAGES:
         params = {
             "jurisdiction": jurisdiction,
-            "q": subject,
             "per_page": 20,
             "page": page,
+            "sort": "updated_desc",
             "apikey": api_key,
         }
         if session_id:
@@ -219,78 +235,74 @@ def main():
 
     print(
         f"Fetching OpenStates bills for "
-        f"states={len(states)}, subjects={len(FOCUS_SUBJECTS)}"
+        f"states={len(states)}, topics={len(FOCUS_KEYWORDS)}"
     )
 
     try:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=60) as client:
             for state_slug in states:
                 abbrev, full_name = STATE_MAP.get(
                     state_slug, (state_slug.upper(), state_slug)
                 )
-                seen_ids = set()
-                state_count = 0
-                batch = []
 
-                for subject in FOCUS_SUBJECTS:
-                    try:
-                        bills = _fetch_bills_for_subject(
-                            client, api_key, full_name, session_id, subject
-                        )
-                    except Exception as exc:
-                        print(f"  {state_slug}/{subject} failed: {exc}")
+                try:
+                    all_bills = _fetch_bills_for_state(
+                        client, api_key, full_name, session_id,
+                    )
+                except Exception as exc:
+                    print(f"  {state_slug} failed: {exc}")
+                    continue
+
+                # Filter to D4BL-relevant bills and tag topics locally
+                batch = []
+                state_count = 0
+                for bill in all_bills:
+                    bill_id = bill.get("id", "")
+                    title = bill.get("title", "")
+                    subjects = bill.get("subject", [])
+
+                    matched = _match_topics(title, subjects)
+                    if not matched:
                         continue
 
-                    if bills:
-                        topics_covered.add(subject)
+                    topics_covered.update(matched)
 
-                    for bill in bills:
-                        bill_id = bill.get("id", "")
-                        if bill_id in seen_ids:
-                            continue
-                        seen_ids.add(bill_id)
+                    url = bill.get("openstates_url")
+                    sess = bill.get("session", session_id or "")
+                    status_text = bill.get(
+                        "latest_action_description", ""
+                    )
+                    intro_date = bill.get("first_action_date") or None
+                    last_date = bill.get("latest_action_date") or None
 
-                        url = bill.get("openstates_url")
+                    # Merge OpenStates subjects with matched D4BL topics
+                    all_tags = list(set(subjects + matched))
 
-                        # Session is a string in REST API
-                        sess = bill.get("session", session_id or "")
+                    batch.append({
+                        "id": make_record_id(
+                            "openstates", abbrev, bill_id, sess,
+                        ),
+                        "state": abbrev,
+                        "state_name": full_name,
+                        "bill_id": bill_id,
+                        "bill_number": bill.get("identifier", ""),
+                        "title": title,
+                        "summary": title,
+                        "status": _map_status(status_text),
+                        "topic_tags": json.dumps(all_tags),
+                        "session": sess,
+                        "introduced_date": intro_date,
+                        "last_action_date": last_date,
+                        "url": url,
+                    })
+                    state_count += 1
 
-                        # Map latest_action_description to status
-                        status_text = bill.get(
-                            "latest_action_description", ""
-                        )
-
-                        # Convert empty date strings to None for SQL
-                        intro_date = bill.get("first_action_date") or None
-                        last_date = bill.get("latest_action_date") or None
-
-                        batch.append({
-                            "id": make_record_id(
-                                "openstates", abbrev, bill_id, sess,
-                            ),
-                            "state": abbrev,
-                            "state_name": full_name,
-                            "bill_id": bill_id,
-                            "bill_number": bill.get("identifier", ""),
-                            "title": bill.get("title", ""),
-                            "summary": bill.get("title", ""),
-                            "status": _map_status(status_text),
-                            "topic_tags": json.dumps(
-                                bill.get("subject", [])
-                            ),
-                            "session": sess,
-                            "introduced_date": intro_date,
-                            "last_action_date": last_date,
-                            "url": url,
-                        })
-                        state_count += 1
-
-                        if len(batch) >= 500:
-                            execute_batch(cur, UPSERT_SQL, batch)
-                            conn.commit()
-                            records_ingested += len(batch)
-                            print(f"  Committed batch: {records_ingested} records so far")
-                            batch = []
+                    if len(batch) >= 500:
+                        execute_batch(cur, UPSERT_SQL, batch)
+                        conn.commit()
+                        records_ingested += len(batch)
+                        print(f"  Committed batch: {records_ingested} records so far")
+                        batch = []
 
                 # Flush remaining batch for this state
                 if batch:
@@ -302,7 +314,7 @@ def main():
                 if state_count > 0:
                     states_covered.append(state_slug)
 
-                print(f"  {state_slug}: {state_count} bills")
+                print(f"  {state_slug}: {state_count} D4BL-relevant bills (of {len(all_bills)} fetched)")
 
     finally:
         cur.close()
