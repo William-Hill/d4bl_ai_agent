@@ -27,12 +27,12 @@ export default function ExplorePage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const didAutoSelectMetric = useRef(false);
+  const didAutoSelectDefaults = useRef(false);
 
   /** Reset filters when switching data sources. */
   const handleSourceChange = (src: DataSourceConfig) => {
     setActiveSource(src);
-    didAutoSelectMetric.current = false;
+    didAutoSelectDefaults.current = false;
     setFilters({
       metric: '',
       race: src.hasRace ? 'total' : null,
@@ -135,14 +135,10 @@ export default function ExplorePage() {
       setChartIndicators(chartRows);
       setBills(billsData);
 
-      // Auto-select first metric and latest year if none selected
-      if (!didAutoSelectMetric.current && data.available_metrics?.length > 0) {
-        didAutoSelectMetric.current = true;
-        setFilters(prev => ({
-          ...prev,
-          metric: prev.metric || data.available_metrics[0],
-          year: prev.year ?? data.available_years?.[data.available_years.length - 1] ?? prev.year,
-        }));
+      // Auto-select first metric if none selected (year stays null = "all years")
+      if (!didAutoSelectDefaults.current && !filters.metric && data.available_metrics?.length > 0) {
+        didAutoSelectDefaults.current = true;
+        setFilters(prev => ({ ...prev, metric: data.available_metrics[0] }));
       }
     } catch (e: unknown) {
       if (signal.aborted) return;

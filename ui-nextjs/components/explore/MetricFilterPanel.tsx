@@ -171,7 +171,7 @@ export default function MetricFilterPanel({
           onChange={(e) => onChange({ ...filters, year: e.target.value ? Number(e.target.value) : null })}
           className="w-full bg-[#292929] border border-[#404040] rounded px-2 py-1.5 text-sm text-gray-300 focus:ring-2 focus:ring-offset-1"
         >
-          {filters.year === null && <option value="">All years</option>}
+          <option value="">All years</option>
           {years.map((y) => (
             <option key={y} value={y}>
               {y}
