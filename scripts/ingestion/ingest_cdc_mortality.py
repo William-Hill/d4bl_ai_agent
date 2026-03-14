@@ -7,9 +7,15 @@ Fetches mortality data from two SODA API datasets:
 Self-contained: uses psycopg2 + httpx only.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    import psycopg2.extensions
 
 from .helpers import (
     execute_batch,
@@ -48,6 +54,7 @@ RACE_MAP = {
     "Non-Hispanic Asian": "asian",
     "Non-Hispanic American Indian or Alaska Native": "native_american",
     "Other": "multiracial",
+    "All": "total",
 }
 
 STATE_UPSERT_SQL = """
@@ -77,7 +84,7 @@ NATIONAL_UPSERT_SQL = """
 """
 
 
-def _ingest_state(conn, client: httpx.Client) -> int:
+def _ingest_state(conn: psycopg2.extensions.connection, client: httpx.Client) -> int:
     """Ingest state-level leading causes of death from bi63-dtpu."""
     conn.autocommit = False
     cur = conn.cursor()
@@ -148,7 +155,7 @@ def _ingest_state(conn, client: httpx.Client) -> int:
     return count
 
 
-def _ingest_national_race(conn, client: httpx.Client) -> int:
+def _ingest_national_race(conn: psycopg2.extensions.connection, client: httpx.Client) -> int:
     """Ingest national excess deaths by race from m74n-4hbs, aggregated to annual."""
     annual_deaths: dict[tuple[int, str], float] = defaultdict(float)
     offset = 0
@@ -200,7 +207,7 @@ def _ingest_national_race(conn, client: httpx.Client) -> int:
                 ),
                 "year": year,
                 "race": race,
-                "deaths": int(total_deaths),
+                "deaths": round(total_deaths),
             })
 
         if batch:

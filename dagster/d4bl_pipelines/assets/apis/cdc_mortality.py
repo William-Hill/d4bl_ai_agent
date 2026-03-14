@@ -66,8 +66,7 @@ async def cdc_mortality_state(
 ) -> MaterializeResult:
     """Fetch state-level leading causes of death and upsert into cdc_mortality."""
     from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     db_url = context.resources.db_url
 
@@ -85,7 +84,7 @@ async def cdc_mortality_state(
         langfuse = None
 
     engine = create_async_engine(db_url, pool_size=3, max_overflow=5)
-    async_session = sessionmaker(
+    async_session = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
 
@@ -244,8 +243,7 @@ async def cdc_mortality_national_race(
     from collections import defaultdict
 
     from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     db_url = context.resources.db_url
 
@@ -263,7 +261,7 @@ async def cdc_mortality_national_race(
         langfuse = None
 
     engine = create_async_engine(db_url, pool_size=3, max_overflow=5)
-    async_session = sessionmaker(
+    async_session = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
 

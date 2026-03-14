@@ -1,6 +1,8 @@
 # dagster/tests/test_cdc_mortality_asset.py
 """Tests for CDC mortality ingestion assets."""
 
+import pytest
+
 
 def test_cdc_mortality_model_importable():
     """CdcMortality model should be importable from database module."""
@@ -75,9 +77,6 @@ def test_race_map_covers_standard_categories():
     assert "hispanic" in d4bl_races
     assert "asian" in d4bl_races
     assert "native_american" in d4bl_races
-
-
-import pytest
 
 
 @pytest.mark.integration
