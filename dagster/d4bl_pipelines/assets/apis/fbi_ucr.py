@@ -1,8 +1,9 @@
 """FBI Crime Data Explorer (UCR) ingestion asset.
 
-Fetches arrest statistics by race and hate crime incidents from the
-FBI Crime Data Explorer API.  Requires an FBI_API_KEY environment variable;
-the asset skips gracefully when the key is absent.
+Fetches arrest statistics by race and hate crime incidents
+(disaggregated by bias motivation) from the FBI Crime Data Explorer API.
+Requires an API key (FBI_API_KEY or DATA_GOV_API_KEY); skips gracefully
+when absent.
 
 BIAS NOTE: FBI UCR data is voluntarily reported by law-enforcement agencies.
 Significant underreporting exists, especially from smaller or under-resourced
@@ -92,6 +93,21 @@ FBI_OFFENSES = [
     "property-crime",
 ]
 
+# Year range for hate crime queries (API requires from/to in MM-YYYY format)
+HATE_CRIME_START_YEAR = 2015
+HATE_CRIME_END_YEAR = 2024
+
+# Category constants
+CAT_ARREST = "arrest"
+CAT_HATE_CRIME = "hate_crime"
+CAT_HATE_CRIME_CATEGORY = "hate_crime_category"
+
+# Bias sections to ingest: (API response key, offense value, category value)
+BIAS_SECTIONS = [
+    ("bias", "hate-crime", CAT_HATE_CRIME),
+    ("bias_category", "hate-crime-category", CAT_HATE_CRIME_CATEGORY),
+]
+
 
 
 
@@ -117,7 +133,7 @@ async def fbi_ucr_crime(
     from sqlalchemy.orm import sessionmaker
 
     # --- Check for API key ---
-    api_key = os.environ.get("FBI_API_KEY")
+    api_key = os.environ.get("FBI_API_KEY") or os.environ.get("DATA_GOV_API_KEY")
     if not api_key:
         context.log.warning(
             "FBI_API_KEY not set - skipping fbi_ucr_crime"
@@ -163,26 +179,36 @@ async def fbi_ucr_crime(
         async with aiohttp.ClientSession() as http_session:
             timeout = aiohttp.ClientTimeout(total=60)
 
-            # --- Arrest data by race ---
-            arrest_upsert_sql = text("""
+            # --- Shared upsert SQL (includes both race and bias_motivation) ---
+            upsert_sql = text("""
                 INSERT INTO fbi_crime_stats
                     (id, state_abbrev, state_name,
-                     offense, race, year, category,
-                     value)
+                     offense, race, bias_motivation,
+                     year, category, value)
                 VALUES
                     (CAST(:id AS UUID),
                      :state_abbrev, :state_name,
-                     :offense, :race, :year,
-                     :category, :value)
+                     :offense, :race, :bias_motivation,
+                     :year, :category, :value)
                 ON CONFLICT
-                    (state_abbrev, offense, race,
+                    (state_abbrev, offense,
+                     COALESCE(race, ''),
+                     COALESCE(bias_motivation, ''),
                      year, category)
                 DO UPDATE SET
                     value = :value,
                     state_name = :state_name
             """)
 
+            consecutive_errors = 0
             for state_abbr in STATE_ABBREVS:
+                if consecutive_errors >= 5:
+                    context.log.warning(
+                        "Skipping arrest data: API returned errors for "
+                        "5 consecutive requests (endpoint may require "
+                        "a different API key)"
+                    )
+                    break
                 for offense in FBI_OFFENSES:
                     url = (
                         f"{FBI_CDE_URL}/arrest/states/offense"
@@ -193,10 +219,16 @@ async def fbi_ucr_crime(
                         async with http_session.get(
                             url, params=params, timeout=timeout
                         ) as resp:
+                            if resp.status in (403, 503):
+                                consecutive_errors += 1
+                                if consecutive_errors >= 5:
+                                    break
+                                continue
                             if resp.status == 404:
                                 continue
                             resp.raise_for_status()
                             payload = await resp.json()
+                            consecutive_errors = 0
                     except aiohttp.ClientResponseError as exc:
                         context.log.warning(
                             f"FBI API error {state_abbr}/{offense}: "
@@ -219,18 +251,12 @@ async def fbi_ucr_crime(
 
                     async with async_session() as session:
                         for row in rows:
-                            race = row.get("race") or row.get(
-                                "key"
-                            )
+                            race = row.get("race") or row.get("key")
                             if not race:
                                 continue
 
-                            year = row.get("data_year") or row.get(
-                                "year"
-                            )
-                            value = row.get("value") or row.get(
-                                "arrest_count", 0
-                            )
+                            year = row.get("data_year") or row.get("year")
+                            value = row.get("value") or row.get("arrest_count", 0)
                             try:
                                 value = int(value)
                             except (ValueError, TypeError):
@@ -245,21 +271,20 @@ async def fbi_ucr_crime(
                             record_id = uuid.uuid5(
                                 uuid.NAMESPACE_URL,
                                 f"fbi:{state_abbr}:{offense}:"
-                                f"{race}:{year}:arrest",
+                                f"{race}:{year}:{CAT_ARREST}",
                             )
 
                             await session.execute(
-                                arrest_upsert_sql,
+                                upsert_sql,
                                 {
                                     "id": str(record_id),
                                     "state_abbrev": state_abbr,
-                                    "state_name": STATE_ABBREVS[
-                                        state_abbr
-                                    ],
+                                    "state_name": STATE_ABBREVS[state_abbr],
                                     "offense": offense,
                                     "race": race,
+                                    "bias_motivation": None,
                                     "year": int(year),
-                                    "category": "arrest",
+                                    "category": CAT_ARREST,
                                     "value": value,
                                 },
                             )
@@ -272,106 +297,85 @@ async def fbi_ucr_crime(
                         f"{len(rows)} race rows"
                     )
 
-            # --- Hate crime data by state ---
-            hate_upsert_sql = text("""
-                INSERT INTO fbi_crime_stats
-                    (id, state_abbrev, state_name,
-                     offense, race, year, category,
-                     value)
-                VALUES
-                    (CAST(:id AS UUID),
-                     :state_abbrev, :state_name,
-                     :offense, :race, :year,
-                     :category, :value)
-                ON CONFLICT
-                    (state_abbrev, offense, race,
-                     year, category)
-                DO UPDATE SET
-                    value = :value,
-                    state_name = :state_name
-            """)
-
+            # --- Hate crime data by state, per year, disaggregated by bias ---
             for state_abbr in STATE_ABBREVS:
-                url = (
-                    f"{FBI_CDE_URL}/hate-crime/state/{state_abbr}"
-                )
-                params = {"API_KEY": api_key}
-                try:
-                    async with http_session.get(
-                        url, params=params, timeout=timeout
-                    ) as resp:
-                        if resp.status == 404:
-                            continue
-                        resp.raise_for_status()
-                        payload = await resp.json()
-                except aiohttp.ClientResponseError as exc:
-                    context.log.warning(
-                        f"FBI hate-crime API error {state_abbr}: "
-                        f"{exc.status}"
+                for year in range(HATE_CRIME_START_YEAR, HATE_CRIME_END_YEAR + 1):
+                    url = (
+                        f"{FBI_CDE_URL}/hate-crime/state/{state_abbr}"
                     )
-                    continue
-                except Exception as exc:
-                    context.log.warning(
-                        f"FBI hate-crime request failed "
-                        f"{state_abbr}: {exc}"
-                    )
-                    continue
-
-                rows = payload
-                if isinstance(payload, dict):
-                    rows = payload.get("data", [])
-                if not rows:
-                    continue
-
-                async with async_session() as session:
-                    for row in rows:
-                        year = row.get("data_year") or row.get(
-                            "year"
+                    params = {
+                        "API_KEY": api_key,
+                        "from": f"01-{year}",
+                        "to": f"12-{year}",
+                    }
+                    try:
+                        async with http_session.get(
+                            url, params=params, timeout=timeout
+                        ) as resp:
+                            if resp.status == 404:
+                                continue
+                            resp.raise_for_status()
+                            payload = await resp.json()
+                    except aiohttp.ClientResponseError as exc:
+                        context.log.warning(
+                            f"FBI hate-crime API error "
+                            f"{state_abbr}/{year}: {exc.status}"
                         )
-                        value = row.get("incident_count") or row.get(
-                            "value", 0
+                        continue
+                    except Exception as exc:
+                        context.log.warning(
+                            f"FBI hate-crime request failed "
+                            f"{state_abbr}/{year}: {exc}"
                         )
-                        try:
-                            value = int(value)
-                        except (ValueError, TypeError):
-                            value = 0
+                        continue
 
-                        if year is None:
-                            continue
+                    if not isinstance(payload, dict):
+                        continue
 
-                        bias_motivation = row.get(
-                            "bias_motivation", "all"
-                        )
+                    incident_section = payload.get("incident_section", {})
+                    batch_rows: list[dict] = []
 
-                        record_id = uuid.uuid5(
-                            uuid.NAMESPACE_URL,
-                            f"fbi:{state_abbr}:hate-crime:"
-                            f"{bias_motivation}:{year}:hate_crime",
-                        )
+                    for api_key_name, offense, category in BIAS_SECTIONS:
+                        for label, count in incident_section.get(api_key_name, {}).items():
+                            try:
+                                value = int(count)
+                            except (ValueError, TypeError):
+                                value = 0
+                            if value == 0:
+                                continue
 
-                        await session.execute(
-                            hate_upsert_sql,
-                            {
+                            record_id = uuid.uuid5(
+                                uuid.NAMESPACE_URL,
+                                f"fbi:{state_abbr}:{offense}:"
+                                f"{label}:{year}:{category}",
+                            )
+
+                            batch_rows.append({
                                 "id": str(record_id),
                                 "state_abbrev": state_abbr,
-                                "state_name": STATE_ABBREVS[
-                                    state_abbr
-                                ],
-                                "offense": "hate-crime",
-                                "race": bias_motivation,
-                                "year": int(year),
-                                "category": "hate_crime",
+                                "state_name": STATE_ABBREVS[state_abbr],
+                                "offense": offense,
+                                "race": None,
+                                "bias_motivation": label,
+                                "year": year,
+                                "category": category,
                                 "value": value,
-                            },
+                            })
+
+                    if batch_rows:
+                        states_seen.add(state_abbr)
+                        async with async_session() as session:
+                            for row_params in batch_rows:
+                                await session.execute(
+                                    upsert_sql, row_params
+                                )
+                            await session.commit()
+                        hate_crime_records += len(batch_rows)
+
+                        context.log.info(
+                            f"  {state_abbr}/{year}: "
+                            f"{len(batch_rows)} bias rows"
                         )
-                        hate_crime_records += 1
-
-                    await session.commit()
-
-                context.log.info(
-                    f"  {state_abbr}/hate-crime: "
-                    f"{len(rows)} rows"
-                )
 
     finally:
         await engine.dispose()

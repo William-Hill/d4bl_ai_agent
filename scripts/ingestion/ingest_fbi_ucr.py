@@ -1,8 +1,8 @@
 """FBI Crime Data Explorer (UCR) ingestion script.
 
 Self-contained script that fetches arrest statistics by race and hate
-crime incidents from the FBI Crime Data Explorer API. Requires an
-FBI_API_KEY; skips gracefully when the key is absent.
+crime incidents (disaggregated by bias motivation) from the FBI Crime
+Data Explorer API. Requires an API key; skips gracefully when absent.
 
 BIAS NOTE: FBI UCR data is voluntarily reported by law-enforcement agencies.
 Significant underreporting exists, especially from smaller or under-resourced
@@ -10,7 +10,7 @@ departments, which can skew racial and geographic breakdowns.
 
 Env vars:
     DAGSTER_POSTGRES_URL  - PostgreSQL connection URL (required)
-    FBI_API_KEY           - FBI CDE API key (optional, skips if missing)
+    FBI_API_KEY           - FBI CDE API key (falls back to DATA_GOV_API_KEY)
 """
 
 import os
@@ -92,19 +92,33 @@ FBI_OFFENSES = [
     "property-crime",
 ]
 
+# Year range for hate crime queries (API requires from/to in MM-YYYY format)
+HATE_CRIME_START_YEAR = 2015
+HATE_CRIME_END_YEAR = 2024
+
+# Category constants
+CAT_ARREST = "arrest"
+CAT_HATE_CRIME = "hate_crime"
+CAT_HATE_CRIME_CATEGORY = "hate_crime_category"
+
+# Bias sections to ingest: (API response key, offense value, category value)
+BIAS_SECTIONS = [
+    ("bias", "hate-crime", CAT_HATE_CRIME),
+    ("bias_category", "hate-crime-category", CAT_HATE_CRIME_CATEGORY),
+]
+
 UPSERT_SQL = """
     INSERT INTO fbi_crime_stats
         (id, state_abbrev, state_name,
-         offense, race, year, category,
-         value)
+         offense, race, bias_motivation,
+         year, category, value)
     VALUES
-        (%(id)s::UUID,
-         %(state_abbrev)s, %(state_name)s,
-         %(offense)s, %(race)s, %(year)s,
-         %(category)s, %(value)s)
-    ON CONFLICT
-        (state_abbrev, offense, race,
-         year, category)
+        (%(id)s::UUID, %(state_abbrev)s, %(state_name)s,
+         %(offense)s, %(race)s, %(bias_motivation)s,
+         %(year)s, %(category)s, %(value)s)
+    ON CONFLICT (state_abbrev, offense,
+        COALESCE(race, ''), COALESCE(bias_motivation, ''),
+        year, category)
     DO UPDATE SET
         value = EXCLUDED.value,
         state_name = EXCLUDED.state_name
@@ -115,7 +129,7 @@ def main() -> int:
 
     Returns total records ingested, or 0 if API key is missing.
     """
-    api_key = os.environ.get("FBI_API_KEY")
+    api_key = os.environ.get("FBI_API_KEY") or os.environ.get("DATA_GOV_API_KEY")
     if not api_key:
         print(
             "FBI_API_KEY not set - skipping FBI UCR ingestion",
@@ -151,7 +165,15 @@ def main() -> int:
 
     try:
         # --- Arrest data by race ---
+        consecutive_errors = 0
         for state_abbr in STATE_ABBREVS:
+            if consecutive_errors >= 5:
+                print(
+                    "  Skipping arrest data: API returned errors for "
+                    "5 consecutive requests (endpoint may require "
+                    "a different API key)"
+                )
+                break
             for offense in FBI_OFFENSES:
                 url = (
                     f"{FBI_CDE_URL}/arrest/states/offense"
@@ -160,10 +182,16 @@ def main() -> int:
                 params = {"API_KEY": api_key}
                 try:
                     resp = client.get(url, params=params, timeout=60)
+                    if resp.status_code in (403, 503):
+                        consecutive_errors += 1
+                        if consecutive_errors >= 5:
+                            break
+                        continue
                     if resp.status_code == 404:
                         continue
                     resp.raise_for_status()
                     payload = resp.json()
+                    consecutive_errors = 0
                 except httpx.HTTPStatusError as exc:
                     print(
                         f"  WARNING: FBI API error "
@@ -204,14 +232,15 @@ def main() -> int:
                     pending_batch.append({
                         "id": make_record_id(
                             "fbi", state_abbr, offense,
-                            race, str(year), "arrest",
+                            race, str(year), CAT_ARREST,
                         ),
                         "state_abbrev": state_abbr,
                         "state_name": STATE_ABBREVS[state_abbr],
                         "offense": offense,
                         "race": race,
+                        "bias_motivation": None,
                         "year": safe_int(year),
-                        "category": "arrest",
+                        "category": CAT_ARREST,
                         "value": value,
                     })
 
@@ -226,66 +255,72 @@ def main() -> int:
         # Flush remaining arrest records
         arrest_records += _flush_batch()
 
-        # --- Hate crime data by state ---
+        # --- Hate crime data by state, per year, disaggregated by bias ---
         for state_abbr in STATE_ABBREVS:
-            url = f"{FBI_CDE_URL}/hate-crime/state/{state_abbr}"
-            params = {"API_KEY": api_key}
-            try:
-                resp = client.get(url, params=params, timeout=60)
-                if resp.status_code == 404:
+            for year in range(HATE_CRIME_START_YEAR, HATE_CRIME_END_YEAR + 1):
+                url = f"{FBI_CDE_URL}/hate-crime/state/{state_abbr}"
+                params = {
+                    "API_KEY": api_key,
+                    "from": f"01-{year}",
+                    "to": f"12-{year}",
+                }
+                try:
+                    resp = client.get(url, params=params, timeout=60)
+                    if resp.status_code == 404:
+                        continue
+                    resp.raise_for_status()
+                    payload = resp.json()
+                except httpx.HTTPStatusError as exc:
+                    print(
+                        f"  WARNING: FBI hate-crime API error "
+                        f"{state_abbr}/{year}: {exc.response.status_code}"
+                    )
                     continue
-                resp.raise_for_status()
-                payload = resp.json()
-            except httpx.HTTPStatusError as exc:
-                print(
-                    f"  WARNING: FBI hate-crime API error "
-                    f"{state_abbr}: {exc.response.status_code}"
-                )
-                continue
-            except Exception as exc:
-                print(
-                    f"  WARNING: FBI hate-crime request failed "
-                    f"{state_abbr}: {exc}"
-                )
-                continue
-
-            rows = payload
-            if isinstance(payload, dict):
-                rows = payload.get("data", [])
-            if not rows:
-                continue
-
-            for row in rows:
-                year = row.get("data_year") or row.get("year")
-                value = safe_int(
-                    row.get("incident_count") or row.get("value", 0),
-                    default=0,
-                )
-
-                if year is None:
+                except Exception as exc:
+                    print(
+                        f"  WARNING: FBI hate-crime request failed "
+                        f"{state_abbr}/{year}: {exc}"
+                    )
                     continue
 
-                bias_motivation = row.get("bias_motivation", "all")
-                states_seen.add(state_abbr)
+                if not isinstance(payload, dict):
+                    continue
 
-                pending_batch.append({
-                    "id": make_record_id(
-                        "fbi", state_abbr, "hate-crime",
-                        bias_motivation, str(year), "hate_crime",
-                    ),
-                    "state_abbrev": state_abbr,
-                    "state_name": STATE_ABBREVS[state_abbr],
-                    "offense": "hate-crime",
-                    "race": bias_motivation,
-                    "year": safe_int(year),
-                    "category": "hate_crime",
-                    "value": value,
-                })
+                incident_section = payload.get("incident_section", {})
+                row_count = 0
 
-            if len(pending_batch) >= 500:
-                hate_crime_records += _flush_batch()
+                for api_key_name, offense, category in BIAS_SECTIONS:
+                    for label, count in incident_section.get(api_key_name, {}).items():
+                        value = safe_int(count, default=0)
+                        if value == 0:
+                            continue
 
-            print(f"  {state_abbr}/hate-crime: {len(rows)} rows")
+                        states_seen.add(state_abbr)
+                        row_count += 1
+
+                        pending_batch.append({
+                            "id": make_record_id(
+                                "fbi", state_abbr, offense,
+                                label, str(year), category,
+                            ),
+                            "state_abbrev": state_abbr,
+                            "state_name": STATE_ABBREVS[state_abbr],
+                            "offense": offense,
+                            "race": None,
+                            "bias_motivation": label,
+                            "year": year,
+                            "category": category,
+                            "value": value,
+                        })
+
+                if len(pending_batch) >= 500:
+                    hate_crime_records += _flush_batch()
+
+                if row_count > 0:
+                    print(
+                        f"  {state_abbr}/{year}: "
+                        f"{row_count} bias rows"
+                    )
 
         # Flush remaining hate crime records
         hate_crime_records += _flush_batch()

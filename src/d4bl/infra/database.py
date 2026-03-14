@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -432,17 +433,24 @@ class FbiCrimeStat(Base):
     state_name = Column(String(50), nullable=False)
     offense = Column(String(200), nullable=False)
     category = Column(String(100), nullable=False)
-    race = Column(String(50), nullable=False)
+    race = Column(String(100), nullable=True)
     ethnicity = Column(String(50), nullable=True)
+    bias_motivation = Column(String(100), nullable=True)
     year = Column(Integer, nullable=False)
     value = Column(Float, nullable=False)
     population = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint(
-            "state_abbrev", "offense", "race", "year", "category",
-            name="uq_fbi_crime_key",
+        # Functional unique index is created in migration (handles NULLs
+        # via COALESCE); SQLAlchemy UniqueConstraint kept for reference.
+        Index(
+            "uq_fbi_crime_key",
+            "state_abbrev", "offense",
+            text("COALESCE(race, '')"),
+            text("COALESCE(bias_motivation, '')"),
+            "year", "category",
+            unique=True,
         ),
         Index("ix_fbi_crime_state_race_year", "state_abbrev", "race", "year"),
     )
