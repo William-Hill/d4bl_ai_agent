@@ -22,7 +22,7 @@ export default function ExplorePage() {
   const [filters, setFilters] = useState<ExploreFilters>({
     metric: '',
     race: 'total',
-    year: 2022,
+    year: null,
     selectedState: null,
   });
   const [loading, setLoading] = useState(false);
@@ -36,7 +36,7 @@ export default function ExplorePage() {
     setFilters({
       metric: '',
       race: src.hasRace ? 'total' : null,
-      year: 2022,
+      year: null,
       selectedState: null,
     });
     setExploreData(null);
@@ -56,10 +56,8 @@ export default function ExplorePage() {
 
       if (activeSource.key === 'census') {
         // Legacy Census endpoint returns IndicatorRow[]
-        const params = new URLSearchParams({
-          geography_type: 'state',
-          year: String(filters.year),
-        });
+        const params = new URLSearchParams({ geography_type: 'state' });
+        if (filters.year != null) params.set('year', String(filters.year));
         if (filters.metric) params.set('metric', filters.metric);
         if (filters.race) params.set('race', filters.race);
 
@@ -95,9 +93,9 @@ export default function ExplorePage() {
             const chartParams = new URLSearchParams({
               state_fips: filters.selectedState,
               metric: filters.metric || 'homeownership_rate',
-              year: String(filters.year),
               geography_type: 'state',
             });
+            if (filters.year != null) chartParams.set('year', String(filters.year));
             const chartRes = await fetch(`${API_BASE}/api/explore/indicators?${chartParams}`, {
               signal, headers: getHeaders(),
             });
@@ -108,7 +106,8 @@ export default function ExplorePage() {
         });
       } else {
         // New endpoints return ExploreResponse directly
-        const params = new URLSearchParams({ year: String(filters.year) });
+        const params = new URLSearchParams();
+        if (filters.year != null) params.set('year', String(filters.year));
         if (filters.metric) params.set(activeSource.primaryFilterKey, filters.metric);
         if (filters.race) params.set('race', filters.race);
         if (filters.selectedState) params.set('state_fips', filters.selectedState);
@@ -136,10 +135,14 @@ export default function ExplorePage() {
       setChartIndicators(chartRows);
       setBills(billsData);
 
-      // Auto-select first metric if none selected
-      if (!filters.metric && data.available_metrics?.length > 0 && !didAutoSelectMetric.current) {
+      // Auto-select first metric and latest year if none selected
+      if (!didAutoSelectMetric.current && data.available_metrics?.length > 0) {
         didAutoSelectMetric.current = true;
-        setFilters(prev => ({ ...prev, metric: data.available_metrics[0] }));
+        setFilters(prev => ({
+          ...prev,
+          metric: prev.metric || data.available_metrics[0],
+          year: prev.year ?? data.available_years?.[data.available_years.length - 1] ?? prev.year,
+        }));
       }
     } catch (e: unknown) {
       if (signal.aborted) return;

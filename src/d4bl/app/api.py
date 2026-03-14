@@ -658,8 +658,16 @@ async def get_cdc_health(
 ):
     """CDC health outcomes aggregated to state level."""
     try:
-        query = select(CdcHealthOutcome).where(
-            CdcHealthOutcome.geography_type == "state"
+        # Aggregate county/tract data up to state level
+        query = select(
+            CdcHealthOutcome.state_fips,
+            func.avg(CdcHealthOutcome.data_value).label("avg_value"),
+            CdcHealthOutcome.measure,
+            CdcHealthOutcome.year,
+        ).group_by(
+            CdcHealthOutcome.state_fips,
+            CdcHealthOutcome.measure,
+            CdcHealthOutcome.year,
         )
         if state_fips:
             query = query.where(CdcHealthOutcome.state_fips == state_fips)
@@ -670,15 +678,15 @@ async def get_cdc_health(
         query = query.order_by(CdcHealthOutcome.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
-        rows_raw = result.scalars().all()
+        rows_raw = result.mappings().all()
 
         row_dicts = [
             {
-                "state_fips": r.state_fips,
-                "state_name": r.geography_name,
-                "value": r.data_value,
-                "metric": r.measure,
-                "year": r.year,
+                "state_fips": r["state_fips"],
+                "state_name": FIPS_TO_NAME.get(r["state_fips"], r["state_fips"]),
+                "value": r["avg_value"],
+                "metric": r["measure"],
+                "year": r["year"],
                 "race": None,
             }
             for r in rows_raw
@@ -867,10 +875,18 @@ async def get_hud_fair_housing(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """HUD fair housing data filtered to state-level geography."""
+    """HUD fair housing data aggregated to state level."""
     try:
-        query = select(HudFairHousing).where(
-            HudFairHousing.geography_type == "state"
+        # Aggregate county-level data up to state level
+        query = select(
+            HudFairHousing.state_fips,
+            func.avg(HudFairHousing.value).label("avg_value"),
+            HudFairHousing.indicator,
+            HudFairHousing.year,
+        ).group_by(
+            HudFairHousing.state_fips,
+            HudFairHousing.indicator,
+            HudFairHousing.year,
         )
         if state_fips:
             query = query.where(HudFairHousing.state_fips == state_fips)
@@ -881,15 +897,15 @@ async def get_hud_fair_housing(
         query = query.order_by(HudFairHousing.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
-        rows_raw = result.scalars().all()
+        rows_raw = result.mappings().all()
 
         row_dicts = [
             {
-                "state_fips": r.state_fips,
-                "state_name": r.geography_name,
-                "value": r.value,
-                "metric": r.indicator,
-                "year": r.year,
+                "state_fips": r["state_fips"],
+                "state_name": FIPS_TO_NAME.get(r["state_fips"], r["state_fips"]),
+                "value": r["avg_value"],
+                "metric": r["indicator"],
+                "year": r["year"],
                 "race": None,
             }
             for r in rows_raw
