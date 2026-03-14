@@ -22,7 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.data_routes import router as data_router
-from d4bl.app.explore_helpers import compute_national_avg, distinct_values
+from d4bl.app.explore_helpers import (
+    FIPS_TO_STATE_NAME,
+    build_state_agg_response,
+    compute_national_avg,
+    distinct_values,
+)
 from d4bl.app.schemas import (
     EvaluationResultItem,
     ExploreResponse,
@@ -84,22 +89,8 @@ ABBREV_TO_FIPS: dict[str, str] = {v: k for k, v in {
 # Reverse lookup: FIPS -> abbreviation
 FIPS_TO_ABBREV: dict[str, str] = {v: k for k, v in ABBREV_TO_FIPS.items()}
 
-# FIPS -> full state name (for endpoints where model lacks state_name)
-FIPS_TO_NAME: dict[str, str] = {
-    "01": "Alabama", "02": "Alaska", "04": "Arizona", "05": "Arkansas",
-    "06": "California", "08": "Colorado", "09": "Connecticut", "10": "Delaware",
-    "11": "District of Columbia", "12": "Florida", "13": "Georgia", "15": "Hawaii",
-    "16": "Idaho", "17": "Illinois", "18": "Indiana", "19": "Iowa",
-    "20": "Kansas", "21": "Kentucky", "22": "Louisiana", "23": "Maine",
-    "24": "Maryland", "25": "Massachusetts", "26": "Michigan", "27": "Minnesota",
-    "28": "Mississippi", "29": "Missouri", "30": "Montana", "31": "Nebraska",
-    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey", "35": "New Mexico",
-    "36": "New York", "37": "North Carolina", "38": "North Dakota", "39": "Ohio",
-    "40": "Oklahoma", "41": "Oregon", "42": "Pennsylvania", "44": "Rhode Island",
-    "45": "South Carolina", "46": "South Dakota", "47": "Tennessee", "48": "Texas",
-    "49": "Utah", "50": "Vermont", "51": "Virginia", "53": "Washington",
-    "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
-}
+# Alias for backward compat within this file
+FIPS_TO_NAME = FIPS_TO_STATE_NAME
 
 
 def parse_job_uuid(job_id: str) -> UUID:
@@ -658,8 +649,16 @@ async def get_cdc_health(
 ):
     """CDC health outcomes aggregated to state level."""
     try:
-        query = select(CdcHealthOutcome).where(
-            CdcHealthOutcome.geography_type == "state"
+        # Aggregate county/tract data up to state level
+        query = select(
+            CdcHealthOutcome.state_fips,
+            func.avg(CdcHealthOutcome.data_value).label("avg_value"),
+            CdcHealthOutcome.measure,
+            CdcHealthOutcome.year,
+        ).group_by(
+            CdcHealthOutcome.state_fips,
+            CdcHealthOutcome.measure,
+            CdcHealthOutcome.year,
         )
         if state_fips:
             query = query.where(CdcHealthOutcome.state_fips == state_fips)
@@ -670,27 +669,9 @@ async def get_cdc_health(
         query = query.order_by(CdcHealthOutcome.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
-        rows_raw = result.scalars().all()
-
-        row_dicts = [
-            {
-                "state_fips": r.state_fips,
-                "state_name": r.geography_name,
-                "value": r.data_value,
-                "metric": r.measure,
-                "year": r.year,
-                "race": None,
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=[],
-        )
+        rows_raw = result.mappings().all()
+        response = build_state_agg_response(rows_raw, metric_key="measure")
+        return response
     except Exception:
         logger.error("Failed to fetch CDC health data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch CDC health data")
@@ -867,10 +848,18 @@ async def get_hud_fair_housing(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """HUD fair housing data filtered to state-level geography."""
+    """HUD fair housing data aggregated to state level."""
     try:
-        query = select(HudFairHousing).where(
-            HudFairHousing.geography_type == "state"
+        # Aggregate county-level data up to state level
+        query = select(
+            HudFairHousing.state_fips,
+            func.avg(HudFairHousing.value).label("avg_value"),
+            HudFairHousing.indicator,
+            HudFairHousing.year,
+        ).group_by(
+            HudFairHousing.state_fips,
+            HudFairHousing.indicator,
+            HudFairHousing.year,
         )
         if state_fips:
             query = query.where(HudFairHousing.state_fips == state_fips)
@@ -881,27 +870,9 @@ async def get_hud_fair_housing(
         query = query.order_by(HudFairHousing.state_fips).limit(max(1, min(limit, 5000)))
 
         result = await db.execute(query)
-        rows_raw = result.scalars().all()
-
-        row_dicts = [
-            {
-                "state_fips": r.state_fips,
-                "state_name": r.geography_name,
-                "value": r.value,
-                "metric": r.indicator,
-                "year": r.year,
-                "race": None,
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=[],
-        )
+        rows_raw = result.mappings().all()
+        response = build_state_agg_response(rows_raw, metric_key="indicator")
+        return response
     except Exception:
         logger.error("Failed to fetch HUD fair housing data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch HUD fair housing data")

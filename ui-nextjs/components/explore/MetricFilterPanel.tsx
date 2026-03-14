@@ -8,7 +8,7 @@ export type Race = string | null;
 export interface ExploreFilters {
   metric: string;
   race: string | null;
-  year: number;
+  year: number | null;
   selectedState: string | null;
 }
 
@@ -167,10 +167,11 @@ export default function MetricFilterPanel({
           Year
         </p>
         <select
-          value={filters.year}
-          onChange={(e) => onChange({ ...filters, year: Number(e.target.value) })}
+          value={filters.year ?? ''}
+          onChange={(e) => onChange({ ...filters, year: e.target.value ? Number(e.target.value) : null })}
           className="w-full bg-[#292929] border border-[#404040] rounded px-2 py-1.5 text-sm text-gray-300 focus:ring-2 focus:ring-offset-1"
         >
+          <option value="">All years</option>
           {years.map((y) => (
             <option key={y} value={y}>
               {y}

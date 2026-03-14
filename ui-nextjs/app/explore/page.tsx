@@ -9,7 +9,7 @@ import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
 import { IndicatorRow, PolicyBill, ExploreRow, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow } from '@/lib/explore-config';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
@@ -22,21 +22,21 @@ export default function ExplorePage() {
   const [filters, setFilters] = useState<ExploreFilters>({
     metric: '',
     race: 'total',
-    year: 2022,
+    year: null,
     selectedState: null,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const didAutoSelectMetric = useRef(false);
+  const didAutoSelectDefaults = useRef(false);
 
   /** Reset filters when switching data sources. */
   const handleSourceChange = (src: DataSourceConfig) => {
     setActiveSource(src);
-    didAutoSelectMetric.current = false;
+    didAutoSelectDefaults.current = false;
     setFilters({
       metric: '',
       race: src.hasRace ? 'total' : null,
-      year: 2022,
+      year: null,
       selectedState: null,
     });
     setExploreData(null);
@@ -56,10 +56,8 @@ export default function ExplorePage() {
 
       if (activeSource.key === 'census') {
         // Legacy Census endpoint returns IndicatorRow[]
-        const params = new URLSearchParams({
-          geography_type: 'state',
-          year: String(filters.year),
-        });
+        const params = new URLSearchParams({ geography_type: 'state' });
+        if (filters.year != null) params.set('year', String(filters.year));
         if (filters.metric) params.set('metric', filters.metric);
         if (filters.race) params.set('race', filters.race);
 
@@ -95,9 +93,9 @@ export default function ExplorePage() {
             const chartParams = new URLSearchParams({
               state_fips: filters.selectedState,
               metric: filters.metric || 'homeownership_rate',
-              year: String(filters.year),
               geography_type: 'state',
             });
+            if (filters.year != null) chartParams.set('year', String(filters.year));
             const chartRes = await fetch(`${API_BASE}/api/explore/indicators?${chartParams}`, {
               signal, headers: getHeaders(),
             });
@@ -108,7 +106,8 @@ export default function ExplorePage() {
         });
       } else {
         // New endpoints return ExploreResponse directly
-        const params = new URLSearchParams({ year: String(filters.year) });
+        const params = new URLSearchParams();
+        if (filters.year != null) params.set('year', String(filters.year));
         if (filters.metric) params.set(activeSource.primaryFilterKey, filters.metric);
         if (filters.race) params.set('race', filters.race);
         if (filters.selectedState) params.set('state_fips', filters.selectedState);
@@ -132,13 +131,23 @@ export default function ExplorePage() {
 
       const [{ data, chartRows }, billsData] = await Promise.all([dataPromise, billsPromise]);
 
-      setExploreData(data);
+      // When no year filter, collapse multi-year rows to latest per state+metric+race
+      const normalizedRows = filters.year == null ? collapseToLatestYear(data.rows) : data.rows;
+      const normalizedData: ExploreResponse = normalizedRows === data.rows ? data : {
+        ...data,
+        rows: normalizedRows,
+        national_average: normalizedRows.length
+          ? normalizedRows.reduce((s, r) => s + r.value, 0) / normalizedRows.length
+          : null,
+      };
+
+      setExploreData(normalizedData);
       setChartIndicators(chartRows);
       setBills(billsData);
 
-      // Auto-select first metric if none selected
-      if (!filters.metric && data.available_metrics?.length > 0 && !didAutoSelectMetric.current) {
-        didAutoSelectMetric.current = true;
+      // Auto-select first metric if none selected (year stays null = "all years")
+      if (!didAutoSelectDefaults.current && !filters.metric && data.available_metrics?.length > 0) {
+        didAutoSelectDefaults.current = true;
         setFilters(prev => ({ ...prev, metric: data.available_metrics[0] }));
       }
     } catch (e: unknown) {
