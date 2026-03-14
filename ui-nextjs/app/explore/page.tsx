@@ -9,7 +9,7 @@ import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
 import { IndicatorRow, PolicyBill, ExploreRow, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow } from '@/lib/explore-config';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
@@ -131,7 +131,17 @@ export default function ExplorePage() {
 
       const [{ data, chartRows }, billsData] = await Promise.all([dataPromise, billsPromise]);
 
-      setExploreData(data);
+      // When no year filter, collapse multi-year rows to latest per state+metric+race
+      const normalizedRows = filters.year == null ? collapseToLatestYear(data.rows) : data.rows;
+      const normalizedData: ExploreResponse = normalizedRows === data.rows ? data : {
+        ...data,
+        rows: normalizedRows,
+        national_average: normalizedRows.length
+          ? normalizedRows.reduce((s, r) => s + r.value, 0) / normalizedRows.length
+          : null,
+      };
+
+      setExploreData(normalizedData);
       setChartIndicators(chartRows);
       setBills(billsData);
 

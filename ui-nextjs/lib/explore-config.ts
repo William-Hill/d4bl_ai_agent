@@ -27,6 +27,17 @@ export function toIndicatorRow(r: ExploreRow): IndicatorRow {
   };
 }
 
+/** When year is null, collapse multi-year rows to the latest year per state+metric+race. */
+export function collapseToLatestYear(rows: ExploreRow[]): ExploreRow[] {
+  const byKey = new Map<string, ExploreRow>();
+  for (const row of rows) {
+    const key = `${row.state_fips}|${row.metric}|${row.race ?? ''}`;
+    const prev = byKey.get(key);
+    if (!prev || row.year > prev.year) byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
 export interface DataSourceConfig {
   key: string;
   label: string;

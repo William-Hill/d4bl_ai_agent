@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.data_routes import router as data_router
-from d4bl.app.explore_helpers import compute_national_avg, distinct_values
+from d4bl.app.explore_helpers import build_state_agg_response, compute_national_avg, distinct_values
 from d4bl.app.schemas import (
     EvaluationResultItem,
     ExploreResponse,
@@ -679,26 +679,8 @@ async def get_cdc_health(
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
-
-        row_dicts = [
-            {
-                "state_fips": r["state_fips"],
-                "state_name": FIPS_TO_NAME.get(r["state_fips"], r["state_fips"]),
-                "value": r["avg_value"],
-                "metric": r["measure"],
-                "year": r["year"],
-                "race": None,
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=[],
-        )
+        _, response = build_state_agg_response(rows_raw, metric_key="measure")
+        return response
     except Exception:
         logger.error("Failed to fetch CDC health data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch CDC health data")
@@ -898,26 +880,8 @@ async def get_hud_fair_housing(
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
-
-        row_dicts = [
-            {
-                "state_fips": r["state_fips"],
-                "state_name": FIPS_TO_NAME.get(r["state_fips"], r["state_fips"]),
-                "value": r["avg_value"],
-                "metric": r["indicator"],
-                "year": r["year"],
-                "race": None,
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=[],
-        )
+        _, response = build_state_agg_response(rows_raw, metric_key="indicator")
+        return response
     except Exception:
         logger.error("Failed to fetch HUD fair housing data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch HUD fair housing data")
