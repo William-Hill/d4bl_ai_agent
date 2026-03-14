@@ -46,6 +46,7 @@ RACE_MAP = {
     "Non-Hispanic Asian": "asian",
     "Non-Hispanic American Indian or Alaska Native": "native_american",
     "Other": "multiracial",
+    "All": "total",
 }
 
 
@@ -345,7 +346,7 @@ async def cdc_mortality_national_race(
                     "id": str(record_id),
                     "year": year,
                     "race": race,
-                    "deaths": int(total_deaths),
+                    "deaths": round(total_deaths),
                 })
                 records_ingested += 1
                 years_seen.add(year)

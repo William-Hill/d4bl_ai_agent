@@ -243,4 +243,49 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Ingest CDC WONDER mortality data into cdc_mortality table.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would run without executing.",
+    )
+    parser.add_argument(
+        "--state", action="store_true", help="Ingest state-level data only.",
+    )
+    parser.add_argument(
+        "--national", action="store_true", help="Ingest national race data only.",
+    )
+    args = parser.parse_args()
+
+    if args.dry_run:
+        sources = []
+        if not args.national:
+            sources.append("state-level leading causes of death (bi63-dtpu)")
+        if not args.state:
+            sources.append("national race-disaggregated excess deaths (m74n-4hbs)")
+        print("Dry run — would ingest:")
+        for s in sources:
+            print(f"  - {s}")
+        raise SystemExit(0)
+
+    # Filter to specific source if requested
+    if args.state or args.national:
+        conn = get_db_connection()
+        try:
+            with httpx.Client(timeout=120) as client:
+                total = 0
+                if args.state:
+                    print("Ingesting state-level leading causes of death...")
+                    total += _ingest_state(conn, client)
+                if args.national:
+                    print("Ingesting national race-disaggregated excess deaths...")
+                    total += _ingest_national_race(conn, client)
+        finally:
+            conn.close()
+        print(f"Total: {total} records ingested.")
+    else:
+        main()
