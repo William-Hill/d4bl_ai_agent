@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
+
+if TYPE_CHECKING:
+    from d4bl.app.schemas import ExploreResponse
 
 
 def compute_national_avg(rows: Sequence[dict[str, Any]]) -> float | None:
@@ -18,7 +21,7 @@ def distinct_values(rows: Sequence[dict[str, Any]], key: str) -> list[Any]:
     return sorted({r[key] for r in rows if r.get(key) is not None})
 
 
-# FIPS -> full state name (shared lookup for aggregation endpoints)
+# Canonical FIPS → full state name mapping (imported by api.py as well)
 FIPS_TO_STATE_NAME: dict[str, str] = {
     "01": "Alabama", "02": "Alaska", "04": "Arizona", "05": "Arkansas",
     "06": "California", "08": "Colorado", "09": "Connecticut", "10": "Delaware",
