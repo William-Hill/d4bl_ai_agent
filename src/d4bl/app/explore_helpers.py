@@ -39,11 +39,11 @@ FIPS_TO_STATE_NAME: dict[str, str] = {
 def build_state_agg_response(
     rows_raw: Sequence[dict[str, Any]],
     metric_key: str,
-) -> tuple[list[dict[str, Any]], "ExploreResponse"]:
+) -> "ExploreResponse":
     """Build ExploreResponse from state-aggregated query mappings.
 
-    Returns (row_dicts, ExploreResponse) for endpoints that aggregate
-    sub-state data to state level via AVG/GROUP BY.
+    Returns ExploreResponse for endpoints that aggregate sub-state data
+    to state level via AVG/GROUP BY.
     """
     from d4bl.app.schemas import ExploreResponse, ExploreRow
 
@@ -58,11 +58,10 @@ def build_state_agg_response(
         }
         for r in rows_raw
     ]
-    response = ExploreResponse(
+    return ExploreResponse(
         rows=[ExploreRow(**d) for d in row_dicts],
         national_average=compute_national_avg(row_dicts),
         available_metrics=distinct_values(row_dicts, "metric"),
         available_years=distinct_values(row_dicts, "year"),
         available_races=[],
     )
-    return row_dicts, response

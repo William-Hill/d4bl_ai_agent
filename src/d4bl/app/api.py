@@ -679,7 +679,7 @@ async def get_cdc_health(
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
-        _, response = build_state_agg_response(rows_raw, metric_key="measure")
+        response = build_state_agg_response(rows_raw, metric_key="measure")
         return response
     except Exception:
         logger.error("Failed to fetch CDC health data", exc_info=True)
@@ -880,7 +880,7 @@ async def get_hud_fair_housing(
 
         result = await db.execute(query)
         rows_raw = result.mappings().all()
-        _, response = build_state_agg_response(rows_raw, metric_key="indicator")
+        response = build_state_agg_response(rows_raw, metric_key="indicator")
         return response
     except Exception:
         logger.error("Failed to fetch HUD fair housing data", exc_info=True)
