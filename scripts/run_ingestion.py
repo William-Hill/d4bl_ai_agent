@@ -26,6 +26,7 @@ SOURCES = {
     "cdc": "ingest_cdc_places",
     "cdc_mortality": "ingest_cdc_mortality",
     "census": "ingest_census_acs",
+    "census_decennial": "ingest_census_demographics",
     "epa": "ingest_epa_ejscreen",
     "fbi": "ingest_fbi_ucr",
     "bls": "ingest_bls_labor",
@@ -141,6 +142,7 @@ def main() -> int:
         year_vars = [
             "ACS_YEAR", "CDC_PLACES_YEAR", "EPA_EJSCREEN_YEAR",
             "HUD_FMR_YEAR", "USDA_FOOD_ACCESS_YEAR",
+            "CENSUS_DECENNIAL_YEAR",
         ]
         for var in year_vars:
             os.environ.setdefault(var, args.year)
