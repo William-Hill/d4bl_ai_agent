@@ -120,16 +120,10 @@ class TestCdcHealthEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
-        mock_row = MagicMock()
-        mock_row.state_fips = "28"
-        mock_row.geography_name = "Mississippi"
-        mock_row.data_value = 12.5
-        mock_row.measure = "Asthma"
-        mock_row.year = 2022
-        mock_row.geography_type = "state"
-
         mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_row]
+        mock_result.mappings.return_value.all.return_value = [
+            {"state_fips": "28", "avg_value": 12.5, "measure": "Asthma", "year": 2022}
+        ]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -288,16 +282,10 @@ class TestHudEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
-        mock_row = MagicMock()
-        mock_row.state_fips = "28"
-        mock_row.geography_name = "Mississippi"
-        mock_row.value = 0.45
-        mock_row.indicator = "Dissimilarity Index"
-        mock_row.year = 2020
-        mock_row.geography_type = "state"
-
         mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_row]
+        mock_result.mappings.return_value.all.return_value = [
+            {"state_fips": "28", "avg_value": 0.45, "indicator": "Dissimilarity Index", "year": 2020}
+        ]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
