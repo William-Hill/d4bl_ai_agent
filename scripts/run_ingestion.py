@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import importlib
+import logging
 import os
 import sys
 import time
@@ -177,6 +178,30 @@ def main() -> int:
         results.append((name, records, duration, status))
 
     print_summary(results)
+
+    # Run state-level aggregation for sources that completed successfully.
+    AGGREGATION_SOURCES = {"epa", "usda", "census_decennial", "doe"}
+    completed_sources = [
+        name
+        for name, _, _, status in results
+        if status == "ok" and name in AGGREGATION_SOURCES
+    ]
+    if completed_sources:
+        agg_logger = logging.getLogger("aggregate_state_summaries")
+        agg_logger.info(
+            "Running state-level aggregation for: %s", completed_sources
+        )
+        print(
+            f"\nRunning state-level aggregation for: "
+            f"{', '.join(completed_sources)}"
+        )
+        try:
+            from ingestion.aggregate_state_summaries import run_aggregation
+
+            run_aggregation(completed_sources)
+            print("State-level aggregation complete.")
+        except Exception as exc:
+            print(f"State-level aggregation FAILED: {exc}")
 
     has_failures = any(status != "ok" for _, _, _, status in results)
     return 1 if has_failures else 0

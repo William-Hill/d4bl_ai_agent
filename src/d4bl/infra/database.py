@@ -846,3 +846,7 @@ async def close_db():
     if engine:
         await engine.dispose()
 
+
+# Import StateSummary so it is registered with Base.metadata
+from d4bl.infra.state_summary import StateSummary  # noqa: E402, F401
+
