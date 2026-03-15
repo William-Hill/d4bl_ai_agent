@@ -10,7 +10,7 @@ interface Props {
 export default function DataSourceTabs({ activeKey, onSelect }: Props) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-thin">
-      {DATA_SOURCES.map((src) => {
+      {DATA_SOURCES.filter((src) => src.hasData).map((src) => {
         const isActive = src.key === activeKey;
         return (
           <button
