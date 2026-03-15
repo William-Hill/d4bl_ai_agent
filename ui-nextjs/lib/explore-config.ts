@@ -199,7 +199,7 @@ export const DATA_SOURCES: DataSourceConfig[] = [
 ];
 
 /** Metric descriptions keyed by source key + metric value. Used for tooltips. */
-export const METRIC_DESCRIPTIONS: Record<string, Record<string, string>> = {
+export const METRIC_DESCRIPTIONS: Partial<Record<string, Record<string, string>>> = {
   census: {
     homeownership_rate: "Percentage of occupied housing units that are owner-occupied",
     median_household_income: "Median annual household income in inflation-adjusted dollars",
