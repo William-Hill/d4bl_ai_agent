@@ -86,7 +86,7 @@ export default function SourceDetailPage() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setTriggerResult(`Run triggered: ${data.run_id}`);
+      setTriggerResult(`Run triggered: ${data.ingestion_run_id}`);
       // Refresh runs list
       fetchRuns();
     } catch (e: unknown) {
