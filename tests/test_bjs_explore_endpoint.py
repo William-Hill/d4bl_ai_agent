@@ -1,7 +1,5 @@
 """Smoke test for the BJS explore endpoint registration."""
 
-import pytest
-
 
 def test_bjs_endpoint_exists():
     """Verify the BJS explore endpoint is registered on the app."""
@@ -13,7 +11,6 @@ def test_bjs_endpoint_exists():
 
 def test_bjs_frontend_config():
     """Verify BJS is in the expected frontend config shape."""
-    import json
     from pathlib import Path
 
     config_path = Path(__file__).parent.parent / "ui-nextjs" / "lib" / "explore-config.ts"

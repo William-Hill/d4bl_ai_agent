@@ -282,9 +282,9 @@ def parse_table5_rates(reader: Any, data_year: int) -> list[dict[str, Any]]:
 def parse_table6_rates(reader: Any, data_year: int) -> list[dict[str, Any]]:
     """Parse BJS Table 6: imprisonment rates adults (national).
 
-    Returns records with metric='imprisonment_rate_adults'.
+    Returns records with metric='imprisonment_rate_adult'.
     """
-    return _parse_national_table(reader, "imprisonment_rate_adults")
+    return _parse_national_table(reader, "imprisonment_rate_adult")
 
 
 def parse_appendix_table1(reader: Any, data_year: int) -> list[dict[str, Any]]:
