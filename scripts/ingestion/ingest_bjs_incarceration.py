@@ -39,27 +39,33 @@ ON CONFLICT (state_abbrev, year, facility_type, metric, race, gender)
 DO UPDATE SET value = EXCLUDED.value, state_name = EXCLUDED.state_name
 """
 
-# Table 8 column mapping: RAW column index -> (metric, year)
-ADMISSIONS_MAP_2023 = {
-    2: ("admissions_total", 2022),
-    3: ("admissions_total", 2023),
-    7: ("admissions_new_court_commitment", 2022),
-    8: ("admissions_new_court_commitment", 2023),
-    9: ("admissions_supervision_violations", 2022),
-    10: ("admissions_supervision_violations", 2023),
-}
 
-# Table 9 column mapping: RAW column index -> (metric, year)
-RELEASES_MAP_2023 = {
-    2: ("releases_total", 2022),
-    3: ("releases_total", 2023),
-    7: ("releases_unconditional", 2022),
-    8: ("releases_unconditional", 2023),
-    9: ("releases_conditional", 2022),
-    10: ("releases_conditional", 2023),
-    11: ("releases_deaths", 2022),
-    12: ("releases_deaths", 2023),
-}
+def _build_admissions_map(data_year: int) -> dict[int, tuple[str, int]]:
+    """Build Table 8 column mapping: RAW column index -> (metric, year)."""
+    prev = data_year - 1
+    return {
+        2: ("admissions_total", prev),
+        3: ("admissions_total", data_year),
+        7: ("admissions_new_court_commitment", prev),
+        8: ("admissions_new_court_commitment", data_year),
+        9: ("admissions_supervision_violations", prev),
+        10: ("admissions_supervision_violations", data_year),
+    }
+
+
+def _build_releases_map(data_year: int) -> dict[int, tuple[str, int]]:
+    """Build Table 9 column mapping: RAW column index -> (metric, year)."""
+    prev = data_year - 1
+    return {
+        2: ("releases_total", prev),
+        3: ("releases_total", data_year),
+        7: ("releases_unconditional", prev),
+        8: ("releases_unconditional", data_year),
+        9: ("releases_conditional", prev),
+        10: ("releases_conditional", data_year),
+        11: ("releases_deaths", prev),
+        12: ("releases_deaths", data_year),
+    }
 
 
 def _download_zip(url: str, dest: str) -> None:
@@ -67,13 +73,10 @@ def _download_zip(url: str, dest: str) -> None:
     print(f"  Downloading {url} ...")
     resp = httpx.get(url, follow_redirects=True, timeout=60.0)
     if resp.status_code != 200:
-        print(
-            f"Error: Failed to download BJS data (HTTP {resp.status_code}). "
-            f"The URL pattern may have changed for this publication year. "
-            f"Check https://bjs.ojp.gov/library/publications/list?series_filter=Prisoners",
-            file=sys.stderr,
+        raise RuntimeError(
+            f"Failed to download BJS data (HTTP {resp.status_code}). "
+            "The URL pattern may have changed for this publication year."
         )
-        sys.exit(1)
     with open(dest, "wb") as f:
         f.write(resp.content)
 
@@ -111,9 +114,8 @@ def main() -> int:
         try:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(tmpdir)
-        except zipfile.BadZipFile:
-            print("Error: Downloaded file is not a valid zip archive.", file=sys.stderr)
-            sys.exit(1)
+        except zipfile.BadZipFile as exc:
+            raise RuntimeError("Downloaded file is not a valid zip archive.") from exc
 
         # Define CSV file -> parser mapping
         parse_tasks = [
@@ -141,7 +143,7 @@ def main() -> int:
         if os.path.exists(t8_path):
             with open(t8_path, "r", encoding="utf-8", errors="replace") as f:
                 reader = csv.reader(f)
-                records = parse_admissions_releases(reader, ADMISSIONS_MAP_2023)
+                records = parse_admissions_releases(reader, _build_admissions_map(data_year))
                 print(f"  Table 8 (admissions): {len(records)} records")
                 all_records.extend(records)
         else:
@@ -152,7 +154,7 @@ def main() -> int:
         if os.path.exists(t9_path):
             with open(t9_path, "r", encoding="utf-8", errors="replace") as f:
                 reader = csv.reader(f)
-                records = parse_admissions_releases(reader, RELEASES_MAP_2023)
+                records = parse_admissions_releases(reader, _build_releases_map(data_year))
                 print(f"  Table 9 (releases): {len(records)} records")
                 all_records.extend(records)
         else:
@@ -169,4 +171,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1)

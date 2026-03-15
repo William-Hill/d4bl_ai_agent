@@ -187,7 +187,7 @@ app.include_router(data_router)
 # Admin ingestion: track background subprocess jobs
 # ---------------------------------------------------------------------------
 VALID_INGEST_SOURCES = frozenset(
-    ["cdc", "census", "epa", "fbi", "bls", "hud", "usda", "doe", "police", "openstates"]
+    ["cdc", "census", "epa", "fbi", "bls", "hud", "usda", "doe", "police", "openstates", "bjs"]
 )
 
 _MAX_INGESTION_JOBS = 50
