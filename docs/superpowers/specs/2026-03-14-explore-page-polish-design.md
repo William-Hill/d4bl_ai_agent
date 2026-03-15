@@ -27,12 +27,9 @@ Add shimmer/skeleton placeholders for each visual zone while data loads.
 **Implementation:**
 - Create a single `SkeletonBlock` utility component (rounded div with CSS shimmer animation via `@keyframes`)
 - Use it inline in the explore page's conditional rendering — no separate skeleton component per chart
-- Show skeletons when `loading && !exploreData?.rows.length` (initial load) AND on subsequent fetches (show skeletons over stale data during filter changes)
-
 **Loading state behavior:**
-- **Tab switch:** Clear data immediately, show skeletons
-- **Filter change:** Show a subtle loading overlay on existing content (semi-transparent overlay + spinner) rather than replacing with skeletons — avoids layout thrash
-- **Initial page load:** Full skeletons
+- **Initial page load / Tab switch:** `loading && !exploreData?.rows.length` → show full skeletons (data is cleared on tab switch via `handleSourceChange`)
+- **Filter change:** `loading && exploreData?.rows.length > 0` → show semi-transparent overlay + small spinner on existing content, avoiding layout thrash
 
 ### 2. Data Source Descriptions
 
@@ -44,7 +41,6 @@ interface DataSourceConfig {
   // ... existing fields
   description: string;        // 1-2 sentence source description
   sourceUrl: string;          // Link to original data source
-  methodology?: string;       // Optional brief methodology note
 }
 ```
 
@@ -104,7 +100,7 @@ When new data is ingested in the future, the `hasData` flag gets flipped to `tru
 #### 5a. Census Demographics
 
 - **Table:** `census_demographics` (788K rows — county/tract level)
-- **Key columns:** `state_fips`, `county_fips`, `geo_id`, `year`, `race`, `population`, `pct_of_total`
+- **Key columns:** `geo_id`, `geo_type`, `state_fips`, `state_name`, `county_name`, `year`, `race`, `population`, `pct_of_total`
 - **API endpoint:** `GET /api/explore/census-demographics`
   - Aggregates to state level: `SUM(population)` grouped by `state_fips, year, race`
   - Computes `pct_of_total` at state level from summed populations
@@ -117,7 +113,7 @@ When new data is ingested in the future, the `hasData` flag gets flipped to `tru
 #### 5b. CDC Mortality
 
 - **Table:** `cdc_mortality` (9.7K rows — state level)
-- **Key columns:** `state_fips`, `year`, `cause_of_death`, `race`, `deaths`, `age_adjusted_rate`, `crude_rate`
+- **Key columns:** `geo_id`, `state_fips`, `state_name`, `year`, `cause_of_death`, `race`, `deaths`, `age_adjusted_rate`
 - **API endpoint:** `GET /api/explore/cdc-mortality`
   - Already state-level; return directly with `value = age_adjusted_rate`
   - Query params: `state_fips`, `cause_of_death` (primary filter), `race`, `year`
@@ -129,13 +125,23 @@ When new data is ingested in the future, the `hasData` flag gets flipped to `tru
 - **Table:** `bjs_incarceration` (1.3K rows — state level)
 - **Key columns:** `state_abbrev`, `year`, `facility_type`, `metric`, `race`, `gender`, `value`
 - **API endpoint:** `GET /api/explore/bjs`
-  - State abbreviation → FIPS conversion needed
+  - DB stores `state_abbrev`; endpoint accepts `state_fips` and converts using an `ABBREV_TO_FIPS` mapping (invert existing `FIPS_TO_ABBREV` or add to `explore_helpers.py`)
   - Query params: `state_fips`, `metric` (primary filter), `race`, `year`
-  - Filter by `facility_type` and `gender` as secondary filters (default: all)
+  - `facility_type` and `gender` are not exposed as frontend filters in this iteration; endpoint defaults to returning all values. These can be added as secondary filters later if needed.
 - **Frontend config:** `{ key: "bjs", label: "BJS Incarceration", hasRace: true, primaryFilterKey: "metric", primaryFilterLabel: "Metric" }`
   - Accent color: `#8e44ad` (purple, distinct from BLS purple)
 
-### 6. Pagination for Large Datasets
+### 6. Response Building for New Endpoints
+
+The existing `build_state_agg_response` helper expects `r["avg_value"]` from SQL `AVG()` aggregations. The new sources need different value mappings:
+
+- **Census Demographics:** `SUM(population)` → key is `sum_value`, not `avg_value`
+- **CDC Mortality:** Direct `age_adjusted_rate` column → key is `age_adjusted_rate`
+- **BJS Incarceration:** Direct `value` column → key is `value`
+
+Each new endpoint builds its own `ExploreResponse` inline rather than using `build_state_agg_response`. Use the same pattern as existing endpoints that don't fit the helper (e.g., Census ACS indicators endpoint). Each endpoint must populate `available_races` from `distinct_values(rows, "race")` for sources with `hasRace: true`.
+
+### 7. Pagination for Large Datasets
 
 The main concern is Census Demographics (788K rows). Since all explore endpoints aggregate to state level, the actual response sizes are small (~50 rows per query). No client-side pagination is needed.
 
