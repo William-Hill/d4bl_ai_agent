@@ -186,18 +186,24 @@ class TestE2EIngestionPipeline:
         source = _make_source()
         run = _make_run(status="pending")
 
-        # First execute returns source, second returns no existing run (concurrency guard)
+        # Trigger does 4 db.execute calls:
+        # 1. source lookup, 2. FOR UPDATE lock, 3. stale run query, 4. concurrency guard
         source_result = MagicMock()
         source_result.scalar_one_or_none = MagicMock(return_value=source)
+        lock_result = MagicMock()  # FOR UPDATE result (unused)
+        stale_result = MagicMock()
+        stale_result.scalars = MagicMock(return_value=iter([]))  # no stale runs
         no_run_result = MagicMock()
         no_run_result.scalar_one_or_none = MagicMock(return_value=None)
         mock_session.execute = AsyncMock(
-            side_effect=[source_result, no_run_result]
+            side_effect=[source_result, lock_result, stale_result, no_run_result]
         )
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
-        # refresh sets run.id so TriggerResponse can read it
-        mock_session.refresh = AsyncMock()
+        async def _refresh(obj):
+            obj.id = RUN_ID
+
+        mock_session.refresh = AsyncMock(side_effect=_refresh)
 
         with patch(
             "d4bl.app.data_routes.resolve_source",
@@ -219,7 +225,7 @@ class TestE2EIngestionPipeline:
         assert resp.status_code == 202
         body = resp.json()
         assert body["status"] == "triggered"
-        assert "ingestion_run_id" in body
+        assert body["ingestion_run_id"] == str(RUN_ID)
 
     @pytest.mark.asyncio
     async def test_lineage_query(self, e2e_app):

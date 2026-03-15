@@ -355,12 +355,33 @@ async def trigger_source(
             detail=f"No ingestion script registered for source '{source.name}'",
         )
 
-    # Concurrency guard: reject if a run is already pending/running
-    existing = await db.execute(
+    # Lock the source row to serialize concurrent triggers (prevents TOCTOU)
+    await db.execute(
+        select(DataSource.id)
+        .where(DataSource.id == source_id)
+        .with_for_update()
+    )
+
+    # Mark stale runs from crashed processes as failed
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=4)
+    stale_result = await db.execute(
         select(IngestionRun).where(
             IngestionRun.data_source_id == source_id,
             IngestionRun.status.in_(["pending", "running"]),
+            IngestionRun.started_at < stale_cutoff,
         )
+    )
+    for stale_run in stale_result.scalars():
+        stale_run.status = "failed"
+        stale_run.error_detail = "Marked as failed: process likely crashed"
+        stale_run.completed_at = datetime.now(timezone.utc)
+
+    # Concurrency guard: reject if a run is already pending/running
+    existing = await db.execute(
+        select(IngestionRun.id).where(
+            IngestionRun.data_source_id == source_id,
+            IngestionRun.status.in_(["pending", "running"]),
+        ).limit(1)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
