@@ -24,10 +24,29 @@ python src/d4bl/main.py "your research question" --summary detailed
 python src/d4bl/main.py "query" --agents researcher writer  # Select specific agents
 ```
 
-### Dagster (Data Ingestion Pipelines)
+### Data Ingestion
 
 ```bash
-# Local development
+# Run all ingestion scripts
+python scripts/run_ingestion.py
+
+# Run specific sources
+python scripts/run_ingestion.py --sources cdc,census,epa
+
+# List available sources
+python scripts/run_ingestion.py --list
+
+# Dry run (preview without executing)
+python scripts/run_ingestion.py --dry-run
+
+# Override data year
+python scripts/run_ingestion.py --sources census --year 2022
+```
+
+### Dagster (Local Dev Only)
+
+```bash
+# Optional: Dagster is available for local development but is not deployed to production
 (cd dagster && dagster dev -p 3003)
 
 # Or via Docker Compose overlay (from repo root)
@@ -47,11 +66,8 @@ docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up
 docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
 docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up --build
 
-# Add Dagster pipelines
+# Add Dagster pipelines (local dev only)
 docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
-
-# Full stack
-docker compose up --build
 ```
 
 ### Frontend
@@ -70,8 +86,9 @@ python scripts/init_db.py                    # Initialize database
 python scripts/test_db_connection.py         # Test DB connection
 python scripts/test_supabase_connection.py   # Test vector store
 python scripts/run_vector_migration.py       # Run migrations
-python scripts/ingest_census_acs.py          # Ingest Census ACS indicator data
-python scripts/ingest_openstates.py          # Ingest OpenStates legislative bills
+python scripts/run_ingestion.py               # Run all ingestion scripts
+python scripts/run_ingestion.py --list       # List available sources
+python scripts/run_ingestion.py --sources cdc,census  # Run specific sources
 python scripts/run_evals.py                  # Run LLM evaluations on completed jobs
 python scripts/bootstrap_admin.py admin@example.com  # Bootstrap first admin user
 ```
@@ -91,10 +108,10 @@ User Browser → Next.js Frontend (3000)
     └─────────────────────────────────────┘
               ↓
     ┌─────────────────────────────────────┐
-    │    Dagster (Data Pipelines, 3003)   │
-    │  Assets: Census ACS, OpenStates,   │
-    │  API poller, RSS, Web scrape, MCP  │
-    │  Daemon: cron scheduling + sensors │
+    │  Ingestion Scripts (run_ingestion) │
+    │  CDC, Census, EPA, FBI, HUD, BLS, │
+    │  USDA, DOE, BJS, Police Violence, │
+    │  OpenStates                        │
     └─────────────────────────────────────┘
               ↓
     External Services:
@@ -110,7 +127,8 @@ User Browser → Next.js Frontend (3000)
 - **`src/d4bl/app/`** - FastAPI application: `api.py` (REST/WebSocket endpoints, lifespan manager), `schemas.py` (Pydantic models), `websocket_manager.py` (connection state)
 - **`src/d4bl/agents/`** - CrewAI agents: `crew.py` (8 agent definitions), `tools/crawl_tools/` (modular crawl providers)
 - **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`, `DataSource`, `IngestionRun`, `DataLineage`, `KeywordMonitor`), `vector_store.py` (Supabase pgvector)
-- **`dagster/`** - Dagster pipelines: `d4bl_pipelines/assets/` (Census ACS, OpenStates, API poller, RSS, web scrape, file upload, MCP, keyword monitors), `quality/lineage.py` (provenance recording), `resources/` (DB + Langfuse resources)
+- **`scripts/ingestion/`** - Standalone ingestion scripts: one per data source (CDC, Census ACS, Census Decennial, EPA, FBI, BLS, HUD, USDA, DOE, Police Violence, BJS), orchestrated by `scripts/run_ingestion.py`
+- **`dagster/`** - Dagster pipelines (local dev only, not deployed): `d4bl_pipelines/assets/`, `quality/lineage.py`, `resources/`
 - **`src/d4bl/query/`** - NL query engine: `parser.py` (intent extraction), `structured.py` (DB search), `fusion.py` (result merging + LLM synthesis), `engine.py` (orchestrator)
 - **`src/d4bl/evals/`** - Evaluation runner: `runner.py` (batch LLM evaluations on completed research jobs)
 - **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluators: hallucination, bias, relevance, quality)
@@ -141,7 +159,7 @@ CRAWL4AI_BASE_URL=http://crawl4ai:11235
 LANGFUSE_HOST=http://localhost:3002
 CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres
-DAGSTER_GRAPHQL_URL=http://localhost:3003/graphql  # Dagster webserver
+DAGSTER_GRAPHQL_URL=http://localhost:3003/graphql  # Dagster (local dev only)
 ```
 
 ## Authentication
@@ -184,7 +202,7 @@ To promote a user to admin: use the admin UI, `PATCH /api/admin/users/{id}` with
 |---------|------|
 | Frontend | 3000 |
 | Backend API | 8000 |
-| Dagster Webserver | 3003 |
+| Dagster Webserver (local dev only) | 3003 |
 | Ollama | 11434 |
 | PostgreSQL | 5432 |
 | Langfuse Web | 3001 |
