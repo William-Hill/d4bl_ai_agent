@@ -211,6 +211,26 @@ export default function ExplorePage() {
         {/* Data Source Tabs */}
         <DataSourceTabs activeKey={activeSource.key} onSelect={handleSourceChange} />
 
+        {/* Source description banner */}
+        <div className="mb-4 px-4 py-3 bg-[#1a1a1a] border border-[#404040] rounded-lg flex items-start gap-3">
+          <div
+            className="mt-0.5 w-2 h-2 rounded-full flex-shrink-0"
+            style={{ backgroundColor: activeSource.accent }}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-300">{activeSource.description}</p>
+            <a
+              href={activeSource.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs mt-1 inline-block hover:underline"
+              style={{ color: activeSource.accent }}
+            >
+              Learn more
+            </a>
+          </div>
+        </div>
+
         {error && (
           <div className="mb-4 px-4 py-3 bg-red-900/30 border border-red-800 rounded text-red-300 text-sm">
             Error loading data: {error}
