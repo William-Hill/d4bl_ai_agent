@@ -3,7 +3,7 @@
 Exercises the full API flow: create source -> trigger run -> check status ->
 query lineage -> test connection -> verify provenance in query results.
 
-Uses mocked DB and Dagster client to avoid external dependencies.
+Uses mocked DB and ingestion runner to avoid external dependencies.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def _make_run(**overrides) -> MagicMock:
     run = MagicMock(spec=IngestionRun)
     run.id = overrides.get("id", RUN_ID)
     run.data_source_id = SOURCE_ID
-    run.dagster_run_id = "dagster-abc-123"
+    run.dagster_run_id = None
     run.status = overrides.get("status", "completed")
     run.trigger_type = "manual"
     run.triggered_by = None
@@ -82,7 +82,7 @@ def _make_run(**overrides) -> MagicMock:
         return_value={
             "id": str(run.id),
             "data_source_id": str(SOURCE_ID),
-            "dagster_run_id": "dagster-abc-123",
+            "dagster_run_id": None,
             "status": run.status,
             "trigger_type": "manual",
             "triggered_by": None,
@@ -181,32 +181,38 @@ class TestE2EIngestionPipeline:
 
     @pytest.mark.asyncio
     async def test_trigger_run(self, e2e_app):
-        """Step 2: Trigger a Dagster run for a data source."""
+        """Step 2: Trigger an ingestion run for a data source."""
         app, mock_session = e2e_app
         source = _make_source()
-        run = _make_run(status="running")
+        run = _make_run(status="pending")
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=source)
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.add = MagicMock()
-        mock_session.flush = AsyncMock()
-        mock_session.commit = AsyncMock()
-        mock_session.refresh = AsyncMock()
-
-        mock_dagster = AsyncMock()
-        mock_dagster.trigger_run = AsyncMock(
-            return_value={"run_id": "dagster-xyz", "status": "QUEUED"}
+        # Trigger does 4 db.execute calls:
+        # 1. source lookup, 2. FOR UPDATE lock, 3. stale run query, 4. concurrency guard
+        source_result = MagicMock()
+        source_result.scalar_one_or_none = MagicMock(return_value=source)
+        lock_result = MagicMock()  # FOR UPDATE result (unused)
+        stale_result = MagicMock()
+        stale_result.scalars = MagicMock(return_value=iter([]))  # no stale runs
+        no_run_result = MagicMock()
+        no_run_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_session.execute = AsyncMock(
+            side_effect=[source_result, lock_result, stale_result, no_run_result]
         )
-        mock_dagster.__aenter__ = AsyncMock(return_value=mock_dagster)
-        mock_dagster.__aexit__ = AsyncMock(return_value=False)
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        async def _refresh(obj):
+            obj.id = RUN_ID
+
+        mock_session.refresh = AsyncMock(side_effect=_refresh)
 
         with patch(
-            "d4bl.app.data_routes.DagsterClient",
-            return_value=mock_dagster,
+            "d4bl.app.data_routes.resolve_source",
+            return_value="ingest_census_acs",
         ), patch(
-            "d4bl.app.data_routes.IngestionRun",
-            return_value=run,
+            "d4bl.app.data_routes.run_ingestion_task",
+            new_callable=AsyncMock,
+        ), patch(
+            "d4bl.app.data_routes.asyncio.create_task",
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
@@ -219,6 +225,7 @@ class TestE2EIngestionPipeline:
         assert resp.status_code == 202
         body = resp.json()
         assert body["status"] == "triggered"
+        assert body["ingestion_run_id"] == str(RUN_ID)
 
     @pytest.mark.asyncio
     async def test_lineage_query(self, e2e_app):

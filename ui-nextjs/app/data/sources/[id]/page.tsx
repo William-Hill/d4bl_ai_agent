@@ -84,9 +84,15 @@ export default function SourceDetailPage() {
         method: 'POST',
         headers: getHeaders(),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setTriggerResult(`Run triggered: ${data.run_id}`);
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const detail =
+          payload && typeof payload === 'object' && 'detail' in payload && typeof payload.detail === 'string'
+            ? payload.detail
+            : `HTTP ${res.status}`;
+        throw new Error(detail);
+      }
+      setTriggerResult(`Run triggered: ${(payload as { ingestion_run_id: string }).ingestion_run_id}`);
       // Refresh runs list
       fetchRuns();
     } catch (e: unknown) {

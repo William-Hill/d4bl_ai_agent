@@ -22,21 +22,20 @@ _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-SOURCES = {
-    "cdc": "ingest_cdc_places",
-    "cdc_mortality": "ingest_cdc_mortality",
-    "census": "ingest_census_acs",
-    "census_decennial": "ingest_census_demographics",
-    "epa": "ingest_epa_ejscreen",
-    "fbi": "ingest_fbi_ucr",
-    "bls": "ingest_bls_labor",
-    "hud": "ingest_hud_housing",
-    "usda": "ingest_usda_food",
-    "doe": "ingest_doe_education",
-    "police": "ingest_police_violence",
-    "openstates": "ingest_openstates",
-    "bjs": "ingest_bjs_incarceration",
-}
+# Also ensure src/ is on sys.path so we can import the shared registry.
+_SRC_DIR = os.path.join(os.path.dirname(_SCRIPTS_DIR), "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from d4bl.services.ingestion_runner import SCRIPT_REGISTRY  # noqa: E402
+
+# Deduplicate: SCRIPT_REGISTRY has aliases; keep only one key per module.
+_seen: set[str] = set()
+SOURCES: dict[str, str] = {}
+for key, mod in SCRIPT_REGISTRY.items():
+    if mod not in _seen:
+        _seen.add(mod)
+        SOURCES[key] = mod
 
 
 def list_sources() -> None:
