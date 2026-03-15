@@ -1,8 +1,8 @@
 """Data ingestion management endpoints — admin only."""
 
+import asyncio
 import logging
 import os
-import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -26,7 +26,6 @@ from d4bl.app.schemas import (
     LineageGraphNode,
     LineageGraphResponse,
     LineageRecordResponse,
-    ReloadResponse,
     RunStatusResponse,
     TriggerResponse,
 )
@@ -35,9 +34,14 @@ from d4bl.infra.database import (
     DataSource,
     IngestionRun,
     KeywordMonitor,
+    async_session_maker,
     get_db,
 )
-from d4bl.services.dagster_client import DagsterClient, DagsterClientError
+from d4bl.services.ingestion_runner import (
+    slugify,
+    resolve_source,
+    run_ingestion_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +285,7 @@ async def upload_file(
     """Accept a file upload for a data source.
 
     Validates file type and saves the file to the upload directory
-    for later processing by the Dagster file_upload asset.
+    for later processing by the file upload ingestion pipeline.
     """
     # Verify the source exists
     result = await db.execute(
@@ -321,14 +325,8 @@ async def upload_file(
 
 
 # ---------------------------------------------------------------------------
-# Dagster integration endpoints
+# Ingestion trigger
 # ---------------------------------------------------------------------------
-
-def _slugify(name: str) -> str:
-    """Convert a source name into a Dagster-compatible asset key."""
-    slug = name.lower().strip()
-    slug = re.sub(r"[^a-z0-9]+", "_", slug)
-    return slug.strip("_")
 
 
 @router.post(
@@ -341,7 +339,7 @@ async def trigger_source(
     user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Trigger a Dagster run to materialise a data source's asset."""
+    """Trigger an ingestion run for a data source."""
     result = await db.execute(
         select(DataSource).where(DataSource.id == source_id)
     )
@@ -349,9 +347,28 @@ async def trigger_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    asset_key = _slugify(source.name)
+    # Resolve the script module
+    module_name = resolve_source(source.name)
+    if not module_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No ingestion script registered for source '{source.name}'",
+        )
 
-    # Create a pending ingestion run record
+    # Concurrency guard: reject if a run is already pending/running
+    existing = await db.execute(
+        select(IngestionRun).where(
+            IngestionRun.data_source_id == source_id,
+            IngestionRun.status.in_(["pending", "running"]),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="An ingestion run is already in progress for this source",
+        )
+
+    # Create pending run
     run = IngestionRun(
         data_source_id=source.id,
         status="pending",
@@ -360,25 +377,15 @@ async def trigger_source(
         started_at=datetime.now(timezone.utc),
     )
     db.add(run)
-    await db.flush()  # get the id
-
-    try:
-        async with DagsterClient() as client:
-            dagster_result = await client.trigger_run(asset_key)
-            run.dagster_run_id = dagster_result["run_id"]
-            run.status = "running"
-    except DagsterClientError as exc:
-        logger.error("Dagster trigger failed for source %s: %s", source_id, exc)
-        run.status = "failed"
-        run.error_detail = str(exc)
-        await db.commit()
-        raise HTTPException(status_code=502, detail=str(exc))
-
     await db.commit()
     await db.refresh(run)
 
+    # Fire background task
+    asyncio.create_task(
+        run_ingestion_task(run.id, module_name, async_session_maker)
+    )
+
     return TriggerResponse(
-        run_id=run.dagster_run_id or "",
         ingestion_run_id=str(run.id),
         status="triggered",
     )
@@ -394,7 +401,6 @@ async def source_run_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the status of the latest ingestion run for a data source."""
-    # Verify source exists
     src_result = await db.execute(
         select(DataSource).where(DataSource.id == source_id)
     )
@@ -407,49 +413,14 @@ async def source_run_status(
             status_code=404, detail="No runs found for this source"
         )
 
-    dagster_status = None
-    start_time = None
-    end_time = None
-
-    if last_run.dagster_run_id:
-        try:
-            async with DagsterClient() as client:
-                status_info = await client.get_run_status(
-                    last_run.dagster_run_id
-                )
-                dagster_status = status_info["status"]
-                start_time = status_info.get("start_time")
-                end_time = status_info.get("end_time")
-        except DagsterClientError as exc:
-            logger.warning(
-                "Could not fetch Dagster status for run %s: %s",
-                last_run.dagster_run_id,
-                exc,
-            )
-
     return RunStatusResponse(
         ingestion_run_id=str(last_run.id),
-        dagster_run_id=last_run.dagster_run_id,
-        local_status=last_run.status,
-        dagster_status=dagster_status,
-        start_time=start_time,
-        end_time=end_time,
+        status=last_run.status,
+        started_at=last_run.started_at.isoformat() if last_run.started_at else None,
+        completed_at=last_run.completed_at.isoformat() if last_run.completed_at else None,
+        records_ingested=last_run.records_ingested,
+        error_detail=last_run.error_detail,
     )
-
-
-@router.post("/reload", response_model=ReloadResponse)
-async def reload_dagster(
-    user: CurrentUser = Depends(require_admin),
-):
-    """Reload the Dagster repository location."""
-    try:
-        async with DagsterClient() as client:
-            result = await client.reload_repository()
-    except DagsterClientError as exc:
-        logger.error("Dagster reload failed: %s", exc)
-        raise HTTPException(status_code=502, detail=str(exc))
-
-    return ReloadResponse(**result)
 
 
 # ---------------------------------------------------------------------------
@@ -545,7 +516,7 @@ async def get_lineage_graph(
 
     nodes = [
         LineageGraphNode(
-            asset_key=_slugify(source.name),
+            asset_key=slugify(source.name),
             source_name=source.name,
             source_type=source.source_type,
             last_run_status=run_status,
