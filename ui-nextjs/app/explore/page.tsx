@@ -13,6 +13,43 @@ import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collaps
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
+const STORAGE_KEY = 'd4bl-explore-filters';
+
+interface PersistedFilters {
+  sourceKey: string;
+  metric: string | null;
+  race: string | null;
+  year: number | null;
+  selectedState: string | null;
+}
+
+function loadPersistedFilters(): PersistedFilters | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedFilters;
+  } catch {
+    return null;
+  }
+}
+
+function persistFilters(sourceKey: string, filters: ExploreFilters): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const data: PersistedFilters = {
+      sourceKey,
+      metric: filters.metric || null,
+      race: filters.race,
+      year: filters.year,
+      selectedState: filters.selectedState,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // Quota exceeded or storage unavailable — silently ignore
+  }
+}
+
 /** Reusable shimmer skeleton block. */
 function SkeletonBlock({ className = '' }: { className?: string }) {
   return (
@@ -22,21 +59,57 @@ function SkeletonBlock({ className = '' }: { className?: string }) {
   );
 }
 
+const DEFAULT_SOURCE_KEY = 'census';
+const DEFAULT_METRIC = 'median_household_income';
+
+function resolveInitialState(): { source: DataSourceConfig; filters: ExploreFilters } {
+  const persisted = loadPersistedFilters();
+  const defaultSource =
+    DATA_SOURCES.find(s => s.key === DEFAULT_SOURCE_KEY) ?? DATA_SOURCES[0];
+
+  if (persisted) {
+    const savedSource = DATA_SOURCES.find(s => s.key === persisted.sourceKey);
+    const source = savedSource ?? defaultSource;
+    return {
+      source,
+      filters: {
+        metric: persisted.metric ?? '',
+        race: persisted.race ?? (source.hasRace ? 'total' : null),
+        year: persisted.year,
+        selectedState: persisted.selectedState,
+      },
+    };
+  }
+
+  return {
+    source: defaultSource,
+    filters: {
+      metric: DEFAULT_METRIC,
+      race: 'total',
+      year: null,
+      selectedState: null,
+    },
+  };
+}
+
 export default function ExplorePage() {
   const { session, getHeaders } = useAuthHeaders();
-  const [activeSource, setActiveSource] = useState<DataSourceConfig>(DATA_SOURCES[0]);
+
+  const [activeSource, setActiveSource] = useState<DataSourceConfig>(() => resolveInitialState().source);
   const [exploreData, setExploreData] = useState<ExploreResponse | null>(null);
   const [bills, setBills] = useState<PolicyBill[]>([]);
 
-  const [filters, setFilters] = useState<ExploreFilters>({
-    metric: '',
-    race: 'total',
-    year: null,
-    selectedState: null,
-  });
+  const [filters, setFilters] = useState<ExploreFilters>(() => resolveInitialState().filters);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didAutoSelectDefaults = useRef(false);
+  const initialized = useRef(false);
+
+  /** Persist filters to localStorage after initialization. */
+  useEffect(() => {
+    if (!initialized.current) return;
+    persistFilters(activeSource.key, filters);
+  }, [activeSource.key, filters]);
 
   /** Reset filters when switching data sources. */
   const handleSourceChange = (src: DataSourceConfig) => {
@@ -96,6 +169,9 @@ export default function ExplorePage() {
 
       setExploreData(normalizedData);
       setBills(billsData);
+
+      // Mark as initialized after first successful data load so persistence kicks in
+      initialized.current = true;
 
       // Auto-select first metric if none selected (year stays null = "all years")
       if (!didAutoSelectDefaults.current && !filters.metric && data.available_metrics?.length > 0) {
