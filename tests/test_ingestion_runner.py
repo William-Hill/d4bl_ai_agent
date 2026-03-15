@@ -139,4 +139,8 @@ class TestRunIngestionTask:
         """If the IngestionRun row is not found, task exits gracefully."""
         factory, session = _make_mock_session_factory(None)
 
-        await run_ingestion_task(uuid.uuid4(), "ingest_test", factory)
+        with patch("d4bl.services.ingestion_runner.logger") as mock_logger:
+            await run_ingestion_task(uuid.uuid4(), "ingest_test", factory)
+
+        session.commit.assert_not_awaited()
+        mock_logger.error.assert_called_once()

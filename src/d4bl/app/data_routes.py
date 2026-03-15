@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import d4bl.infra.database as _db_mod
 from d4bl.app.auth import CurrentUser, require_admin
 from d4bl.app.schemas import (
     ConnectionTestResponse,
@@ -34,7 +35,6 @@ from d4bl.infra.database import (
     DataSource,
     IngestionRun,
     KeywordMonitor,
-    async_session_maker,
     get_db,
 )
 from d4bl.services.ingestion_runner import (
@@ -384,7 +384,7 @@ async def trigger_source(
     from d4bl.app.api import _background_tasks, _log_task_exception
 
     task = asyncio.create_task(
-        run_ingestion_task(run.id, module_name, async_session_maker)
+        run_ingestion_task(run.id, module_name, _db_mod.async_session_maker)
     )
     _background_tasks.add(task)
     task.add_done_callback(_log_task_exception)

@@ -29,7 +29,13 @@ if _SRC_DIR not in sys.path:
 
 from d4bl.services.ingestion_runner import SCRIPT_REGISTRY  # noqa: E402
 
-SOURCES = SCRIPT_REGISTRY
+# Deduplicate: SCRIPT_REGISTRY has aliases; keep only one key per module.
+_seen: set[str] = set()
+SOURCES: dict[str, str] = {}
+for key, mod in SCRIPT_REGISTRY.items():
+    if mod not in _seen:
+        _seen.add(mod)
+        SOURCES[key] = mod
 
 
 def list_sources() -> None:
