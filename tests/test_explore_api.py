@@ -502,6 +502,49 @@ class TestCdcMortalityEndpoint:
         assert data["available_races"] == ["Black"]
 
 
+class TestBjsEndpoint:
+    @pytest.mark.asyncio
+    async def test_returns_200_with_explore_response(self, override_auth):
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_row = MagicMock()
+        mock_row.state_abbrev = "MS"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 573.0
+        mock_row.metric = "incarceration_rate"
+        mock_row.year = 2022
+        mock_row.race = "Black"
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_row]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/explore/bjs",
+                params={"state_fips": "28", "metric": "incarceration_rate"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["rows"]) == 1
+        assert data["rows"][0]["state_fips"] == "28"
+        assert data["rows"][0]["state_name"] == "Mississippi"
+        assert data["rows"][0]["value"] == 573.0
+        assert data["rows"][0]["metric"] == "incarceration_rate"
+        assert data["rows"][0]["race"] == "Black"
+        assert data["available_races"] == ["Black"]
+
+
 class TestAllExploreEndpointsStandardShape:
     """Verify all 8 explore endpoints return the standardized ExploreResponse shape."""
 
