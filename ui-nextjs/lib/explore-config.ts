@@ -46,6 +46,9 @@ export interface DataSourceConfig {
   hasRace: boolean;
   primaryFilterKey: string;
   primaryFilterLabel: string;
+  description: string;
+  sourceUrl: string;
+  hasData: boolean;
 }
 
 export const DATA_SOURCES: DataSourceConfig[] = [
@@ -57,6 +60,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: true,
     primaryFilterKey: "metric",
     primaryFilterLabel: "Metric",
+    description: "American Community Survey estimates for homeownership, income, and poverty rates disaggregated by race. Source: U.S. Census Bureau.",
+    sourceUrl: "https://data.census.gov/",
+    hasData: true,
   },
   {
     key: "cdc",
@@ -66,6 +72,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: false,
     primaryFilterKey: "measure",
     primaryFilterLabel: "Measure",
+    description: "County-level health outcome prevalence from the CDC PLACES dataset, covering chronic disease and health risk behaviors.",
+    sourceUrl: "https://www.cdc.gov/places/",
+    hasData: true,
   },
   {
     key: "epa",
@@ -75,6 +84,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: false,
     primaryFilterKey: "indicator",
     primaryFilterLabel: "Indicator",
+    description: "Tract-level environmental justice screening indicators from the EPA EJScreen tool.",
+    sourceUrl: "https://www.epa.gov/ejscreen",
+    hasData: false,
   },
   {
     key: "fbi",
@@ -84,6 +96,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: true,
     primaryFilterKey: "offense",
     primaryFilterLabel: "Offense",
+    description: "Arrest statistics and hate crime incidents reported to the FBI's Uniform Crime Reporting program, disaggregated by race and bias motivation.",
+    sourceUrl: "https://cde.ucr.cjis.gov/",
+    hasData: true,
   },
   {
     key: "bls",
@@ -93,6 +108,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: true,
     primaryFilterKey: "metric",
     primaryFilterLabel: "Metric",
+    description: "Monthly labor force statistics including unemployment rates disaggregated by race. Source: Bureau of Labor Statistics.",
+    sourceUrl: "https://www.bls.gov/",
+    hasData: true,
   },
   {
     key: "hud",
@@ -102,6 +120,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: false,
     primaryFilterKey: "indicator",
     primaryFilterLabel: "Indicator",
+    description: "Fair housing indicators measuring residential segregation and housing discrimination patterns. Source: HUD.",
+    sourceUrl: "https://www.huduser.gov/",
+    hasData: true,
   },
   {
     key: "usda",
@@ -111,6 +132,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: false,
     primaryFilterKey: "indicator",
     primaryFilterLabel: "Indicator",
+    description: "Food access indicators measuring proximity to grocery stores and food deserts at the census tract level. Source: USDA ERS.",
+    sourceUrl: "https://www.ers.usda.gov/data-products/food-access-research-atlas/",
+    hasData: true,
   },
   {
     key: "doe",
@@ -120,6 +144,9 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: true,
     primaryFilterKey: "metric",
     primaryFilterLabel: "Metric",
+    description: "Civil rights data on school discipline, enrollment, and staffing disaggregated by race. Source: DOE Office for Civil Rights.",
+    sourceUrl: "https://ocrdata.ed.gov/",
+    hasData: false,
   },
   {
     key: "police",
@@ -129,14 +156,83 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     hasRace: true,
     primaryFilterKey: "metric",
     primaryFilterLabel: "Metric",
+    description: "Documented incidents of police violence including use of force and fatal encounters, tracked by race and geography.",
+    sourceUrl: "https://mappingpoliceviolence.us/",
+    hasData: true,
+  },
+  {
+    key: "census-demographics",
+    label: "Census Demographics",
+    accent: "#45b7d1",
+    endpoint: "/api/explore/census-demographics",
+    hasRace: true,
+    primaryFilterKey: "metric",
+    primaryFilterLabel: "Metric",
+    description: "Decennial Census population counts by race and ethnicity at county and tract level, aggregated to state. Source: U.S. Census Bureau.",
+    sourceUrl: "https://data.census.gov/",
+    hasData: true,
+  },
+  {
+    key: "cdc-mortality",
+    label: "CDC Mortality",
+    accent: "#c0392b",
+    endpoint: "/api/explore/cdc-mortality",
+    hasRace: true,
+    primaryFilterKey: "cause_of_death",
+    primaryFilterLabel: "Cause of Death",
+    description: "Age-adjusted mortality rates by cause of death and race from the CDC WONDER database.",
+    sourceUrl: "https://wonder.cdc.gov/",
+    hasData: true,
   },
   {
     key: "bjs",
     label: "BJS Incarceration",
-    accent: "#a29bfe",
+    accent: "#8e44ad",
     endpoint: "/api/explore/bjs",
     hasRace: true,
     primaryFilterKey: "metric",
     primaryFilterLabel: "Metric",
+    description: "State and federal incarceration statistics from the Bureau of Justice Statistics, disaggregated by race and gender.",
+    sourceUrl: "https://bjs.ojp.gov/",
+    hasData: true,
   },
 ];
+
+/** Metric descriptions keyed by source key + metric value. Used for tooltips. */
+export const METRIC_DESCRIPTIONS: Partial<Record<string, Record<string, string>>> = {
+  census: {
+    homeownership_rate: "Percentage of occupied housing units that are owner-occupied",
+    median_household_income: "Median annual household income in inflation-adjusted dollars",
+    poverty_rate: "Percentage of population living below the federal poverty line",
+  },
+  cdc: {
+    DIABETES: "Prevalence of diagnosed diabetes among adults aged 18+",
+    BPHIGH: "Prevalence of high blood pressure among adults aged 18+",
+    CASTHMA: "Prevalence of current asthma among adults aged 18+",
+    OBESITY: "Prevalence of obesity (BMI >= 30) among adults aged 18+",
+    MHLTH: "Poor mental health for 14+ days in the past 30 days among adults",
+    CSMOKING: "Prevalence of current smoking among adults aged 18+",
+    CHD: "Prevalence of coronary heart disease among adults aged 18+",
+    STROKE: "Prevalence of stroke among adults aged 18+",
+    CANCER: "Prevalence of cancer (excluding skin cancer) among adults aged 18+",
+    KIDNEY: "Prevalence of chronic kidney disease among adults aged 18+",
+  },
+  fbi: {
+    "Aggravated Assault": "Attack with a weapon or causing serious bodily injury",
+    "Robbery": "Taking property by force or threat of force",
+    "Burglary": "Unlawful entry into a structure to commit a crime",
+  },
+  bls: {
+    unemployment_rate: "Percentage of the labor force that is unemployed and actively seeking work",
+    labor_force_participation_rate: "Percentage of working-age population in the labor force",
+  },
+  "census-demographics": {
+    population: "Total population count from the Decennial Census",
+    pct_of_total: "Percentage of total population for a given race/ethnicity group",
+  },
+  "cdc-mortality": {},
+  bjs: {
+    incarceration_rate: "Number of inmates per 100,000 residents",
+    total_population: "Total incarcerated population count",
+  },
+};
