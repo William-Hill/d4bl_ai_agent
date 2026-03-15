@@ -13,6 +13,15 @@ import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collaps
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
+/** Reusable shimmer skeleton block. */
+function SkeletonBlock({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`bg-[#333] rounded animate-pulse ${className}`}
+    />
+  );
+}
+
 export default function ExplorePage() {
   const { session, getHeaders } = useAuthHeaders();
   const [activeSource, setActiveSource] = useState<DataSourceConfig>(DATA_SOURCES[0]);
@@ -241,31 +250,57 @@ export default function ExplorePage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 mb-6">
           <div>
             {loading && (!exploreData || !exploreData.rows.length) ? (
-              <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg h-64 flex items-center justify-center text-gray-500 text-sm">
-                Loading map data...
+              <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 space-y-4">
+                <SkeletonBlock className="h-6 w-48" />
+                <SkeletonBlock className="h-48 w-full" />
+                <div className="flex gap-2">
+                  <SkeletonBlock className="h-4 w-20" />
+                  <SkeletonBlock className="h-4 w-24" />
+                  <SkeletonBlock className="h-4 w-16" />
+                </div>
               </div>
             ) : exploreData && exploreData.rows.length > 0 ? (
-              <StateMap
-                indicators={mapIndicators}
-                selectedStateFips={filters.selectedState}
-                onSelectState={handleSelectState}
-                accent={activeSource.accent}
-                nationalAverage={exploreData.national_average}
-              />
+              <div className="relative">
+                <StateMap
+                  indicators={mapIndicators}
+                  selectedStateFips={filters.selectedState}
+                  onSelectState={handleSelectState}
+                  accent={activeSource.accent}
+                  nationalAverage={exploreData.national_average}
+                />
+                {loading && (
+                  <div className="absolute inset-0 bg-[#292929]/60 rounded-lg flex items-center justify-center">
+                    <div className="w-6 h-6 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
             ) : (
               <EmptyDataState sourceName={activeSource.label} accent={activeSource.accent} />
             )}
           </div>
-          <MetricFilterPanel
-            filters={filters}
-            onChange={setFilters}
-            availableMetrics={exploreData?.available_metrics}
-            availableYears={exploreData?.available_years}
-            availableRaces={exploreData?.available_races}
-            primaryFilterLabel={activeSource.primaryFilterLabel}
-            accent={activeSource.accent}
-            sourceKey={activeSource.key}
-          />
+          {loading && (!exploreData || !exploreData.rows.length) ? (
+            <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-4 space-y-4">
+              <SkeletonBlock className="h-4 w-20" />
+              <SkeletonBlock className="h-3 w-full" />
+              <SkeletonBlock className="h-3 w-full" />
+              <SkeletonBlock className="h-3 w-3/4" />
+              <div className="h-px w-full bg-[#404040]" />
+              <SkeletonBlock className="h-4 w-16" />
+              <SkeletonBlock className="h-3 w-full" />
+              <SkeletonBlock className="h-3 w-full" />
+            </div>
+          ) : (
+            <MetricFilterPanel
+              filters={filters}
+              onChange={setFilters}
+              availableMetrics={exploreData?.available_metrics}
+              availableYears={exploreData?.available_years}
+              availableRaces={exploreData?.available_races}
+              primaryFilterLabel={activeSource.primaryFilterLabel}
+              accent={activeSource.accent}
+              sourceKey={activeSource.key}
+            />
+          )}
         </div>
 
         {/* Detail Chart + Policy Badge */}
