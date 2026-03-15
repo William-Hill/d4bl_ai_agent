@@ -8,6 +8,7 @@ import DataSourceTabs from '@/components/explore/DataSourceTabs';
 import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
+import MapLegend from '@/components/explore/MapLegend';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
 import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
@@ -287,6 +288,26 @@ export default function ExplorePage() {
                   accent={activeSource.accent}
                   nationalAverage={exploreData.national_average}
                 />
+                {filters.metric && (() => {
+                  const values = exploreData.rows
+                    .filter((r) => r.metric === filters.metric)
+                    .map((r) => r.value)
+                    .filter((v) => v != null);
+                  if (values.length === 0) return null;
+                  const min = Math.min(...values);
+                  const max = Math.max(...values);
+                  return (
+                    <MapLegend
+                      min={min}
+                      max={max}
+                      nationalAverage={exploreData.national_average}
+                      metric={filters.metric}
+                      colorStart="#444"
+                      colorEnd={activeSource.accent}
+                      accent={activeSource.accent}
+                    />
+                  );
+                })()}
                 {loading && (
                   <div
                     className="absolute inset-0 bg-[#292929]/60 rounded-lg flex items-center justify-center"
