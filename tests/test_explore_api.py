@@ -460,6 +460,48 @@ class TestCensusDemographicsEndpoint:
         assert data["available_years"] == [2020]
 
 
+class TestCdcMortalityEndpoint:
+    @pytest.mark.asyncio
+    async def test_returns_200_with_explore_response(self, override_auth):
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.age_adjusted_rate = 85.3
+        mock_row.cause_of_death = "Heart Disease"
+        mock_row.year = 2021
+        mock_row.race = "Black"
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_row]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/explore/cdc-mortality",
+                params={"state_fips": "28", "cause_of_death": "Heart Disease"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["rows"]) == 1
+        assert data["rows"][0]["state_fips"] == "28"
+        assert data["rows"][0]["value"] == 85.3
+        assert data["rows"][0]["metric"] == "Heart Disease"
+        assert data["rows"][0]["race"] == "Black"
+        assert data["available_races"] == ["Black"]
+
+
 class TestAllExploreEndpointsStandardShape:
     """Verify all 8 explore endpoints return the standardized ExploreResponse shape."""
 

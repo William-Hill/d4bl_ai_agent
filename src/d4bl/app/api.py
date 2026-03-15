@@ -52,6 +52,7 @@ from d4bl.infra.database import (
     BjsIncarceration,
     BlsLaborStatistic,
     CdcHealthOutcome,
+    CdcMortality,
     CensusIndicator,
     CensusDemographics,
     DoeCivilRights,
@@ -1185,6 +1186,56 @@ async def get_census_demographics(
     except Exception:
         logger.error("Failed to fetch Census demographics data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch Census demographics data")
+
+
+@app.get("/api/explore/cdc-mortality", response_model=ExploreResponse)
+async def get_cdc_mortality(
+    state_fips: str | None = None,
+    cause_of_death: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """CDC mortality data — age-adjusted rates by cause and race."""
+    try:
+        query = select(CdcMortality)
+        if state_fips:
+            query = query.where(CdcMortality.state_fips == state_fips)
+        if cause_of_death:
+            query = query.where(CdcMortality.cause_of_death == cause_of_death)
+        if race:
+            query = query.where(CdcMortality.race == race)
+        if year:
+            query = query.where(CdcMortality.year == year)
+        query = query.order_by(CdcMortality.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+
+        row_dicts = [
+            {
+                "state_fips": r.state_fips,
+                "state_name": r.state_name or FIPS_TO_NAME.get(r.state_fips, r.state_fips),
+                "value": float(r.age_adjusted_rate) if r.age_adjusted_rate is not None else 0.0,
+                "metric": r.cause_of_death,
+                "year": r.year,
+                "race": r.race,
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch CDC mortality data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch CDC mortality data")
 
 
 @app.get("/api/explore/policies", response_model=list[PolicyBillItem])
