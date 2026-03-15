@@ -546,7 +546,7 @@ class TestBjsEndpoint:
 
 
 class TestAllExploreEndpointsStandardShape:
-    """Verify all 8 explore endpoints return the standardized ExploreResponse shape."""
+    """Verify all 11 explore endpoints return the standardized ExploreResponse shape."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", [
@@ -558,6 +558,9 @@ class TestAllExploreEndpointsStandardShape:
         "/api/explore/usda",
         "/api/explore/doe",
         "/api/explore/police-violence",
+        "/api/explore/census-demographics",
+        "/api/explore/cdc-mortality",
+        "/api/explore/bjs",
     ])
     async def test_explore_endpoint_returns_standard_shape(self, override_auth, path):
         """All explore endpoints return ExploreResponse shape even with empty data."""
