@@ -286,6 +286,46 @@ class TestAggregateDoe:
         assert result[0]["source"] == "doe"
 
 
+    def test_state_fips_is_numeric_code_not_abbreviation(self):
+        """state_fips must be a zero-padded numeric FIPS code, not a state abbreviation."""
+        from scripts.ingestion.aggregate_state_summaries import aggregate_doe
+
+        rows = [
+            {
+                "state": "CA",
+                "state_name": "California",
+                "metric": "suspensions",
+                "race": "total",
+                "school_year": "2020-2021",
+                "value": 5.0,
+                "total_enrollment": 1000,
+            },
+            {
+                "state": "TX",
+                "state_name": "Texas",
+                "metric": "suspensions",
+                "race": "total",
+                "school_year": "2020-2021",
+                "value": 3.0,
+                "total_enrollment": 2000,
+            },
+        ]
+        result = aggregate_doe(rows)
+        by_name = {r["state_name"]: r for r in result}
+
+        assert by_name["California"]["state_fips"] == "06", (
+            "Expected FIPS '06' for California, got abbreviation or wrong code"
+        )
+        assert by_name["Texas"]["state_fips"] == "48", (
+            "Expected FIPS '48' for Texas, got abbreviation or wrong code"
+        )
+        # Ensure no raw abbreviations leaked through
+        for r in result:
+            assert r["state_fips"].isdigit(), (
+                f"state_fips {r['state_fips']!r} is not a numeric FIPS code"
+            )
+
+
 class TestSourceNameMap:
     """Verify the source name mapping used by run_aggregation."""
 
