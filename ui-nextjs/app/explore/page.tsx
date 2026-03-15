@@ -269,8 +269,16 @@ export default function ExplorePage() {
                   nationalAverage={exploreData.national_average}
                 />
                 {loading && (
-                  <div className="absolute inset-0 bg-[#292929]/60 rounded-lg flex items-center justify-center">
-                    <div className="w-6 h-6 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
+                  <div
+                    className="absolute inset-0 bg-[#292929]/60 rounded-lg flex items-center justify-center"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div
+                      className="w-6 h-6 border-2 border-gray-500 border-t-white rounded-full animate-spin"
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only">Updating map data</span>
                   </div>
                 )}
               </div>

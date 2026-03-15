@@ -119,8 +119,17 @@ export default function MetricFilterPanel({
                 <span className="text-sm text-gray-300">{m.label}</span>
                 {sourceKey && METRIC_DESCRIPTIONS[sourceKey]?.[m.value] && (
                   <span className="relative group ml-1">
-                    <span className="text-gray-500 cursor-help text-xs">i</span>
-                    <span className="invisible group-hover:visible absolute left-4 bottom-full mb-1 w-52 px-2 py-1 text-xs text-gray-200 bg-[#404040] rounded shadow-lg z-10">
+                    <button
+                      type="button"
+                      aria-label={`More info about ${m.label}`}
+                      className="text-gray-500 cursor-help text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-300 rounded-sm"
+                    >
+                      <span aria-hidden="true">i</span>
+                    </button>
+                    <span
+                      role="tooltip"
+                      className="invisible group-hover:visible group-focus-within:visible absolute left-4 bottom-full mb-1 w-52 px-2 py-1 text-xs text-gray-200 bg-[#404040] rounded shadow-lg z-10"
+                    >
                       {METRIC_DESCRIPTIONS[sourceKey][m.value]}
                     </span>
                   </span>
