@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Sequence
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from d4bl.infra.state_summary import StateSummary
+
 if TYPE_CHECKING:
     from d4bl.app.schemas import ExploreResponse
 
@@ -67,4 +72,51 @@ def build_state_agg_response(
         available_metrics=distinct_values(row_dicts, "metric"),
         available_years=distinct_values(row_dicts, "year"),
         available_races=[],
+    )
+
+
+async def build_response_from_summary(
+    session: AsyncSession,
+    source: str,
+    state_fips: str | None = None,
+    metric_value: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+) -> "ExploreResponse":
+    """Query state_summary table and return ExploreResponse."""
+    from d4bl.app.schemas import ExploreResponse, ExploreRow
+
+    query = select(StateSummary).where(StateSummary.source == source)
+    if state_fips:
+        query = query.where(StateSummary.state_fips == state_fips)
+    if metric_value:
+        query = query.where(StateSummary.metric == metric_value)
+    if race:
+        query = query.where(StateSummary.race == race)
+    if year:
+        query = query.where(StateSummary.year == year)
+    query = query.limit(min(limit, 5000))
+
+    result = await session.execute(query)
+    rows_raw = result.scalars().all()
+
+    rows = [
+        {
+            "state_fips": r.state_fips,
+            "state_name": r.state_name,
+            "value": r.value,
+            "metric": r.metric,
+            "year": r.year,
+            "race": r.race,
+        }
+        for r in rows_raw
+    ]
+
+    return ExploreResponse(
+        rows=[ExploreRow(**d) for d in rows],
+        national_average=compute_national_avg(rows),
+        available_metrics=distinct_values(rows, "metric"),
+        available_years=distinct_values(rows, "year"),
+        available_races=distinct_values(rows, "race"),
     )

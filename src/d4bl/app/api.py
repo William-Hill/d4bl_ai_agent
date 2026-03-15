@@ -24,6 +24,7 @@ from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.data_routes import router as data_router
 from d4bl.app.explore_helpers import (
     FIPS_TO_STATE_NAME,
+    build_response_from_summary,
     build_state_agg_response,
     compute_national_avg,
     distinct_values,
@@ -691,47 +692,13 @@ async def get_epa_environmental_justice(
 ):
     """EPA EJScreen environmental justice data aggregated to state level."""
     try:
-        query = select(
-            EpaEnvironmentalJustice.state_fips,
-            EpaEnvironmentalJustice.state_name,
-            func.avg(EpaEnvironmentalJustice.raw_value).label("avg_value"),
-            EpaEnvironmentalJustice.indicator,
-            EpaEnvironmentalJustice.year,
-        ).group_by(
-            EpaEnvironmentalJustice.state_fips,
-            EpaEnvironmentalJustice.state_name,
-            EpaEnvironmentalJustice.indicator,
-            EpaEnvironmentalJustice.year,
-        )
-        if state_fips:
-            query = query.where(EpaEnvironmentalJustice.state_fips == state_fips)
-        if indicator:
-            query = query.where(EpaEnvironmentalJustice.indicator == indicator)
-        if year:
-            query = query.where(EpaEnvironmentalJustice.year == year)
-        query = query.order_by(EpaEnvironmentalJustice.state_fips).limit(max(1, min(limit, 5000)))
-
-        result = await db.execute(query)
-        rows_raw = result.mappings().all()
-
-        row_dicts = [
-            {
-                "state_fips": r["state_fips"],
-                "state_name": r["state_name"],
-                "value": r["avg_value"],
-                "metric": r["indicator"],
-                "year": r["year"],
-                "race": None,
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=[],
+        return await build_response_from_summary(
+            db,
+            source="epa",
+            state_fips=state_fips,
+            metric_value=indicator,
+            year=year,
+            limit=limit,
         )
     except Exception:
         logger.error("Failed to fetch EPA EJ data", exc_info=True)
@@ -892,47 +859,13 @@ async def get_usda_food_access(
 ):
     """USDA food access data aggregated to state level."""
     try:
-        query = select(
-            UsdaFoodAccess.state_fips,
-            UsdaFoodAccess.state_name,
-            func.avg(UsdaFoodAccess.value).label("avg_value"),
-            UsdaFoodAccess.indicator,
-            UsdaFoodAccess.year,
-        ).group_by(
-            UsdaFoodAccess.state_fips,
-            UsdaFoodAccess.state_name,
-            UsdaFoodAccess.indicator,
-            UsdaFoodAccess.year,
-        )
-        if state_fips:
-            query = query.where(UsdaFoodAccess.state_fips == state_fips)
-        if indicator:
-            query = query.where(UsdaFoodAccess.indicator == indicator)
-        if year:
-            query = query.where(UsdaFoodAccess.year == year)
-        query = query.order_by(UsdaFoodAccess.state_fips).limit(max(1, min(limit, 5000)))
-
-        result = await db.execute(query)
-        rows_raw = result.mappings().all()
-
-        row_dicts = [
-            {
-                "state_fips": r["state_fips"],
-                "state_name": r["state_name"] or "",
-                "value": r["avg_value"],
-                "metric": r["indicator"],
-                "year": r["year"],
-                "race": None,
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=[],
+        return await build_response_from_summary(
+            db,
+            source="usda",
+            state_fips=state_fips,
+            metric_value=indicator,
+            year=year,
+            limit=limit,
         )
     except Exception:
         logger.error("Failed to fetch USDA food access data", exc_info=True)
@@ -952,56 +885,22 @@ async def get_doe_civil_rights(
 ):
     """DOE Civil Rights Data Collection aggregated to state level."""
     try:
-        # Convert state_fips to abbreviation if provided
-        state_abbrev = state
-        if state_fips and not state_abbrev:
-            state_abbrev = FIPS_TO_ABBREV.get(state_fips)
-
-        query = select(
-            DoeCivilRights.state,
-            DoeCivilRights.state_name,
-            DoeCivilRights.metric.label("metric_name"),
-            DoeCivilRights.race,
-            DoeCivilRights.school_year,
-            func.avg(DoeCivilRights.value).label("avg_value"),
-        ).group_by(
-            DoeCivilRights.state,
-            DoeCivilRights.state_name,
-            DoeCivilRights.metric,
-            DoeCivilRights.race,
-            DoeCivilRights.school_year,
-        )
-        if state_abbrev:
-            query = query.where(DoeCivilRights.state == state_abbrev)
-        if metric:
-            query = query.where(DoeCivilRights.metric == metric)
-        if race:
-            query = query.where(DoeCivilRights.race == race)
+        # Convert school_year string (e.g. "2017-18") to integer year
+        year_int: int | None = None
         if school_year:
-            query = query.where(DoeCivilRights.school_year == school_year)
-        query = query.order_by(DoeCivilRights.state).limit(max(1, min(limit, 5000)))
+            try:
+                year_int = int(school_year[:4])
+            except (ValueError, IndexError):
+                year_int = None
 
-        result = await db.execute(query)
-        rows_raw = result.mappings().all()
-
-        row_dicts = [
-            {
-                "state_fips": ABBREV_TO_FIPS.get(r["state"], ""),
-                "state_name": r["state_name"],
-                "value": r["avg_value"],
-                "metric": r["metric_name"],
-                "year": int(r["school_year"][:4]) if r["school_year"] else 0,
-                "race": r["race"],
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=distinct_values(row_dicts, "metric"),
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=distinct_values(row_dicts, "race"),
+        return await build_response_from_summary(
+            db,
+            source="doe",
+            state_fips=state_fips,
+            metric_value=metric,
+            race=race,
+            year=year_int,
+            limit=limit,
         )
     except Exception:
         logger.error("Failed to fetch DOE civil rights data", exc_info=True)
@@ -1139,49 +1038,14 @@ async def get_census_demographics(
 ):
     """Census Decennial demographics aggregated to state level."""
     try:
-        query = select(
-            CensusDemographics.state_fips,
-            CensusDemographics.state_name,
-            CensusDemographics.year,
-            CensusDemographics.race,
-            func.sum(CensusDemographics.population).label("total_pop"),
-            func.avg(CensusDemographics.pct_of_total).label("avg_pct"),
-        ).group_by(
-            CensusDemographics.state_fips,
-            CensusDemographics.state_name,
-            CensusDemographics.year,
-            CensusDemographics.race,
-        )
-        if state_fips:
-            query = query.where(CensusDemographics.state_fips == state_fips)
-        if race:
-            query = query.where(CensusDemographics.race == race)
-        if year:
-            query = query.where(CensusDemographics.year == year)
-        query = query.order_by(CensusDemographics.state_fips).limit(max(1, min(limit, 5000)))
-
-        result = await db.execute(query)
-        rows_raw = result.mappings().all()
-
-        use_pct = metric == "pct_of_total"
-        row_dicts = [
-            {
-                "state_fips": r["state_fips"],
-                "state_name": r["state_name"] or FIPS_TO_NAME.get(r["state_fips"], r["state_fips"]),
-                "value": round(float(r["avg_pct"]), 2) if use_pct else float(r["total_pop"]),
-                "metric": "pct_of_total" if use_pct else "population",
-                "year": r["year"],
-                "race": r["race"],
-            }
-            for r in rows_raw
-        ]
-
-        return ExploreResponse(
-            rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
-            available_metrics=["population", "pct_of_total"],
-            available_years=distinct_values(row_dicts, "year"),
-            available_races=distinct_values(row_dicts, "race"),
+        return await build_response_from_summary(
+            db,
+            source="census-demographics",
+            state_fips=state_fips,
+            metric_value=metric,
+            race=race,
+            year=year,
+            limit=limit,
         )
     except Exception:
         logger.error("Failed to fetch Census demographics data", exc_info=True)

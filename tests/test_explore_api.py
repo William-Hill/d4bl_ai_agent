@@ -163,10 +163,16 @@ class TestEpaEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "06"
+        mock_row.state_name = "California"
+        mock_row.value = 10.5
+        mock_row.metric = "PM2.5"
+        mock_row.year = 2022
+        mock_row.race = "total"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {"state_fips": "06", "state_name": "California", "avg_value": 10.5, "indicator": "PM2.5", "year": 2022}
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -190,7 +196,7 @@ class TestEpaEndpoint:
         assert data["rows"][0]["value"] == 10.5
         assert data["rows"][0]["metric"] == "PM2.5"
         assert data["national_average"] == 10.5
-        assert data["available_races"] == []
+        assert data["available_races"] == ["total"]
 
 
 class TestFbiEndpoint:
@@ -318,10 +324,16 @@ class TestUsdaEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 22.3
+        mock_row.metric = "Low Access"
+        mock_row.year = 2019
+        mock_row.race = "total"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {"state_fips": "28", "state_name": "Mississippi", "avg_value": 22.3, "indicator": "Low Access", "year": 2019}
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -343,7 +355,7 @@ class TestUsdaEndpoint:
         assert len(data["rows"]) == 1
         assert data["rows"][0]["value"] == 22.3
         assert data["rows"][0]["metric"] == "Low Access"
-        assert data["available_races"] == []
+        assert data["available_races"] == ["total"]
 
 
 class TestDoeEndpoint:
@@ -352,10 +364,16 @@ class TestDoeEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 3.5
+        mock_row.metric = "Suspensions"
+        mock_row.year = 2020
+        mock_row.race = "Black"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {"state": "MS", "state_name": "Mississippi", "avg_value": 3.5, "metric_name": "Suspensions", "race": "Black", "school_year": "2020-2021"}
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -369,7 +387,7 @@ class TestDoeEndpoint:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
                 "/api/explore/doe",
-                params={"state": "MS", "metric": "Suspensions"},
+                params={"metric": "Suspensions"},
             )
 
         assert response.status_code == 200
@@ -423,17 +441,16 @@ class TestCensusDemographicsEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 1000000.0
+        mock_row.metric = "population"
+        mock_row.year = 2020
+        mock_row.race = "Black"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {
-                "state_fips": "28",
-                "state_name": "Mississippi",
-                "year": 2020,
-                "race": "Black",
-                "total_pop": 1000000,
-                "avg_pct": 37.5,
-            }
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
