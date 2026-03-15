@@ -261,34 +261,25 @@ class DataOverviewResponse(BaseModel):
     recent_failures: int
 
 
-# --- Dagster integration models ---
+# --- Ingestion trigger models ---
 
 
 class TriggerResponse(BaseModel):
-    """Returned when a Dagster run is triggered for a data source."""
+    """Returned when an ingestion run is triggered for a data source."""
 
-    run_id: str
     ingestion_run_id: str
     status: str  # "triggered"
 
 
 class RunStatusResponse(BaseModel):
-    """Combined local + Dagster status for the latest ingestion run."""
+    """Status of the latest ingestion run for a source."""
 
     ingestion_run_id: str
-    dagster_run_id: str | None
-    local_status: str
-    dagster_status: str | None = None
-    start_time: float | None = None
-    end_time: float | None = None
-
-
-class ReloadResponse(BaseModel):
-    """Result of reloading the Dagster repository."""
-
     status: str
-    location: str | None = None
-    load_status: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    records_ingested: int | None = None
+    error_detail: str | None = None
 
 
 # --- Keyword Monitor models ---
