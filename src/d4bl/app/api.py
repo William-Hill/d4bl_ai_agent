@@ -19,6 +19,9 @@ from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketD
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
+
+from d4bl.app.cache import explore_cache
 
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.data_routes import router as data_router
@@ -61,6 +64,7 @@ from d4bl.infra.database import (
     EvaluationResult,
     FbiCrimeStat,
     HudFairHousing,
+    IngestionRun,
     PoliceViolenceIncident,
     PolicyBill,
     ResearchJob,
@@ -95,6 +99,22 @@ FIPS_TO_ABBREV: dict[str, str] = {v: k for k, v in ABBREV_TO_FIPS.items()}
 
 # Alias for backward compat within this file
 FIPS_TO_NAME = FIPS_TO_STATE_NAME
+
+
+async def _check_cache_freshness(session: AsyncSession):
+    """Invalidate cache entries created before the latest completed ingestion."""
+    try:
+        result = await session.execute(
+            select(func.max(IngestionRun.completed_at)).where(
+                IngestionRun.status == "completed"
+            )
+        )
+        latest = result.scalar()
+        if latest:
+            explore_cache.invalidate_if_stale(newer_than=latest.timestamp())
+    except Exception:
+        # If the ingestion_runs table doesn't exist yet, skip silently.
+        logger.debug("Cache freshness check skipped", exc_info=True)
 
 
 def parse_job_uuid(job_id: str) -> UUID:
@@ -598,6 +618,7 @@ async def natural_language_query(
 
 @app.get("/api/explore/indicators", response_model=ExploreResponse)
 async def get_indicators(
+    request: Request,
     state_fips: str | None = None,
     metric: str | None = None,
     race: str | None = None,
@@ -607,6 +628,11 @@ async def get_indicators(
     db: AsyncSession = Depends(get_db),
 ):
     """Census ACS indicators — returns ExploreResponse."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         query = select(CensusIndicator).where(
             CensusIndicator.geography_type == "state"
@@ -635,13 +661,15 @@ async def get_indicators(
             for r in rows_raw
         ]
 
-        return {
+        response = {
             "rows": rows,
             "national_average": compute_national_avg(rows),
             "available_metrics": distinct_values(rows, "metric"),
             "available_years": distinct_values(rows, "year"),
             "available_races": distinct_values(rows, "race"),
         }
+        explore_cache.set(cache_key, response)
+        return response
     except Exception as e:
         logger.error("Error fetching indicators: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching indicators") from e
@@ -649,6 +677,7 @@ async def get_indicators(
 
 @app.get("/api/explore/cdc", response_model=ExploreResponse)
 async def get_cdc_health(
+    request: Request,
     state_fips: str | None = None,
     measure: str | None = None,
     year: int | None = None,
@@ -657,6 +686,11 @@ async def get_cdc_health(
     db: AsyncSession = Depends(get_db),
 ):
     """CDC health outcomes aggregated to state level."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         # Aggregate county/tract data up to state level
         query = select(
@@ -680,6 +714,7 @@ async def get_cdc_health(
         result = await db.execute(query)
         rows_raw = result.mappings().all()
         response = build_state_agg_response(rows_raw, metric_key="measure")
+        explore_cache.set(cache_key, response)
         return response
     except Exception:
         logger.error("Failed to fetch CDC health data", exc_info=True)
@@ -688,6 +723,7 @@ async def get_cdc_health(
 
 @app.get("/api/explore/epa", response_model=ExploreResponse)
 async def get_epa_environmental_justice(
+    request: Request,
     state_fips: str | None = None,
     indicator: str | None = None,
     year: int | None = None,
@@ -696,8 +732,13 @@ async def get_epa_environmental_justice(
     db: AsyncSession = Depends(get_db),
 ):
     """EPA EJScreen environmental justice data aggregated to state level."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return await build_response_from_summary(
+        response = await build_response_from_summary(
             db,
             source="epa",
             state_fips=state_fips,
@@ -705,6 +746,8 @@ async def get_epa_environmental_justice(
             year=year,
             limit=limit,
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch EPA EJ data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch EPA EJ data")
@@ -712,6 +755,7 @@ async def get_epa_environmental_justice(
 
 @app.get("/api/explore/fbi", response_model=ExploreResponse)
 async def get_fbi_crime_stats(
+    request: Request,
     state_fips: str | None = None,
     offense: str | None = None,
     race: str | None = None,
@@ -721,6 +765,11 @@ async def get_fbi_crime_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """FBI Crime Data Explorer statistics."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         query = select(FbiCrimeStat)
         if state_fips:
@@ -750,13 +799,15 @@ async def get_fbi_crime_stats(
             for r in rows_raw
         ]
 
-        return ExploreResponse(
+        response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
             national_average=compute_national_avg(row_dicts),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch FBI crime data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch FBI crime data")
@@ -764,6 +815,7 @@ async def get_fbi_crime_stats(
 
 @app.get("/api/explore/bls", response_model=ExploreResponse)
 async def get_bls_labor_stats(
+    request: Request,
     state_fips: str | None = None,
     metric: str | None = None,
     race: str | None = None,
@@ -773,6 +825,11 @@ async def get_bls_labor_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """BLS labor statistics."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         query = select(BlsLaborStatistic).where(
             BlsLaborStatistic.state_fips.isnot(None)
@@ -802,13 +859,15 @@ async def get_bls_labor_stats(
             for r in rows_raw
         ]
 
-        return ExploreResponse(
+        response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
             national_average=compute_national_avg(row_dicts),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch BLS labor data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch BLS labor data")
@@ -816,6 +875,7 @@ async def get_bls_labor_stats(
 
 @app.get("/api/explore/hud", response_model=ExploreResponse)
 async def get_hud_fair_housing(
+    request: Request,
     state_fips: str | None = None,
     indicator: str | None = None,
     year: int | None = None,
@@ -824,6 +884,11 @@ async def get_hud_fair_housing(
     db: AsyncSession = Depends(get_db),
 ):
     """HUD fair housing data aggregated to state level."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         # Aggregate county-level data up to state level
         query = select(
@@ -847,6 +912,7 @@ async def get_hud_fair_housing(
         result = await db.execute(query)
         rows_raw = result.mappings().all()
         response = build_state_agg_response(rows_raw, metric_key="indicator")
+        explore_cache.set(cache_key, response)
         return response
     except Exception:
         logger.error("Failed to fetch HUD fair housing data", exc_info=True)
@@ -855,6 +921,7 @@ async def get_hud_fair_housing(
 
 @app.get("/api/explore/usda", response_model=ExploreResponse)
 async def get_usda_food_access(
+    request: Request,
     state_fips: str | None = None,
     indicator: str | None = None,
     year: int | None = None,
@@ -863,8 +930,13 @@ async def get_usda_food_access(
     db: AsyncSession = Depends(get_db),
 ):
     """USDA food access data aggregated to state level."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return await build_response_from_summary(
+        response = await build_response_from_summary(
             db,
             source="usda",
             state_fips=state_fips,
@@ -872,6 +944,8 @@ async def get_usda_food_access(
             year=year,
             limit=limit,
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch USDA food access data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch USDA food access data")
@@ -879,6 +953,7 @@ async def get_usda_food_access(
 
 @app.get("/api/explore/doe", response_model=ExploreResponse)
 async def get_doe_civil_rights(
+    request: Request,
     state_fips: str | None = None,
     state: str | None = None,
     metric: str | None = None,
@@ -889,6 +964,11 @@ async def get_doe_civil_rights(
     db: AsyncSession = Depends(get_db),
 ):
     """DOE Civil Rights Data Collection aggregated to state level."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         # Convert school_year string (e.g. "2017-18") to integer year
         year_int: int | None = None
@@ -898,7 +978,7 @@ async def get_doe_civil_rights(
             except (ValueError, IndexError):
                 year_int = None
 
-        return await build_response_from_summary(
+        response = await build_response_from_summary(
             db,
             source="doe",
             state_fips=state_fips,
@@ -907,6 +987,8 @@ async def get_doe_civil_rights(
             year=year_int,
             limit=limit,
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch DOE civil rights data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch DOE civil rights data")
@@ -914,6 +996,7 @@ async def get_doe_civil_rights(
 
 @app.get("/api/explore/police-violence", response_model=ExploreResponse)
 async def get_police_violence(
+    request: Request,
     state_fips: str | None = None,
     state: str | None = None,
     race: str | None = None,
@@ -923,6 +1006,11 @@ async def get_police_violence(
     db: AsyncSession = Depends(get_db),
 ):
     """Police violence incidents aggregated by state/race/year."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         # Convert state_fips to abbreviation if provided
         state_abbrev = state
@@ -962,13 +1050,15 @@ async def get_police_violence(
             for r in rows_raw
         ]
 
-        return ExploreResponse(
+        response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
             national_average=compute_national_avg(row_dicts),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch police violence data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch police violence data")
@@ -976,6 +1066,7 @@ async def get_police_violence(
 
 @app.get("/api/explore/bjs", response_model=ExploreResponse)
 async def get_bjs_incarceration(
+    request: Request,
     state_fips: str | None = None,
     metric: str | None = None,
     race: str | None = None,
@@ -985,6 +1076,11 @@ async def get_bjs_incarceration(
     db: AsyncSession = Depends(get_db),
 ):
     """Bureau of Justice Statistics incarceration data."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         query = select(BjsIncarceration).where(
             BjsIncarceration.state_abbrev != "US",
@@ -1019,13 +1115,15 @@ async def get_bjs_incarceration(
 
         nat_avg = compute_national_avg(row_dicts)
 
-        return ExploreResponse(
+        response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
             national_average=nat_avg,
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch BJS incarceration data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch BJS incarceration data")
@@ -1033,6 +1131,7 @@ async def get_bjs_incarceration(
 
 @app.get("/api/explore/census-demographics", response_model=ExploreResponse)
 async def get_census_demographics(
+    request: Request,
     state_fips: str | None = None,
     metric: str | None = None,
     race: str | None = None,
@@ -1042,8 +1141,13 @@ async def get_census_demographics(
     db: AsyncSession = Depends(get_db),
 ):
     """Census Decennial demographics aggregated to state level."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return await build_response_from_summary(
+        response = await build_response_from_summary(
             db,
             source="census-demographics",
             state_fips=state_fips,
@@ -1052,6 +1156,8 @@ async def get_census_demographics(
             year=year,
             limit=limit,
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch Census demographics data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch Census demographics data")
@@ -1059,6 +1165,7 @@ async def get_census_demographics(
 
 @app.get("/api/explore/cdc-mortality", response_model=ExploreResponse)
 async def get_cdc_mortality(
+    request: Request,
     state_fips: str | None = None,
     cause_of_death: str | None = None,
     race: str | None = None,
@@ -1068,6 +1175,11 @@ async def get_cdc_mortality(
     db: AsyncSession = Depends(get_db),
 ):
     """CDC mortality data — age-adjusted rates by cause and race."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         query = select(CdcMortality)
         if state_fips:
@@ -1095,13 +1207,15 @@ async def get_cdc_mortality(
             for r in rows_raw
         ]
 
-        return ExploreResponse(
+        response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
             national_average=compute_national_avg(row_dicts),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),
         )
+        explore_cache.set(cache_key, response)
+        return response
     except Exception:
         logger.error("Failed to fetch CDC mortality data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch CDC mortality data")
@@ -1109,6 +1223,7 @@ async def get_cdc_mortality(
 
 @app.get("/api/explore/policies", response_model=list[PolicyBillItem])
 async def get_policies(
+    request: Request,
     state: str | None = None,
     status: str | None = None,
     topic: str | None = None,
@@ -1118,6 +1233,11 @@ async def get_policies(
     db: AsyncSession = Depends(get_db),
 ):
     """Get policy bills, optionally filtered."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         query = select(PolicyBill)
         if state is not None:
@@ -1134,7 +1254,7 @@ async def get_policies(
         query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()
-        return [
+        response = [
             PolicyBillItem(
                 state=r.state,
                 state_name=r.state_name,
@@ -1149,6 +1269,8 @@ async def get_policies(
             )
             for r in rows
         ]
+        explore_cache.set(cache_key, response)
+        return response
     except Exception as e:
         logger.error("Error fetching policies: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching policies") from e
@@ -1156,10 +1278,16 @@ async def get_policies(
 
 @app.get("/api/explore/states", response_model=list[StateSummaryItem])
 async def get_states_summary(
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Summarize available data per state for choropleth coloring."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    await _check_cache_freshness(db)
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         # Aggregate metrics available per state
         metrics_query = text(
@@ -1208,6 +1336,7 @@ async def get_states_summary(
                 )
             )
 
+        explore_cache.set(cache_key, summary)
         return summary
     except Exception as e:
         logger.error("Error fetching state summary: %s", e, exc_info=True)

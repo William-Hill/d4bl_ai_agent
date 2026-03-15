@@ -655,8 +655,14 @@ class TestStatesEndpoint:
         mock_result_bills = MagicMock()
         mock_result_bills.mappings.return_value.all.return_value = [mock_bills_row._mapping]
 
+        # Cache freshness check queries IngestionRun; return None (no runs).
+        mock_freshness_result = MagicMock()
+        mock_freshness_result.scalar.return_value = None
+
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(side_effect=[mock_result_metrics, mock_result_bills])
+        mock_db.execute = AsyncMock(
+            side_effect=[mock_freshness_result, mock_result_metrics, mock_result_bills]
+        )
 
         async def override_get_db():
             yield mock_db
