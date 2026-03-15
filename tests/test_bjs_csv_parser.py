@@ -5,12 +5,12 @@ import io
 import textwrap
 
 from scripts.ingestion.bjs_csv_parser import (
+    STATE_NAME_TO_ABBREV,
     clean_jurisdiction,
     clean_number,
-    parse_table3_sentenced,
-    parse_appendix_table1,
     parse_admissions_releases,
-    STATE_NAME_TO_ABBREV,
+    parse_appendix_table1,
+    parse_table3_sentenced,
 )
 
 
