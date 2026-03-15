@@ -198,6 +198,53 @@ export const DATA_SOURCES: DataSourceConfig[] = [
   },
 ];
 
+// Metric direction: true = high is good, false = high is bad, null = neutral
+export const METRIC_DIRECTION: Record<string, Record<string, boolean | null>> = {
+  census: {
+    homeownership_rate: true,
+    median_household_income: true,
+    poverty_rate: false,
+    unemployment_rate: false,
+  },
+  cdc: { default: false },
+  epa: { default: false },
+  fbi: { default: false },
+  bls: {
+    unemployment_rate: false,
+    labor_force_participation: true,
+    default: false,
+  },
+  hud: { default: false },
+  usda: { default: false },
+  doe: {
+    suspension_rate: false,
+    expulsion_rate: false,
+    enrollment_rate: null,
+    default: false,
+  },
+  police: { default: false },
+  "census-demographics": { default: null },
+  "cdc-mortality": { default: false },
+  bjs: { default: false },
+};
+
+export function getMetricDirection(sourceKey: string, metric: string): boolean | null {
+  const sourceDir = METRIC_DIRECTION[sourceKey];
+  if (!sourceDir) return null;
+  return sourceDir[metric] ?? sourceDir["default"] ?? null;
+}
+
+export function getDirectionalColors(
+  sourceKey: string,
+  metric: string,
+  accent: string,
+): { colorStart: string; colorEnd: string } {
+  const direction = getMetricDirection(sourceKey, metric);
+  if (direction === true) return { colorStart: "#444", colorEnd: "#22c55e" };  // green
+  if (direction === false) return { colorStart: "#444", colorEnd: "#ef4444" }; // red
+  return { colorStart: "#444", colorEnd: accent }; // neutral: source accent
+}
+
 /** Metric descriptions keyed by source key + metric value. Used for tooltips. */
 export const METRIC_DESCRIPTIONS: Partial<Record<string, Record<string, string>>> = {
   census: {

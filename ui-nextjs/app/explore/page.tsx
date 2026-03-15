@@ -10,7 +10,7 @@ import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
 import MapLegend from '@/components/explore/MapLegend';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear } from '@/lib/explore-config';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
@@ -224,6 +224,11 @@ export default function ExplorePage() {
     return exploreData.rows.map(toIndicatorRow);
   }, [exploreData]);
 
+  /** Directional colors based on current source + metric. */
+  const dirColors = filters.metric
+    ? getDirectionalColors(activeSource.key, filters.metric, activeSource.accent)
+    : { colorStart: '#444', colorEnd: activeSource.accent };
+
   return (
     <div className="min-h-screen bg-[#292929]">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -287,6 +292,8 @@ export default function ExplorePage() {
                   onSelectState={handleSelectState}
                   accent={activeSource.accent}
                   nationalAverage={exploreData.national_average}
+                  colorStart={dirColors.colorStart}
+                  colorEnd={dirColors.colorEnd}
                 />
                 {filters.metric && (() => {
                   const values = exploreData.rows
@@ -302,8 +309,8 @@ export default function ExplorePage() {
                       max={max}
                       nationalAverage={exploreData.national_average}
                       metric={filters.metric}
-                      colorStart="#444"
-                      colorEnd={activeSource.accent}
+                      colorStart={dirColors.colorStart}
+                      colorEnd={dirColors.colorEnd}
                       accent={activeSource.accent}
                     />
                   );
