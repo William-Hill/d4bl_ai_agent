@@ -49,6 +49,7 @@ from d4bl.app.schemas import (
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
+    BjsIncarceration,
     BlsLaborStatistic,
     CdcHealthOutcome,
     CensusIndicator,
@@ -186,7 +187,7 @@ app.include_router(data_router)
 # Admin ingestion: track background subprocess jobs
 # ---------------------------------------------------------------------------
 VALID_INGEST_SOURCES = frozenset(
-    ["cdc", "census", "epa", "fbi", "bls", "hud", "usda", "doe", "police", "openstates"]
+    ["cdc", "census", "epa", "fbi", "bls", "hud", "usda", "doe", "police", "openstates", "bjs"]
 )
 
 _MAX_INGESTION_JOBS = 50
@@ -1065,6 +1066,63 @@ async def get_police_violence(
     except Exception:
         logger.error("Failed to fetch police violence data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch police violence data")
+
+
+@app.get("/api/explore/bjs", response_model=ExploreResponse)
+async def get_bjs_incarceration(
+    state_fips: str | None = None,
+    metric: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bureau of Justice Statistics incarceration data."""
+    try:
+        query = select(BjsIncarceration).where(
+            BjsIncarceration.state_abbrev != "US",
+            BjsIncarceration.gender == "total",
+        )
+        if state_fips:
+            abbrev = FIPS_TO_ABBREV.get(state_fips)
+            if abbrev:
+                query = query.where(BjsIncarceration.state_abbrev == abbrev)
+        if metric:
+            query = query.where(BjsIncarceration.metric == metric)
+        if race:
+            query = query.where(BjsIncarceration.race == race)
+        if year:
+            query = query.where(BjsIncarceration.year == year)
+        query = query.order_by(BjsIncarceration.state_abbrev).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.scalars().all()
+
+        row_dicts = [
+            {
+                "state_fips": ABBREV_TO_FIPS.get(r.state_abbrev, ""),
+                "state_name": r.state_name,
+                "value": r.value,
+                "metric": r.metric,
+                "year": r.year,
+                "race": r.race,
+            }
+            for r in rows_raw
+        ]
+
+        nat_avg = compute_national_avg(row_dicts)
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=nat_avg,
+            available_metrics=distinct_values(row_dicts, "metric"),
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch BJS incarceration data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch BJS incarceration data")
 
 
 @app.get("/api/explore/policies", response_model=list[PolicyBillItem])

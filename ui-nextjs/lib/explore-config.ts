@@ -130,4 +130,13 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     primaryFilterKey: "metric",
     primaryFilterLabel: "Metric",
   },
+  {
+    key: "bjs",
+    label: "BJS Incarceration",
+    accent: "#a29bfe",
+    endpoint: "/api/explore/bjs",
+    hasRace: true,
+    primaryFilterKey: "metric",
+    primaryFilterLabel: "Metric",
+  },
 ];
