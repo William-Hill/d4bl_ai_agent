@@ -380,10 +380,14 @@ async def trigger_source(
     await db.commit()
     await db.refresh(run)
 
-    # Fire background task
-    asyncio.create_task(
+    # Fire background task (hold strong reference to prevent GC)
+    from d4bl.app.api import _background_tasks, _log_task_exception
+
+    task = asyncio.create_task(
         run_ingestion_task(run.id, module_name, async_session_maker)
     )
+    _background_tasks.add(task)
+    task.add_done_callback(_log_task_exception)
 
     return TriggerResponse(
         ingestion_run_id=str(run.id),

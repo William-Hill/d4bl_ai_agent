@@ -65,17 +65,22 @@ def _make_mock_session_factory(run_row):
     return factory, session
 
 
+def _make_pending_run():
+    """Create a mock IngestionRun in pending state."""
+    run = MagicMock()
+    run.id = uuid.uuid4()
+    run.status = "pending"
+    run.records_ingested = None
+    run.completed_at = None
+    run.error_detail = None
+    return run
+
+
 class TestRunIngestionTask:
     @pytest.mark.asyncio
     async def test_successful_run(self):
         """Script main() returns record count → run marked completed."""
-        run = MagicMock()
-        run.id = uuid.uuid4()
-        run.status = "pending"
-        run.records_ingested = None
-        run.completed_at = None
-        run.error_detail = None
-
+        run = _make_pending_run()
         factory, session = _make_mock_session_factory(run)
 
         mock_module = MagicMock()
@@ -96,13 +101,7 @@ class TestRunIngestionTask:
     @pytest.mark.asyncio
     async def test_failed_run(self):
         """Script main() raises → run marked failed with error detail."""
-        run = MagicMock()
-        run.id = uuid.uuid4()
-        run.status = "pending"
-        run.records_ingested = None
-        run.completed_at = None
-        run.error_detail = None
-
+        run = _make_pending_run()
         factory, session = _make_mock_session_factory(run)
 
         mock_module = MagicMock()
@@ -121,13 +120,7 @@ class TestRunIngestionTask:
     @pytest.mark.asyncio
     async def test_none_return_treated_as_zero(self):
         """Script main() returns None → records_ingested set to 0."""
-        run = MagicMock()
-        run.id = uuid.uuid4()
-        run.status = "pending"
-        run.records_ingested = None
-        run.completed_at = None
-        run.error_detail = None
-
+        run = _make_pending_run()
         factory, session = _make_mock_session_factory(run)
 
         mock_module = MagicMock()
