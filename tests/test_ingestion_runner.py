@@ -1,8 +1,15 @@
 """Tests for the ingestion runner service."""
 
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from d4bl.services.ingestion_runner import SCRIPT_REGISTRY, resolve_source
+from d4bl.services.ingestion_runner import (
+    SCRIPT_REGISTRY,
+    resolve_source,
+    run_ingestion_task,
+)
 
 
 class TestScriptRegistry:
@@ -40,14 +47,6 @@ class TestResolveSource:
 
     def test_special_characters_stripped(self):
         assert resolve_source("CDC!@#") == "ingest_cdc_places"
-
-
-import asyncio
-import uuid
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from d4bl.services.ingestion_runner import run_ingestion_task
 
 
 def _make_mock_session_factory(run_row):

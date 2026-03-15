@@ -38,9 +38,9 @@ from d4bl.infra.database import (
     get_db,
 )
 from d4bl.services.ingestion_runner import (
-    slugify,
     resolve_source,
     run_ingestion_task,
+    slugify,
 )
 
 logger = logging.getLogger(__name__)
