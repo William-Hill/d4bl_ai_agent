@@ -35,6 +35,7 @@ SOURCES = {
     "doe": "ingest_doe_education",
     "police": "ingest_police_violence",
     "openstates": "ingest_openstates",
+    "bjs": "ingest_bjs_incarceration",
 }
 
 
@@ -142,7 +143,7 @@ def main() -> int:
         year_vars = [
             "ACS_YEAR", "CDC_PLACES_YEAR", "EPA_EJSCREEN_YEAR",
             "HUD_FMR_YEAR", "USDA_FOOD_ACCESS_YEAR",
-            "CENSUS_DECENNIAL_YEAR",
+            "CENSUS_DECENNIAL_YEAR", "BJS_YEAR",
         ]
         for var in year_vars:
             os.environ.setdefault(var, args.year)
