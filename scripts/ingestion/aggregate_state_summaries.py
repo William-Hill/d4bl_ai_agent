@@ -230,7 +230,10 @@ def aggregate_doe(
     for (state, metric, race, year), b in buckets.items():
         if b["total_enrollment"] == 0:
             continue
-        state_fips = STATE_ABBREV_TO_FIPS.get(state, state)
+        state_fips = STATE_ABBREV_TO_FIPS.get(state)
+        if state_fips is None:
+            logger.warning("Unknown state abbreviation %r, skipping", state)
+            continue
         results.append(
             {
                 "source": "doe",

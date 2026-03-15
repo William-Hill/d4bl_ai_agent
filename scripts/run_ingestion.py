@@ -179,6 +179,8 @@ def main() -> int:
 
     print_summary(results)
 
+    has_failures = any(status != "ok" for _, _, _, status in results)
+
     # Run state-level aggregation for sources that completed successfully.
     AGGREGATION_SOURCES = {"epa", "usda", "census_decennial", "doe"}
     completed_sources = [
@@ -202,8 +204,8 @@ def main() -> int:
             print("State-level aggregation complete.")
         except Exception as exc:
             print(f"State-level aggregation FAILED: {exc}")
+            has_failures = True
 
-    has_failures = any(status != "ok" for _, _, _, status in results)
     return 1 if has_failures else 0
 
 
