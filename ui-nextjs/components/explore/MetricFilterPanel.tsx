@@ -1,5 +1,7 @@
 'use client';
 
+import { METRIC_DESCRIPTIONS } from '@/lib/explore-config';
+
 /** @deprecated Use `string` directly — kept for backward compatibility. */
 export type Metric = string;
 /** @deprecated Use `string | null` directly — kept for backward compatibility. */
@@ -25,6 +27,8 @@ interface Props {
   primaryFilterLabel?: string;
   /** Accent color for the active radio indicator. Default: "#00ff32". */
   accent?: string;
+  /** Key of the active data source, used to look up metric tooltips. */
+  sourceKey?: string;
 }
 
 /* ── Default Census ACS options (backward compat) ── */
@@ -63,6 +67,7 @@ export default function MetricFilterPanel({
   availableRaces,
   primaryFilterLabel = 'Metric',
   accent = '#00ff32',
+  sourceKey,
 }: Props) {
   // Resolve effective lists — only fall back to Census defaults when the prop
   // is truly absent (undefined).  An empty array means "no options yet" and
@@ -112,6 +117,14 @@ export default function MetricFilterPanel({
                   )}
                 </span>
                 <span className="text-sm text-gray-300">{m.label}</span>
+                {sourceKey && METRIC_DESCRIPTIONS[sourceKey]?.[m.value] && (
+                  <span className="relative group ml-1">
+                    <span className="text-gray-500 cursor-help text-xs">i</span>
+                    <span className="invisible group-hover:visible absolute left-4 bottom-full mb-1 w-52 px-2 py-1 text-xs text-gray-200 bg-[#404040] rounded shadow-lg z-10">
+                      {METRIC_DESCRIPTIONS[sourceKey][m.value]}
+                    </span>
+                  </span>
+                )}
               </label>
             );
           })}

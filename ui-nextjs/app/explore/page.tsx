@@ -264,6 +264,7 @@ export default function ExplorePage() {
             availableRaces={exploreData?.available_races}
             primaryFilterLabel={activeSource.primaryFilterLabel}
             accent={activeSource.accent}
+            sourceKey={activeSource.key}
           />
         </div>
 
