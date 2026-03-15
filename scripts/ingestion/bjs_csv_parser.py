@@ -9,7 +9,6 @@ BJS CSVs follow a consistent format:
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -73,9 +72,6 @@ STATE_NAME_TO_ABBREV: dict[str, str] = {
 # Region headers to skip when parsing state tables
 _REGION_HEADERS = {"Northeast", "Midwest", "South", "West"}
 
-# Single-character lowercase footnote letters that may be appended to state names
-# in BJS tables (e.g. "Rhode Islande" → "Rhode Island", "Virginial" → "Virginia")
-_STUCK_FOOTNOTE_RE = re.compile(r"^(.+?)[a-z]$")
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +118,8 @@ def clean_jurisdiction(name: str) -> str:
 
     # Check for stuck single-character lowercase footnote appended to a known state name
     # e.g. "Rhode Islande" → try "Rhode Island", "Virginial" → try "Virginia"
-    m = _STUCK_FOOTNOTE_RE.match(name)
-    if m:
-        candidate = m.group(1)
+    if len(name) > 1 and name[-1].islower():
+        candidate = name[:-1]
         if candidate in STATE_NAME_TO_ABBREV:
             return candidate
 
@@ -217,6 +212,20 @@ def _parse_national_table(reader: Any, metric_base: str) -> list[dict[str, Any]]
     except StopIteration:
         return []
 
+    # (col_index, metric_suffix, gender, race)
+    col_defs = [
+        (1, "", "total", "total"),
+        (2, "_federal", "total", "total"),
+        (3, "_state", "total", "total"),
+        (4, "", "total", "male"),
+        (5, "", "total", "female"),
+        (6, "", "total", "white"),
+        (7, "", "total", "black"),
+        (8, "", "total", "hispanic"),
+        (9, "", "total", "aian"),
+        (10, "", "total", "asian"),
+    ]
+
     records: list[dict[str, Any]] = []
 
     for raw_row in reader:
@@ -225,7 +234,6 @@ def _parse_national_table(reader: Any, metric_base: str) -> list[dict[str, Any]]
             continue
 
         first = row[0].strip()
-        # Skip "Percent change" and other non-year rows
         if not first or not first[:4].isdigit():
             continue
 
@@ -234,28 +242,18 @@ def _parse_national_table(reader: Any, metric_base: str) -> list[dict[str, Any]]
         except ValueError:
             continue
 
-        def _val(idx: int) -> float | None:
-            try:
-                return clean_number(row[idx])
-            except IndexError:
-                return None
+        for col_idx, metric_suffix, gender, race in col_defs:
+            if col_idx >= len(row):
+                continue
+            value = clean_number(row[col_idx])
+            if value is None:
+                continue
+            records.append(_make_record(
+                "US", "United States", year,
+                f"{metric_base}{metric_suffix}", race, gender, value,
+            ))
 
-        # Total (race=total, gender=total)
-        records.append(_make_record("US", "United States", year, metric_base, "total", "total", _val(1)))
-        # Facility type breakdown (use race="total" with different metrics for federal/state)
-        records.append(_make_record("US", "United States", year, f"{metric_base}_federal", "total", "total", _val(2)))
-        records.append(_make_record("US", "United States", year, f"{metric_base}_state", "total", "total", _val(3)))
-        # Gender breakdown
-        records.append(_make_record("US", "United States", year, metric_base, "total", "male", _val(4)))
-        records.append(_make_record("US", "United States", year, metric_base, "total", "female", _val(5)))
-        # Race breakdown (gender=total)
-        records.append(_make_record("US", "United States", year, metric_base, "white", "total", _val(6)))
-        records.append(_make_record("US", "United States", year, metric_base, "black", "total", _val(7)))
-        records.append(_make_record("US", "United States", year, metric_base, "hispanic", "total", _val(8)))
-        records.append(_make_record("US", "United States", year, metric_base, "aian", "total", _val(9)))
-        records.append(_make_record("US", "United States", year, metric_base, "asian", "total", _val(10)))
-
-    return [r for r in records if r["value"] is not None]
+    return records
 
 
 # ---------------------------------------------------------------------------
@@ -344,14 +342,11 @@ def parse_appendix_table1(reader: Any, data_year: int) -> list[dict[str, Any]]:
             continue
 
         # Determine jurisdiction
-        is_federal = False
         if first and not second:
-            # Could be "Federal/b", "State", or a region header
             jname = clean_jurisdiction(first)
             if jname in _REGION_HEADERS or jname == "State":
                 continue
             if jname == "Federal":
-                is_federal = True
                 state_abbrev = "US"
                 state_name = "Federal"
             else:
@@ -415,9 +410,10 @@ def parse_admissions_releases(
         return []
 
     records: list[dict[str, Any]] = []
+    pad_len = max(metric_map.keys(), default=0) + 2
 
     for raw_row in reader:
-        row = raw_row + [""] * (max(metric_map.keys(), default=0) + 2)
+        row = raw_row + [""] * pad_len
 
         first = row[0].strip().strip('"')
         second = row[1].strip().strip('"') if len(row) > 1 else ""
@@ -439,8 +435,7 @@ def parse_admissions_releases(
                 continue
         elif not first and second:
             jname = clean_jurisdiction(second)
-            # U.S. total row
-            if "U.S." in jname or "U.S" in jname or "total" in jname.lower():
+            if jname.startswith("U.S.") or jname == "U.S. total":
                 state_abbrev = "US"
                 state_name = "United States"
             elif jname in STATE_NAME_TO_ABBREV:
