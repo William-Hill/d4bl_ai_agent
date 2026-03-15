@@ -85,7 +85,12 @@ def _build_records(
     geo_type: str,
     year: int,
 ) -> list[dict]:
-    """Parse API rows into upsert-ready dicts."""
+    """Parse API rows into upsert-ready dicts.
+
+    Returns list of dicts with keys: id, geo_id, geo_type, state_fips,
+    state_name, county_name, year, race, population, pct_of_total.
+    Rows with unparseable total population are skipped.
+    """
     try:
         state_col = headers.index("state")
         name_col = headers.index("NAME")
