@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 class TestIndicatorsEndpoint:
     @pytest.mark.asyncio
-    async def test_returns_200_with_list(self, override_auth):
+    async def test_returns_200_with_explore_response(self, override_auth):
         app = override_auth
         from d4bl.infra.database import get_db
 
@@ -42,13 +42,25 @@ class TestIndicatorsEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert data[0]["fips_code"] == "28"
-        assert data[0]["value"] == 43.2
+        assert "rows" in data
+        assert "national_average" in data
+        assert "available_metrics" in data
+        assert "available_years" in data
+        assert "available_races" in data
+        assert len(data["rows"]) == 1
+        assert data["rows"][0]["state_fips"] == "28"
+        assert data["rows"][0]["state_name"] == "Mississippi"
+        assert data["rows"][0]["value"] == 43.2
+        assert data["rows"][0]["metric"] == "homeownership_rate"
+        assert data["rows"][0]["year"] == 2022
+        assert data["rows"][0]["race"] == "black"
+        assert data["national_average"] == 43.2
+        assert data["available_metrics"] == ["homeownership_rate"]
+        assert data["available_years"] == [2022]
+        assert data["available_races"] == ["black"]
 
     @pytest.mark.asyncio
-    async def test_returns_empty_list_when_no_data(self, override_auth):
+    async def test_returns_empty_rows_when_no_data(self, override_auth):
         app = override_auth
         from d4bl.infra.database import get_db
 
@@ -68,7 +80,12 @@ class TestIndicatorsEndpoint:
             response = await client.get("/api/explore/indicators")
 
         assert response.status_code == 200
-        assert response.json() == []
+        data = response.json()
+        assert data["rows"] == []
+        assert data["national_average"] is None
+        assert data["available_metrics"] == []
+        assert data["available_years"] == []
+        assert data["available_races"] == []
 
 
 class TestPoliciesEndpoint:
@@ -563,10 +580,11 @@ class TestBjsEndpoint:
 
 
 class TestAllExploreEndpointsStandardShape:
-    """Verify all 11 explore endpoints return the standardized ExploreResponse shape."""
+    """Verify all 12 explore endpoints return the standardized ExploreResponse shape."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", [
+        "/api/explore/indicators",
         "/api/explore/cdc",
         "/api/explore/epa",
         "/api/explore/fbi",

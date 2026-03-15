@@ -33,7 +33,7 @@ from d4bl.app.schemas import (
     EvaluationResultItem,
     ExploreResponse,
     ExploreRow,
-    IndicatorItem,
+
     InviteRequest,
     JobHistoryResponse,
     JobStatus,
@@ -596,10 +596,9 @@ async def natural_language_query(
         raise HTTPException(status_code=500, detail="Query failed")
 
 
-@app.get("/api/explore/indicators", response_model=list[IndicatorItem])
+@app.get("/api/explore/indicators", response_model=ExploreResponse)
 async def get_indicators(
     state_fips: str | None = None,
-    geography_type: str = "state",
     metric: str | None = None,
     race: str | None = None,
     year: int | None = None,
@@ -607,13 +606,13 @@ async def get_indicators(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get Census ACS indicators, optionally filtered."""
+    """Census ACS indicators — returns ExploreResponse."""
     try:
-        query = select(CensusIndicator)
+        query = select(CensusIndicator).where(
+            CensusIndicator.geography_type == "state"
+        )
         if state_fips is not None:
             query = query.where(CensusIndicator.state_fips == state_fips)
-        if geography_type:
-            query = query.where(CensusIndicator.geography_type == geography_type)
         if metric is not None:
             query = query.where(CensusIndicator.metric == metric)
         if race is not None:
@@ -622,21 +621,27 @@ async def get_indicators(
             query = query.where(CensusIndicator.year == year)
         query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
-        rows = result.scalars().all()
-        return [
-            IndicatorItem(
-                fips_code=r.fips_code,
-                geography_name=r.geography_name,
-                state_fips=r.state_fips,
-                geography_type=r.geography_type,
-                year=r.year,
-                race=r.race,
-                metric=r.metric,
-                value=r.value,
-                margin_of_error=r.margin_of_error,
-            )
-            for r in rows
+        rows_raw = result.scalars().all()
+
+        rows = [
+            {
+                "state_fips": r.state_fips,
+                "state_name": r.geography_name,
+                "value": r.value,
+                "metric": r.metric,
+                "year": r.year,
+                "race": r.race,
+            }
+            for r in rows_raw
         ]
+
+        return {
+            "rows": rows,
+            "national_average": compute_national_avg(rows),
+            "available_metrics": distinct_values(rows, "metric"),
+            "available_years": distinct_values(rows, "year"),
+            "available_races": distinct_values(rows, "race"),
+        }
     except Exception as e:
         logger.error("Error fetching indicators: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching indicators") from e
