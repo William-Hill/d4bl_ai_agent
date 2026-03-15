@@ -1,5 +1,9 @@
 """Tests for Census Decennial demographics ingestion."""
 
+import pytest
+
+pytest.importorskip("psycopg2", reason="psycopg2 not installed in CI")
+
 from scripts.ingestion.ingest_census_demographics import _build_records, _pct
 
 
