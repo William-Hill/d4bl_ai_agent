@@ -76,3 +76,45 @@ def execute_batch(
 ) -> None:
     """Wrapper around psycopg2.extras.execute_batch."""
     psycopg2.extras.execute_batch(cur, sql, params_list, page_size=page_size)
+
+
+def upsert_batch(
+    conn: psycopg2.extensions.connection,
+    sql: str,
+    records: list[dict],
+) -> int:
+    """Upsert records in BATCH_SIZE chunks with a single commit.
+
+    Returns total records upserted.
+    """
+    total = 0
+    with conn.cursor() as cur:
+        for i in range(0, len(records), BATCH_SIZE):
+            batch = records[i : i + BATCH_SIZE]
+            execute_batch(cur, sql, batch)
+            total += len(batch)
+    conn.commit()
+    return total
+
+
+STATE_FIPS = {
+    "01": "Alabama", "02": "Alaska", "04": "Arizona",
+    "05": "Arkansas", "06": "California", "08": "Colorado",
+    "09": "Connecticut", "10": "Delaware",
+    "11": "District of Columbia", "12": "Florida",
+    "13": "Georgia", "15": "Hawaii", "16": "Idaho",
+    "17": "Illinois", "18": "Indiana", "19": "Iowa",
+    "20": "Kansas", "21": "Kentucky", "22": "Louisiana",
+    "23": "Maine", "24": "Maryland", "25": "Massachusetts",
+    "26": "Michigan", "27": "Minnesota", "28": "Mississippi",
+    "29": "Missouri", "30": "Montana", "31": "Nebraska",
+    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey",
+    "35": "New Mexico", "36": "New York",
+    "37": "North Carolina", "38": "North Dakota",
+    "39": "Ohio", "40": "Oklahoma", "41": "Oregon",
+    "42": "Pennsylvania", "44": "Rhode Island",
+    "45": "South Carolina", "46": "South Dakota",
+    "47": "Tennessee", "48": "Texas", "49": "Utah",
+    "50": "Vermont", "51": "Virginia", "53": "Washington",
+    "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
+}

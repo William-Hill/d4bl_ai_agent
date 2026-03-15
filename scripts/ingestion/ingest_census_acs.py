@@ -15,7 +15,7 @@ import os
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id, safe_float,
+    STATE_FIPS, get_db_connection, make_record_id, safe_float, upsert_batch,
 )
 
 CENSUS_BASE_URL = "https://api.census.gov/data"
@@ -40,28 +40,6 @@ METRIC_VARIABLES = {
         "white": {"num": "B17001H_002E", "den": "B17001H_001E"},
         "hispanic": {"num": "B17001I_002E", "den": "B17001I_001E"},
     },
-}
-
-STATE_FIPS = {
-    "01": "Alabama", "02": "Alaska", "04": "Arizona",
-    "05": "Arkansas", "06": "California", "08": "Colorado",
-    "09": "Connecticut", "10": "Delaware",
-    "11": "District of Columbia", "12": "Florida",
-    "13": "Georgia", "15": "Hawaii", "16": "Idaho",
-    "17": "Illinois", "18": "Indiana", "19": "Iowa",
-    "20": "Kansas", "21": "Kentucky", "22": "Louisiana",
-    "23": "Maine", "24": "Maryland", "25": "Massachusetts",
-    "26": "Michigan", "27": "Minnesota", "28": "Mississippi",
-    "29": "Missouri", "30": "Montana", "31": "Nebraska",
-    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey",
-    "35": "New Mexico", "36": "New York",
-    "37": "North Carolina", "38": "North Dakota",
-    "39": "Ohio", "40": "Oklahoma", "41": "Oregon",
-    "42": "Pennsylvania", "44": "Rhode Island",
-    "45": "South Carolina", "46": "South Dakota",
-    "47": "Tennessee", "48": "Texas", "49": "Utah",
-    "50": "Vermont", "51": "Virginia", "53": "Washington",
-    "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
 }
 
 # Precomputed set of all Census API variable codes
@@ -195,18 +173,6 @@ UPSERT_SQL = """
         state_fips = EXCLUDED.state_fips
 """
 
-def _upsert_batch(conn, records: list[dict]) -> int:
-    """Upsert a list of records in batches. Returns total upserted."""
-    total = 0
-    with conn.cursor() as cur:
-        for i in range(0, len(records), 500):
-            batch = records[i : i + 500]
-            execute_batch(cur, UPSERT_SQL, batch)
-            total += len(batch)
-    conn.commit()
-    return total
-
-
 def main() -> int:
     """Run Census ACS ingestion for state + county geographies.
 
@@ -233,7 +199,7 @@ def main() -> int:
             headers = rows[0]
             data_rows = rows[1:]
             records = _build_records(headers, data_rows, "state", year)
-            count = _upsert_batch(conn, records)
+            count = upsert_batch(conn, UPSERT_SQL, records)
             total_ingested += count
             print(f"  State-level: {count} records upserted")
         else:
@@ -247,7 +213,7 @@ def main() -> int:
             headers = rows[0]
             data_rows = rows[1:]
             records = _build_records(headers, data_rows, "county", year)
-            count = _upsert_batch(conn, records)
+            count = upsert_batch(conn, UPSERT_SQL, records)
             total_ingested += count
             print(f"  County-level: {count} records upserted")
         else:
