@@ -53,6 +53,7 @@ from d4bl.infra.database import (
     BlsLaborStatistic,
     CdcHealthOutcome,
     CensusIndicator,
+    CensusDemographics,
     DoeCivilRights,
     EpaEnvironmentalJustice,
     EvaluationResult,
@@ -1123,6 +1124,67 @@ async def get_bjs_incarceration(
     except Exception:
         logger.error("Failed to fetch BJS incarceration data", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch BJS incarceration data")
+
+
+@app.get("/api/explore/census-demographics", response_model=ExploreResponse)
+async def get_census_demographics(
+    state_fips: str | None = None,
+    metric: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Census Decennial demographics aggregated to state level."""
+    try:
+        query = select(
+            CensusDemographics.state_fips,
+            CensusDemographics.state_name,
+            CensusDemographics.year,
+            CensusDemographics.race,
+            func.sum(CensusDemographics.population).label("total_pop"),
+            func.avg(CensusDemographics.pct_of_total).label("avg_pct"),
+        ).group_by(
+            CensusDemographics.state_fips,
+            CensusDemographics.state_name,
+            CensusDemographics.year,
+            CensusDemographics.race,
+        )
+        if state_fips:
+            query = query.where(CensusDemographics.state_fips == state_fips)
+        if race:
+            query = query.where(CensusDemographics.race == race)
+        if year:
+            query = query.where(CensusDemographics.year == year)
+        query = query.order_by(CensusDemographics.state_fips).limit(max(1, min(limit, 5000)))
+
+        result = await db.execute(query)
+        rows_raw = result.mappings().all()
+
+        use_pct = metric == "pct_of_total"
+        row_dicts = [
+            {
+                "state_fips": r["state_fips"],
+                "state_name": r["state_name"] or FIPS_TO_NAME.get(r["state_fips"], r["state_fips"]),
+                "value": round(float(r["avg_pct"]), 2) if use_pct else float(r["total_pop"]),
+                "metric": "pct_of_total" if use_pct else "population",
+                "year": r["year"],
+                "race": r["race"],
+            }
+            for r in rows_raw
+        ]
+
+        return ExploreResponse(
+            rows=[ExploreRow(**d) for d in row_dicts],
+            national_average=compute_national_avg(row_dicts),
+            available_metrics=["population", "pct_of_total"],
+            available_years=distinct_values(row_dicts, "year"),
+            available_races=distinct_values(row_dicts, "race"),
+        )
+    except Exception:
+        logger.error("Failed to fetch Census demographics data", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch Census demographics data")
 
 
 @app.get("/api/explore/policies", response_model=list[PolicyBillItem])
