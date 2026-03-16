@@ -405,3 +405,24 @@ class StateSummaryInsight(BaseModel):
     year: int
     source: str
 
+
+# --- Explain (LLM narrative) models ---
+
+
+class ExplainRequest(BaseModel):
+    source: str
+    metric: str
+    state_fips: str
+    state_name: str
+    value: float
+    national_average: float
+    racial_gap: RacialGap | None = None
+    year: int
+
+
+class ExplainResponse(BaseModel):
+    narrative: str
+    methodology_note: str
+    caveats: list[str]
+    generated_at: str
+

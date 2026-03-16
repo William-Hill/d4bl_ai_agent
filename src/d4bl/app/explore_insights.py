@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from litellm import acompletion
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user
-from d4bl.app.schemas import RacialGap, RacialGapGroup, StateSummaryInsight
+from d4bl.app.schemas import (
+    ExplainRequest,
+    ExplainResponse,
+    RacialGap,
+    RacialGapGroup,
+    StateSummaryInsight,
+)
 from d4bl.infra.database import get_db
 from d4bl.infra.state_summary import StateSummary
+from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -129,4 +139,91 @@ async def get_state_summary(
         racial_gap=racial_gap,
         year=resolved_year,
         source=source,
+    )
+
+
+_SYSTEM_PROMPT = (
+    "You are a racial equity data analyst writing for policy researchers. "
+    "You explain socioeconomic indicators clearly, noting disparities and "
+    "structural context. Respond ONLY with valid JSON containing keys: "
+    '"narrative" (str), "methodology_note" (str), "caveats" (list[str]).'
+)
+
+
+def _build_user_prompt(req: ExplainRequest) -> str:
+    """Build a structured user prompt from the explain request."""
+    gap_text = ""
+    if req.racial_gap:
+        groups = ", ".join(
+            f"{g.race}: {g.value}" for g in req.racial_gap.groups
+        )
+        gap_text = (
+            f"\nRacial breakdown: {groups}"
+            f"\nMax disparity ratio: {req.racial_gap.max_ratio}"
+            f" ({req.racial_gap.max_ratio_label})"
+        )
+
+    return (
+        f"Data source: {req.source}\n"
+        f"Metric: {req.metric}\n"
+        f"State: {req.state_name} (FIPS {req.state_fips})\n"
+        f"Value: {req.value}\n"
+        f"National average: {req.national_average}\n"
+        f"Year: {req.year}"
+        f"{gap_text}\n\n"
+        "Provide a concise narrative explaining what this data means for "
+        "racial equity in this state, a brief methodology note about this "
+        "metric, and a list of caveats researchers should keep in mind."
+    )
+
+
+@router.post("/explain", response_model=ExplainResponse)
+async def explain_view(
+    req: ExplainRequest,
+    _user: CurrentUser = Depends(get_current_user),
+) -> ExplainResponse:
+    """Generate an LLM-powered narrative explanation for the current view."""
+
+    settings = get_settings()
+    model = f"ollama/{settings.ollama_model}"
+
+    try:
+        response = await acompletion(
+            model=model,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": _build_user_prompt(req)},
+            ],
+            max_tokens=500,
+            temperature=0.3,
+            timeout=30,
+            api_base=settings.ollama_base_url,
+        )
+    except Exception:
+        logger.exception("LLM call failed for /api/explore/explain")
+        raise HTTPException(
+            status_code=503,
+            detail="AI analysis unavailable — Ollama may be down",
+        )
+
+    raw = response.choices[0].message.content or ""
+
+    # Try to parse as JSON; fall back to raw text as narrative
+    try:
+        parsed = json.loads(raw)
+        narrative = parsed.get("narrative", raw)
+        methodology_note = parsed.get("methodology_note", "")
+        caveats = parsed.get("caveats", [])
+        if not isinstance(caveats, list):
+            caveats = [str(caveats)]
+    except (json.JSONDecodeError, AttributeError):
+        narrative = raw
+        methodology_note = ""
+        caveats = []
+
+    return ExplainResponse(
+        narrative=narrative,
+        methodology_note=methodology_note,
+        caveats=caveats,
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
