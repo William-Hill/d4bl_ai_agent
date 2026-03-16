@@ -107,6 +107,7 @@ export default function ExplainPanel({
           AI analysis unavailable &mdash; check that Ollama is running
         </span>
         <button
+          type="button"
           onClick={fetchExplanation}
           className="text-xs px-2 py-1 rounded border border-[#555] text-gray-400 hover:text-white hover:border-gray-400 transition-colors"
         >
@@ -121,6 +122,7 @@ export default function ExplainPanel({
     return (
       <div className="mb-4">
         <button
+          type="button"
           onClick={() => setExpanded((prev) => !prev)}
           className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors mb-1"
         >
@@ -168,6 +170,7 @@ export default function ExplainPanel({
   return (
     <div className="mb-4">
       <button
+        type="button"
         onClick={fetchExplanation}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors border"
         style={{

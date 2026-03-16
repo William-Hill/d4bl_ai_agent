@@ -429,7 +429,7 @@ export default function ExplorePage() {
         {exploreData && (
           <ExploreQueryBar
             source={activeSource.key}
-            metric={filters.metric}
+            metric={filters.metric || exploreData.available_metrics?.[0] || null}
             stateFips={filters.selectedState}
             race={filters.race}
             year={filters.year}

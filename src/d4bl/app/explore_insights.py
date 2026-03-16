@@ -21,9 +21,9 @@ from d4bl.app.schemas import (
     RacialGapGroup,
     StateSummaryInsight,
 )
-from d4bl.query.engine import QueryEngine
 from d4bl.infra.database import get_db
 from d4bl.infra.state_summary import StateSummary
+from d4bl.query.engine import QueryEngine
 from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,10 @@ async def explore_query(
         )
     except Exception as exc:
         logger.error("Explore query failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Query failed — the AI service may be unavailable",
+        )
 
 
 @router.get("/state-summary", response_model=StateSummaryInsight)
@@ -257,7 +260,10 @@ async def explain_view(
             detail="AI analysis unavailable — Ollama may be down",
         )
 
-    raw = response.choices[0].message.content or ""
+    try:
+        raw = response.choices[0].message.content or ""
+    except (AttributeError, IndexError, TypeError):
+        raw = ""
 
     # Try to parse as JSON; fall back to raw text as narrative
     try:
