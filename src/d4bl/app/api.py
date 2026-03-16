@@ -32,6 +32,7 @@ from d4bl.app.explore_helpers import (
     compute_national_avg,
     distinct_values,
 )
+from d4bl.app.explore_insights import router as explore_insights_router
 from d4bl.app.schemas import (
     EvaluationResultItem,
     ExploreResponse,
@@ -219,6 +220,7 @@ app.add_middleware(
 )
 
 app.include_router(data_router)
+app.include_router(explore_insights_router)
 
 # ---------------------------------------------------------------------------
 # Admin ingestion: track background subprocess jobs

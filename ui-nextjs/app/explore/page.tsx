@@ -8,6 +8,9 @@ import DataSourceTabs from '@/components/explore/DataSourceTabs';
 import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
+import StateAnnotation from '@/components/explore/StateAnnotation';
+import ExplainPanel from '@/components/explore/ExplainPanel';
+import ExploreQueryBar from '@/components/explore/ExploreQueryBar';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
@@ -242,6 +245,10 @@ export default function ExplorePage() {
     ? getDirectionalColors(activeSource.key, filters.metric, activeSource.accent)
     : { colorStart: '#444', colorEnd: activeSource.accent };
 
+  /** Resolved metric and year for consistent AI feature context. */
+  const resolvedMetric = filters.metric || exploreData?.available_metrics?.[0] || '';
+  const resolvedYear = filters.year ?? exploreData?.available_years?.[exploreData.available_years.length - 1] ?? 2022;
+
   return (
     <div className="min-h-screen bg-[#292929]">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -381,16 +388,32 @@ export default function ExplorePage() {
               <h2 className="text-base font-semibold text-white">{selectedStateName}</h2>
               <PolicyBadge bills={bills} stateName={selectedStateName} accent={activeSource.accent} />
             </div>
+            <StateAnnotation
+              source={activeSource.key}
+              stateFips={filters.selectedState}
+              metric={resolvedMetric}
+              accent={activeSource.accent}
+            />
+            <ExplainPanel
+              source={activeSource.key}
+              metric={resolvedMetric}
+              stateFips={filters.selectedState}
+              stateName={selectedStateName}
+              value={stateDetailValue}
+              nationalAverage={exploreData.national_average ?? 0}
+              year={resolvedYear}
+              accent={activeSource.accent}
+            />
             {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
               <RacialGapChart
                 indicators={exploreData.rows
                   .filter(
                     (r) =>
                       r.state_fips === filters.selectedState &&
-                      r.metric === (filters.metric || exploreData.available_metrics?.[0]),
+                      r.metric === (resolvedMetric),
                   )
                   .map(toIndicatorRow)}
-                metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+                metric={resolvedMetric}
                 stateName={selectedStateName}
               />
             ) : (
@@ -398,12 +421,24 @@ export default function ExplorePage() {
                 stateValue={stateDetailValue}
                 nationalAverage={exploreData.national_average ?? 0}
                 stateName={selectedStateName}
-                metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+                metric={resolvedMetric}
                 accent={activeSource.accent}
-                metricDirection={getMetricDirection(activeSource.key, filters.metric || exploreData.available_metrics?.[0] || '')}
+                metricDirection={getMetricDirection(activeSource.key, resolvedMetric)}
               />
             )}
           </div>
+        )}
+
+        {/* Conversational Query Bar */}
+        {exploreData && (
+          <ExploreQueryBar
+            source={activeSource.key}
+            metric={resolvedMetric || null}
+            stateFips={filters.selectedState}
+            race={filters.race}
+            year={resolvedYear}
+            accent={activeSource.accent}
+          />
         )}
       </div>
     </div>

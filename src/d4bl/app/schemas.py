@@ -377,3 +377,94 @@ class KeywordMonitorResponse(BaseModel):
     created_by: str | None
     created_at: str | None
 
+
+# --- State Summary / Insights models ---
+
+
+class RacialGapGroup(BaseModel):
+    """A single racial group's metric value."""
+
+    race: str
+    value: float
+
+
+class RacialGap(BaseModel):
+    """Racial disparity summary with group values and max ratio."""
+
+    groups: list[RacialGapGroup]
+    max_ratio: float
+    max_ratio_label: str
+
+
+class StateSummaryInsight(BaseModel):
+    """Pre-computed state-level stats: rank, percentile, and racial gap."""
+
+    state_fips: str
+    state_name: str
+    metric: str
+    value: float
+    national_average: float
+    national_rank: int
+    national_rank_total: int
+    percentile: float
+    racial_gap: RacialGap | None
+    year: int
+    source: str
+
+
+# --- Explore query models ---
+
+
+class ExploreQueryContext(BaseModel):
+    """Current explore page state passed as context for AI queries."""
+
+    source: str
+    metric: str | None = None
+    state_fips: str | None = None
+    race: str | None = None
+    year: int | None = None
+
+
+class ExploreQueryRequest(BaseModel):
+    """Natural language question with explore page context."""
+
+    question: str
+    context: ExploreQueryContext
+
+    @field_validator("question")
+    @classmethod
+    def question_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Question must not be blank")
+        return v.strip()
+
+
+class ExploreQueryResponse(BaseModel):
+    """Answer from the context-aware query engine."""
+
+    answer: str
+    data: list[ExploreRow] | None = None
+    visualization_hint: str | None = None
+
+
+class ExplainRequest(BaseModel):
+    """Structured data context for LLM explanation generation."""
+
+    source: str
+    metric: str
+    state_fips: str
+    state_name: str
+    value: float
+    national_average: float
+    racial_gap: RacialGap | None = None
+    year: int
+
+
+class ExplainResponse(BaseModel):
+    """LLM-generated explanation with methodology and caveats."""
+
+    narrative: str
+    methodology_note: str
+    caveats: list[str]
+    generated_at: str
+
