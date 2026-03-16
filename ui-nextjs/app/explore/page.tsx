@@ -10,6 +10,7 @@ import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
 import StateAnnotation from '@/components/explore/StateAnnotation';
 import ExplainPanel from '@/components/explore/ExplainPanel';
+import ExploreQueryBar from '@/components/explore/ExploreQueryBar';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
@@ -422,6 +423,18 @@ export default function ExplorePage() {
               />
             )}
           </div>
+        )}
+
+        {/* Conversational Query Bar */}
+        {exploreData && (
+          <ExploreQueryBar
+            source={activeSource.key}
+            metric={filters.metric}
+            stateFips={filters.selectedState}
+            race={filters.race}
+            year={filters.year}
+            accent={activeSource.accent}
+          />
         )}
       </div>
     </div>
