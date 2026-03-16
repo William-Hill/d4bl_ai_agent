@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 EXPLAIN_PAYLOAD = {
     "source": "census",
     "metric": "median_household_income",
