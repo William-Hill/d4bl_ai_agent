@@ -211,7 +211,7 @@ export const METRIC_DIRECTION: Record<string, Record<string, boolean | null>> = 
   fbi: { default: false },
   bls: {
     unemployment_rate: false,
-    labor_force_participation: true,
+    labor_force_participation_rate: true,
     default: false,
   },
   hud: { default: false },

@@ -100,6 +100,12 @@ _FRESHNESS_CHECK_INTERVAL = 30  # seconds
 _last_freshness_check = 0.0
 
 
+def _reset_freshness_state() -> None:
+    """Reset freshness check state (for testing)."""
+    global _last_freshness_check
+    _last_freshness_check = 0.0
+
+
 async def _check_cache_freshness(session: AsyncSession):
     """Invalidate cache if a newer ingestion run completed.
 

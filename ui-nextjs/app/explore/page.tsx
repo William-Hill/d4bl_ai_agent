@@ -370,7 +370,11 @@ export default function ExplorePage() {
             {activeSource.hasRace ? (
               <RacialGapChart
                 indicators={exploreData.rows
-                  .filter(r => r.state_fips === filters.selectedState)
+                  .filter(
+                    (r) =>
+                      r.state_fips === filters.selectedState &&
+                      r.metric === (filters.metric || exploreData.available_metrics?.[0]),
+                  )
                   .map(toIndicatorRow)}
                 metric={filters.metric || exploreData.available_metrics?.[0] || ''}
                 stateName={selectedStateName}

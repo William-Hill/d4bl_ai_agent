@@ -659,7 +659,8 @@ class TestStatesEndpoint:
         # The freshness check may or may not fire (throttled to every 30s),
         # so we use a stateful side_effect that returns freshness results for
         # IngestionRun queries and real results in order for everything else.
-        real_results = iter([mock_result_metrics, mock_result_bills])
+        real_results = [mock_result_metrics, mock_result_bills]
+        real_idx = {"i": 0}
         mock_freshness_result = MagicMock()
         mock_freshness_result.scalar.return_value = None
 
@@ -667,7 +668,9 @@ class TestStatesEndpoint:
             stmt_str = str(stmt)
             if "ingestion_run" in stmt_str.lower():
                 return mock_freshness_result
-            return next(real_results)
+            result = real_results[real_idx["i"]]
+            real_idx["i"] += 1
+            return result
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(side_effect=_mock_execute)

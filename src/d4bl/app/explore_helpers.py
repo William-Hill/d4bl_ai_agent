@@ -96,7 +96,9 @@ async def build_response_from_summary(
         query = query.where(StateSummary.race == race)
     if year:
         query = query.where(StateSummary.year == year)
-    query = query.limit(min(limit, 5000))
+    query = query.order_by(
+        StateSummary.state_fips, StateSummary.metric, StateSummary.year
+    ).limit(min(limit, 5000))
 
     result = await session.execute(query)
     rows_raw = result.scalars().all()

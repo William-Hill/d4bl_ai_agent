@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from cachetools import TTLCache
 
@@ -12,7 +13,11 @@ _DEFAULT_MAXSIZE = 200
 
 
 class ExploreCache:
-    """Thread-safe TTL cache with ingestion-aware invalidation."""
+    """TTL cache with ingestion-aware invalidation.
+
+    Individual get/set/clear operations are atomic. Compound check-then-set
+    patterns in calling code may require external synchronization.
+    """
 
     def __init__(
         self, ttl_seconds: int = _DEFAULT_TTL, maxsize: int = _DEFAULT_MAXSIZE
@@ -20,11 +25,11 @@ class ExploreCache:
         self._cache: TTLCache = TTLCache(maxsize=maxsize, ttl=ttl_seconds)
         self._last_ingestion_ts: float = 0.0
 
-    def get(self, key: str):
+    def get(self, key: str) -> Any | None:
         """Return cached value or ``None`` if missing / expired."""
         return self._cache.get(key)
 
-    def set(self, key: str, value):
+    def set(self, key: str, value: Any) -> None:
         """Store *value* under *key*."""
         self._cache[key] = value
 

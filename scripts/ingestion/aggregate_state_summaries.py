@@ -197,7 +197,11 @@ def aggregate_doe(
     )
     for r in rows:
         # school_year is like "2020-2021" — extract start year
-        year = int(r["school_year"].split("-")[0])
+        try:
+            year = int(r["school_year"].split("-")[0])
+        except (ValueError, TypeError, AttributeError):
+            logger.warning("Invalid school_year %r, skipping row", r.get("school_year"))
+            continue
         key = (r["state"], r["metric"], r["race"], year)
         enrollment = r["total_enrollment"]
         buckets[key]["weighted_sum"] += r["value"] * enrollment

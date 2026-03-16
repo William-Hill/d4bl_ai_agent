@@ -12,7 +12,6 @@ Usage:
 
 import argparse
 import importlib
-import logging
 import os
 import sys
 import time
@@ -189,10 +188,6 @@ def main() -> int:
         if status == "ok" and name in AGGREGATION_SOURCES
     ]
     if completed_sources:
-        agg_logger = logging.getLogger("aggregate_state_summaries")
-        agg_logger.info(
-            "Running state-level aggregation for: %s", completed_sources
-        )
         print(
             f"\nRunning state-level aggregation for: "
             f"{', '.join(completed_sources)}"

@@ -197,3 +197,23 @@ class TestCensusUnifiedResponse:
         assert data["available_metrics"] == ["homeownership_rate"]
         assert data["available_years"] == [2022]
         assert sorted(data["available_races"]) == ["black", "total", "white"]
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_500(self, override_auth):
+        """DB failure returns 500, not an unhandled exception."""
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=Exception("db connection lost"))
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/explore/indicators")
+
+        assert response.status_code == 500

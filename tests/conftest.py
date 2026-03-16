@@ -82,14 +82,14 @@ def mock_ollama_embedding(sample_embedding):
 @pytest.fixture(autouse=True)
 def _clear_explore_cache():
     """Clear the explore endpoint cache and reset freshness throttle before each test."""
-    import d4bl.app.api as _api_mod
+    from d4bl.app.api import _reset_freshness_state
     from d4bl.app.cache import explore_cache
 
     explore_cache.clear()
-    _api_mod._last_freshness_check = 0.0
+    _reset_freshness_state()
     yield
     explore_cache.clear()
-    _api_mod._last_freshness_check = 0.0
+    _reset_freshness_state()
 
 
 @pytest.fixture
