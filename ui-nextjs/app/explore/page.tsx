@@ -11,7 +11,7 @@ import PolicyBadge from '@/components/explore/PolicyBadge';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors } from '@/lib/explore-config';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors, getChartType } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
@@ -380,7 +380,7 @@ export default function ExplorePage() {
               <h2 className="text-base font-semibold text-white">{selectedStateName}</h2>
               <PolicyBadge bills={bills} stateName={selectedStateName} accent={activeSource.accent} />
             </div>
-            {activeSource.hasRace ? (
+            {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
               <RacialGapChart
                 indicators={exploreData.rows
                   .filter(

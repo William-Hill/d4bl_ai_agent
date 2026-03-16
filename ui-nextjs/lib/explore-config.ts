@@ -245,6 +245,12 @@ export function getDirectionalColors(
   return { colorStart: "#444", colorEnd: accent }; // neutral: source accent
 }
 
+export type ChartType = "racial-gap" | "state-vs-national";
+
+export function getChartType(sourceKey: string, hasRace: boolean): ChartType {
+  return hasRace ? "racial-gap" : "state-vs-national";
+}
+
 /** Convert a snake_case / kebab-case metric name into a human-friendly label. */
 export function humanizeMetric(metric: string): string {
   return metric.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
