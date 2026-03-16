@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from d4bl.app.cache import ExploreCache
 
 

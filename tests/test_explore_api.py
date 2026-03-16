@@ -655,14 +655,22 @@ class TestStatesEndpoint:
         mock_result_bills = MagicMock()
         mock_result_bills.mappings.return_value.all.return_value = [mock_bills_row._mapping]
 
-        # Cache freshness check queries IngestionRun; return None (no runs).
+        # Build a mock DB that handles freshness check + two real queries.
+        # The freshness check may or may not fire (throttled to every 30s),
+        # so we use a stateful side_effect that returns freshness results for
+        # IngestionRun queries and real results in order for everything else.
+        real_results = iter([mock_result_metrics, mock_result_bills])
         mock_freshness_result = MagicMock()
         mock_freshness_result.scalar.return_value = None
 
+        async def _mock_execute(stmt, *args, **kwargs):
+            stmt_str = str(stmt)
+            if "ingestion_run" in stmt_str.lower():
+                return mock_freshness_result
+            return next(real_results)
+
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(
-            side_effect=[mock_freshness_result, mock_result_metrics, mock_result_bills]
-        )
+        mock_db.execute = AsyncMock(side_effect=_mock_execute)
 
         async def override_get_db():
             yield mock_db

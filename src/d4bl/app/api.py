@@ -22,9 +22,8 @@ from sqlalchemy import String, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from d4bl.app.cache import explore_cache
-
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
+from d4bl.app.cache import explore_cache
 from d4bl.app.data_routes import router as data_router
 from d4bl.app.explore_helpers import (
     FIPS_TO_STATE_NAME,
@@ -37,7 +36,6 @@ from d4bl.app.schemas import (
     EvaluationResultItem,
     ExploreResponse,
     ExploreRow,
-
     InviteRequest,
     JobHistoryResponse,
     JobStatus,
@@ -58,10 +56,7 @@ from d4bl.infra.database import (
     BlsLaborStatistic,
     CdcHealthOutcome,
     CdcMortality,
-    CensusDemographics,
     CensusIndicator,
-    DoeCivilRights,
-    EpaEnvironmentalJustice,
     EvaluationResult,
     FbiCrimeStat,
     HudFairHousing,
@@ -69,7 +64,6 @@ from d4bl.infra.database import (
     PoliceViolenceIncident,
     PolicyBill,
     ResearchJob,
-    UsdaFoodAccess,
     close_db,
     create_tables,
     get_db,
@@ -992,10 +986,15 @@ async def get_doe_civil_rights(
             except (ValueError, IndexError):
                 year_int = None
 
+        # Resolve state_fips: accept either FIPS code or abbreviation
+        resolved_fips = state_fips
+        if not resolved_fips and state:
+            resolved_fips = ABBREV_TO_FIPS.get(state.upper())
+
         response = await build_response_from_summary(
             db,
             source="doe",
-            state_fips=state_fips,
+            state_fips=resolved_fips,
             metric_value=metric,
             race=race,
             year=year_int,
