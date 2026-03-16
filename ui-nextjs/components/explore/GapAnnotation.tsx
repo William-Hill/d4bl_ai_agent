@@ -9,6 +9,8 @@ interface GapAnnotationProps {
   stateValue?: number;
   stateName?: string;
   nationalAverage?: number;
+  /** true = high is good, false = high is bad, null = neutral */
+  metricDirection?: boolean | null;
 }
 
 function formatValue(value: number): string {
@@ -25,6 +27,7 @@ export default function GapAnnotation({
   stateValue,
   stateName,
   nationalAverage,
+  metricDirection,
 }: GapAnnotationProps) {
   if (type === "racial-gap") {
     if (!raceValues || raceValues.length < 2) return null;
@@ -85,8 +88,11 @@ export default function GapAnnotation({
         ? Math.abs((diff / nationalAverage) * 100).toFixed(1)
         : "0";
 
-    const direction = diff >= 0 ? "above" : "below";
-    const color = diff >= 0 ? "#22c55e" : "#ef4444";
+    const isAbove = diff >= 0;
+    const direction = isAbove ? "above" : "below";
+    // For metrics where high is bad, invert the color logic
+    const isFavorable = metricDirection === false ? !isAbove : isAbove;
+    const color = isFavorable ? "#22c55e" : "#ef4444";
 
     return (
       <p className="mt-2 text-xs leading-relaxed text-[#a8a8a8]">

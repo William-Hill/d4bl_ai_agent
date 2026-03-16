@@ -11,7 +11,7 @@ import PolicyBadge from '@/components/explore/PolicyBadge';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors, getChartType } from '@/lib/explore-config';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors, getChartType, getMetricDirection } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
@@ -370,6 +370,7 @@ export default function ExplorePage() {
             selectedStateFips={filters.selectedState}
             onSelectState={handleSelectState}
             accent={activeSource.accent}
+            sourceKey={activeSource.key}
           />
         )}
 
@@ -399,6 +400,7 @@ export default function ExplorePage() {
                 stateName={selectedStateName}
                 metric={filters.metric || exploreData.available_metrics?.[0] || ''}
                 accent={activeSource.accent}
+                metricDirection={getMetricDirection(activeSource.key, filters.metric || exploreData.available_metrics?.[0] || '')}
               />
             )}
           </div>

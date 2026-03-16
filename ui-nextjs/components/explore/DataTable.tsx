@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ExploreRow } from '@/lib/types';
-import { humanizeMetric } from '@/lib/explore-config';
+import { humanizeMetric, getMetricDirection } from '@/lib/explore-config';
 
 const COLLAPSE_KEY = "d4bl-table-collapsed";
 
@@ -24,6 +24,7 @@ export interface DataTableProps {
   onSelectState: (fips: string, name: string) => void;
   accent: string;
   defaultCollapsed?: boolean;
+  sourceKey: string;
 }
 
 type SortKey = 'name' | 'value' | 'rank' | 'vs_national';
@@ -91,7 +92,11 @@ export default function DataTable({
   onSelectState,
   accent,
   defaultCollapsed,
+  sourceKey,
 }: DataTableProps) {
+  // Determine if "above national average" is good or bad for this metric
+  const metricDir = metric ? getMetricDirection(sourceKey, metric) : null;
+
   const [sortKey, setSortKey] = useState<SortKey>('rank');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -192,6 +197,7 @@ export default function DataTable({
       </div>
 
       <button
+        type="button"
         onClick={toggleCollapse}
         className="flex w-full items-center justify-between px-3 py-2 text-xs text-[#999] hover:text-white"
       >
@@ -249,7 +255,9 @@ export default function DataTable({
                           color:
                             row.vsNational == null
                               ? '#666'
-                              : row.vsNational >= 0
+                              : (metricDir === false
+                                  ? row.vsNational < 0  // high is bad → below avg is good
+                                  : row.vsNational >= 0) // high is good/neutral → above avg is good
                               ? '#22c55e'
                               : '#ef4444',
                         }}

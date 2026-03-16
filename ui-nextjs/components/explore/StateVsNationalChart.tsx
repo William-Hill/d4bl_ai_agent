@@ -9,6 +9,8 @@ interface Props {
   stateName: string;
   metric: string;
   accent: string;
+  /** true = high is good, false = high is bad, null = neutral */
+  metricDirection?: boolean | null;
 }
 
 export default function StateVsNationalChart({
@@ -17,6 +19,7 @@ export default function StateVsNationalChart({
   stateName,
   metric,
   accent,
+  metricDirection,
 }: Props) {
   const data = [
     { name: stateName, value: stateValue },
@@ -61,6 +64,7 @@ export default function StateVsNationalChart({
         stateValue={stateValue}
         stateName={stateName}
         nationalAverage={nationalAverage}
+        metricDirection={metricDirection}
       />
     </div>
   );
