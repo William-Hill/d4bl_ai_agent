@@ -312,3 +312,13 @@ def run_aggregation(sources: list[str]) -> None:
         raise
     finally:
         session.close()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    sources = sys.argv[1:] if len(sys.argv) > 1 else None
+    if not sources:
+        print("Usage: python aggregate_state_summaries.py <source1> [source2] ...")
+        print("Sources: usda, census_decennial, epa, doe")
+        sys.exit(1)
+    run_aggregation(sources)
