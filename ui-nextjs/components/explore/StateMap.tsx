@@ -12,7 +12,6 @@ interface Props {
   selectedStateFips: string | null;
   onSelectState: (fips: string, name: string) => void;
   accent?: string;
-  nationalAverage?: number | null;
   colorStart?: string;
   colorEnd?: string;
 }
@@ -22,7 +21,6 @@ export default function StateMap({
   selectedStateFips,
   onSelectState,
   accent,
-  nationalAverage: _nationalAverage, // eslint-disable-line @typescript-eslint/no-unused-vars
   colorStart,
   colorEnd,
 }: Props) {

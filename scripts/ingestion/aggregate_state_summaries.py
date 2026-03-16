@@ -101,71 +101,49 @@ def _get_sync_session() -> Session:
 # ---------------------------------------------------------------------------
 
 
-def aggregate_epa(
+def _aggregate_weighted_avg(
     rows: list[dict[str, Any]],
+    source: str,
+    value_key: str,
 ) -> list[dict[str, Any]]:
+    """Population-weighted average of tract indicators per state."""
+    buckets: dict[tuple, dict] = defaultdict(
+        lambda: {"weighted_sum": 0.0, "total_pop": 0, "state_name": ""}
+    )
+    for r in rows:
+        key = (r["state_fips"], r["indicator"], r["year"])
+        pop = r["population"]
+        buckets[key]["weighted_sum"] += r[value_key] * pop
+        buckets[key]["total_pop"] += pop
+        buckets[key]["state_name"] = r["state_name"]
+
+    results = []
+    for (state_fips, indicator, year), b in buckets.items():
+        if b["total_pop"] == 0:
+            continue
+        results.append(
+            {
+                "source": source,
+                "state_fips": state_fips,
+                "state_name": b["state_name"],
+                "metric": indicator,
+                "race": "total",
+                "year": year,
+                "value": b["weighted_sum"] / b["total_pop"],
+                "sample_size": b["total_pop"],
+            }
+        )
+    return results
+
+
+def aggregate_epa(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Population-weighted average of EPA tract indicators per state."""
-    # Key: (state_fips, indicator, year)
-    buckets: dict[tuple, dict] = defaultdict(
-        lambda: {"weighted_sum": 0.0, "total_pop": 0, "state_name": ""}
-    )
-    for r in rows:
-        key = (r["state_fips"], r["indicator"], r["year"])
-        pop = r["population"]
-        buckets[key]["weighted_sum"] += r["raw_value"] * pop
-        buckets[key]["total_pop"] += pop
-        buckets[key]["state_name"] = r["state_name"]
-
-    results = []
-    for (state_fips, indicator, year), b in buckets.items():
-        if b["total_pop"] == 0:
-            continue
-        results.append(
-            {
-                "source": "epa",
-                "state_fips": state_fips,
-                "state_name": b["state_name"],
-                "metric": indicator,
-                "race": "total",
-                "year": year,
-                "value": b["weighted_sum"] / b["total_pop"],
-                "sample_size": b["total_pop"],
-            }
-        )
-    return results
+    return _aggregate_weighted_avg(rows, source="epa", value_key="raw_value")
 
 
-def aggregate_usda(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+def aggregate_usda(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Population-weighted average of USDA tract indicators per state."""
-    buckets: dict[tuple, dict] = defaultdict(
-        lambda: {"weighted_sum": 0.0, "total_pop": 0, "state_name": ""}
-    )
-    for r in rows:
-        key = (r["state_fips"], r["indicator"], r["year"])
-        pop = r["population"]
-        buckets[key]["weighted_sum"] += r["value"] * pop
-        buckets[key]["total_pop"] += pop
-        buckets[key]["state_name"] = r["state_name"]
-
-    results = []
-    for (state_fips, indicator, year), b in buckets.items():
-        if b["total_pop"] == 0:
-            continue
-        results.append(
-            {
-                "source": "usda",
-                "state_fips": state_fips,
-                "state_name": b["state_name"],
-                "metric": indicator,
-                "race": "total",
-                "year": year,
-                "value": b["weighted_sum"] / b["total_pop"],
-                "sample_size": b["total_pop"],
-            }
-        )
-    return results
+    return _aggregate_weighted_avg(rows, source="usda", value_key="value")
 
 
 def aggregate_census_demographics(
@@ -304,7 +282,7 @@ def run_aggregation(sources: list[str]) -> None:
                 {"src": agg_key},
             )
 
-            for s in summaries:
+            if summaries:
                 session.execute(
                     text(
                         "INSERT INTO state_summary "
@@ -313,7 +291,7 @@ def run_aggregation(sources: list[str]) -> None:
                         "VALUES (:source, :state_fips, :state_name, "
                         ":metric, :race, :year, :value, :sample_size)"
                     ),
-                    s,
+                    summaries,
                 )
 
             session.commit()

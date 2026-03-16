@@ -41,30 +41,45 @@ class TestExploreCacheTTL:
 
 
 class TestExploreCacheInvalidation:
-    """Ingestion-aware invalidation via invalidate_if_stale."""
+    """Ingestion-aware invalidation via invalidate_if_stale.
 
-    def test_invalidates_entries_created_before_timestamp(self):
+    The simplified cache clears ALL entries when a newer ingestion
+    timestamp is detected (rather than per-entry staleness tracking).
+    """
+
+    def test_clears_all_entries_on_newer_ingestion(self):
         cache = ExploreCache(ttl_seconds=300, maxsize=10)
         cache.set("old", "stale-data")
-        cutoff = time.time() + 1  # everything so far is older
+        cutoff = time.time() + 1  # newer than _last_ingestion_ts (0.0)
         cache.invalidate_if_stale(newer_than=cutoff)
         assert cache.get("old") is None
 
-    def test_preserves_entries_created_after_timestamp(self):
+    def test_no_op_when_ingestion_ts_not_newer(self):
+        """If newer_than <= _last_ingestion_ts, cache is untouched."""
         cache = ExploreCache(ttl_seconds=300, maxsize=10)
-        cutoff = time.time() - 1  # cutoff is in the past
+        # First invalidation sets _last_ingestion_ts
+        cache.invalidate_if_stale(newer_than=100.0)
         cache.set("fresh", "good-data")
-        cache.invalidate_if_stale(newer_than=cutoff)
+        # Same timestamp — should NOT clear
+        cache.invalidate_if_stale(newer_than=100.0)
         assert cache.get("fresh") == "good-data"
 
-    def test_mixed_stale_and_fresh(self):
+    def test_clears_on_strictly_newer_timestamp(self):
+        """A strictly newer timestamp clears the cache again."""
         cache = ExploreCache(ttl_seconds=300, maxsize=10)
-        cache.set("old1", "a")
-        cache.set("old2", "b")
-        cutoff = time.time() + 0.01
-        time.sleep(0.02)
-        cache.set("new1", "c")
-        cache.invalidate_if_stale(newer_than=cutoff)
-        assert cache.get("old1") is None
-        assert cache.get("old2") is None
-        assert cache.get("new1") == "c"
+        cache.invalidate_if_stale(newer_than=100.0)
+        cache.set("a", 1)
+        cache.set("b", 2)
+        cache.invalidate_if_stale(newer_than=200.0)
+        assert cache.get("a") is None
+        assert cache.get("b") is None
+
+    def test_clear_resets_last_ingestion_ts(self):
+        """After clear(), even an old timestamp triggers invalidation."""
+        cache = ExploreCache(ttl_seconds=300, maxsize=10)
+        cache.invalidate_if_stale(newer_than=500.0)
+        cache.clear()
+        cache.set("after-clear", "value")
+        # 100 < 500 normally wouldn't trigger, but clear() reset to 0
+        cache.invalidate_if_stale(newer_than=100.0)
+        assert cache.get("after-clear") is None

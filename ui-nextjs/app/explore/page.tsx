@@ -96,11 +96,12 @@ function resolveInitialState(): { source: DataSourceConfig; filters: ExploreFilt
 export default function ExplorePage() {
   const { session, getHeaders } = useAuthHeaders();
 
-  const [activeSource, setActiveSource] = useState<DataSourceConfig>(() => resolveInitialState().source);
+  const initialState = useRef(resolveInitialState());
+  const [activeSource, setActiveSource] = useState<DataSourceConfig>(initialState.current.source);
   const [exploreData, setExploreData] = useState<ExploreResponse | null>(null);
   const [bills, setBills] = useState<PolicyBill[]>([]);
 
-  const [filters, setFilters] = useState<ExploreFilters>(() => resolveInitialState().filters);
+  const [filters, setFilters] = useState<ExploreFilters>(initialState.current.filters);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didAutoSelectDefaults = useRef(false);
@@ -224,6 +225,17 @@ export default function ExplorePage() {
     return exploreData.rows.map(toIndicatorRow);
   }, [exploreData]);
 
+  /** Pre-compute min/max for the MapLegend so the IIFE is not re-run in JSX. */
+  const legendData = useMemo(() => {
+    if (!exploreData || !filters.metric) return null;
+    const values = exploreData.rows
+      .filter((r) => r.metric === filters.metric)
+      .map((r) => r.value)
+      .filter((v): v is number => v != null);
+    if (values.length === 0) return null;
+    return { min: Math.min(...values), max: Math.max(...values) };
+  }, [exploreData, filters.metric]);
+
   /** Directional colors based on current source + metric. */
   const dirColors = filters.metric
     ? getDirectionalColors(activeSource.key, filters.metric, activeSource.accent)
@@ -291,30 +303,20 @@ export default function ExplorePage() {
                   selectedStateFips={filters.selectedState}
                   onSelectState={handleSelectState}
                   accent={activeSource.accent}
-                  nationalAverage={exploreData.national_average}
                   colorStart={dirColors.colorStart}
                   colorEnd={dirColors.colorEnd}
                 />
-                {filters.metric && (() => {
-                  const values = exploreData.rows
-                    .filter((r) => r.metric === filters.metric)
-                    .map((r) => r.value)
-                    .filter((v) => v != null);
-                  if (values.length === 0) return null;
-                  const min = Math.min(...values);
-                  const max = Math.max(...values);
-                  return (
-                    <MapLegend
-                      min={min}
-                      max={max}
-                      nationalAverage={exploreData.national_average}
-                      metric={filters.metric}
-                      colorStart={dirColors.colorStart}
-                      colorEnd={dirColors.colorEnd}
-                      accent={activeSource.accent}
-                    />
-                  );
-                })()}
+                {legendData && (
+                  <MapLegend
+                    min={legendData.min}
+                    max={legendData.max}
+                    nationalAverage={exploreData.national_average}
+                    metric={filters.metric}
+                    colorStart={dirColors.colorStart}
+                    colorEnd={dirColors.colorEnd}
+                    accent={activeSource.accent}
+                  />
+                )}
                 {loading && (
                   <div
                     className="absolute inset-0 bg-[#292929]/60 rounded-lg flex items-center justify-center"

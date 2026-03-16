@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -101,8 +102,21 @@ FIPS_TO_ABBREV: dict[str, str] = {v: k for k, v in ABBREV_TO_FIPS.items()}
 FIPS_TO_NAME = FIPS_TO_STATE_NAME
 
 
+_FRESHNESS_CHECK_INTERVAL = 30  # seconds
+_last_freshness_check = 0.0
+
+
 async def _check_cache_freshness(session: AsyncSession):
-    """Invalidate cache entries created before the latest completed ingestion."""
+    """Invalidate cache if a newer ingestion run completed.
+
+    Throttled to query the DB at most once every 30 seconds so that
+    high-traffic endpoints don't issue a DB round-trip on every request.
+    """
+    global _last_freshness_check
+    now = time.time()
+    if now - _last_freshness_check < _FRESHNESS_CHECK_INTERVAL:
+        return
+    _last_freshness_check = now
     try:
         result = await session.execute(
             select(func.max(IngestionRun.completed_at)).where(

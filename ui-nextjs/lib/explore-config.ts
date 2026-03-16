@@ -245,6 +245,11 @@ export function getDirectionalColors(
   return { colorStart: "#444", colorEnd: accent }; // neutral: source accent
 }
 
+/** Convert a snake_case / kebab-case metric name into a human-friendly label. */
+export function humanizeMetric(metric: string): string {
+  return metric.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Metric descriptions keyed by source key + metric value. Used for tooltips. */
 export const METRIC_DESCRIPTIONS: Partial<Record<string, Record<string, string>>> = {
   census: {

@@ -1,5 +1,7 @@
 "use client";
 
+import { humanizeMetric } from '@/lib/explore-config';
+
 interface MapLegendProps {
   min: number;
   max: number;
@@ -15,13 +17,6 @@ function formatValue(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(1);
-}
-
-function humanizeMetric(metric: string): string {
-  return metric
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 }
 
 export default function MapLegend({

@@ -1,6 +1,6 @@
 'use client';
 
-import { METRIC_DESCRIPTIONS } from '@/lib/explore-config';
+import { METRIC_DESCRIPTIONS, humanizeMetric } from '@/lib/explore-config';
 
 /** @deprecated Use `string` directly — kept for backward compatibility. */
 export type Metric = string;
@@ -48,15 +48,6 @@ const DEFAULT_RACES: { value: string; label: string }[] = [
 
 const DEFAULT_YEARS = [2022, 2021, 2020, 2019];
 
-/* ── Helpers ── */
-
-/** Convert a snake_case / kebab-case value into a human-friendly label. */
-function humanize(value: string): string {
-  return value
-    .replace(/[_-]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 /* ── Component ── */
 
 export default function MetricFilterPanel({
@@ -75,11 +66,11 @@ export default function MetricFilterPanel({
   const metrics =
     availableMetrics === undefined
       ? DEFAULT_METRICS
-      : availableMetrics.map((v) => ({ value: v, label: humanize(v) }));
+      : availableMetrics.map((v) => ({ value: v, label: humanizeMetric(v) }));
 
   const years = availableYears === undefined ? DEFAULT_YEARS : availableYears;
 
-  const rawRaces = availableRaces === undefined ? DEFAULT_RACES : availableRaces.map((v) => ({ value: v, label: humanize(v) }));
+  const rawRaces = availableRaces === undefined ? DEFAULT_RACES : availableRaces.map((v) => ({ value: v, label: humanizeMetric(v) }));
 
   // Race section: show if availableRaces is explicitly provided (with items),
   // OR if no availableRaces prop was given (backward compat — show Census defaults).
