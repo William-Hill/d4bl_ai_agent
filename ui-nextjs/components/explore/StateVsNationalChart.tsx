@@ -35,14 +35,14 @@ export default function StateVsNationalChart({
         </h3>
         <span
           className="text-sm font-mono"
-          style={{ color: diff >= 0 ? accent : '#777' }}
+          style={{ color: diff >= 0 ? accent : '#a8a8a8' }}
         >
           {diff >= 0 ? '+' : ''}{pctDiff}% vs national
         </span>
       </div>
-      <ResponsiveContainer width="100%" height={200}>
+      <ResponsiveContainer width="100%" height={280}>
         <BarChart data={data} barCategoryGap="30%">
-          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#4a4a4a" />
           <XAxis dataKey="name" tick={{ fill: '#999', fontSize: 12 }} />
           <YAxis tick={{ fill: '#999', fontSize: 12 }} />
           <Tooltip
@@ -50,7 +50,7 @@ export default function StateVsNationalChart({
           />
           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
             <Cell fill={accent} />
-            <Cell fill="#555" />
+            <Cell fill="#7c7c7c" />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
