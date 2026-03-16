@@ -9,6 +9,7 @@ import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
 import StateAnnotation from '@/components/explore/StateAnnotation';
+import ExplainPanel from '@/components/explore/ExplainPanel';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
@@ -386,6 +387,16 @@ export default function ExplorePage() {
               source={activeSource.key}
               stateFips={filters.selectedState}
               metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+              accent={activeSource.accent}
+            />
+            <ExplainPanel
+              source={activeSource.key}
+              metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+              stateFips={filters.selectedState}
+              stateName={selectedStateName}
+              value={stateDetailValue}
+              nationalAverage={exploreData.national_average ?? 0}
+              year={exploreData.available_years?.[exploreData.available_years.length - 1] ?? 2022}
               accent={activeSource.accent}
             />
             {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
