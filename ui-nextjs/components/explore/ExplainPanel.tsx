@@ -124,6 +124,8 @@ export default function ExplainPanel({
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
+          aria-expanded={expanded}
+          aria-controls="explain-panel-content"
           className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors mb-1"
         >
           <span
@@ -136,7 +138,7 @@ export default function ExplainPanel({
         </button>
 
         {expanded && (
-          <div className="p-4 bg-[#1a1a1a] border border-[#404040] rounded-lg space-y-3">
+          <div id="explain-panel-content" className="p-4 bg-[#1a1a1a] border border-[#404040] rounded-lg space-y-3">
             <p className="text-sm text-gray-300 leading-relaxed">
               {data.narrative}
             </p>

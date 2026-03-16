@@ -268,13 +268,15 @@ async def explain_view(
     # Try to parse as JSON; fall back to raw text as narrative
     try:
         parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise TypeError("LLM returned non-dict JSON")
         narrative = parsed.get("narrative", raw)
         methodology_note = parsed.get("methodology_note", "")
         caveats = parsed.get("caveats", [])
         if not isinstance(caveats, list):
             caveats = [str(caveats)]
-    except (json.JSONDecodeError, AttributeError):
-        narrative = raw
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        narrative = raw or "No analysis available."
         methodology_note = ""
         caveats = []
 

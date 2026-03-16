@@ -245,6 +245,10 @@ export default function ExplorePage() {
     ? getDirectionalColors(activeSource.key, filters.metric, activeSource.accent)
     : { colorStart: '#444', colorEnd: activeSource.accent };
 
+  /** Resolved metric and year for consistent AI feature context. */
+  const resolvedMetric = filters.metric || exploreData?.available_metrics?.[0] || '';
+  const resolvedYear = filters.year ?? exploreData?.available_years?.[exploreData.available_years.length - 1] ?? 2022;
+
   return (
     <div className="min-h-screen bg-[#292929]">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -387,17 +391,17 @@ export default function ExplorePage() {
             <StateAnnotation
               source={activeSource.key}
               stateFips={filters.selectedState}
-              metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+              metric={resolvedMetric}
               accent={activeSource.accent}
             />
             <ExplainPanel
               source={activeSource.key}
-              metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+              metric={resolvedMetric}
               stateFips={filters.selectedState}
               stateName={selectedStateName}
               value={stateDetailValue}
               nationalAverage={exploreData.national_average ?? 0}
-              year={exploreData.available_years?.[exploreData.available_years.length - 1] ?? 2022}
+              year={resolvedYear}
               accent={activeSource.accent}
             />
             {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
@@ -406,10 +410,10 @@ export default function ExplorePage() {
                   .filter(
                     (r) =>
                       r.state_fips === filters.selectedState &&
-                      r.metric === (filters.metric || exploreData.available_metrics?.[0]),
+                      r.metric === (resolvedMetric),
                   )
                   .map(toIndicatorRow)}
-                metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+                metric={resolvedMetric}
                 stateName={selectedStateName}
               />
             ) : (
@@ -417,9 +421,9 @@ export default function ExplorePage() {
                 stateValue={stateDetailValue}
                 nationalAverage={exploreData.national_average ?? 0}
                 stateName={selectedStateName}
-                metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+                metric={resolvedMetric}
                 accent={activeSource.accent}
-                metricDirection={getMetricDirection(activeSource.key, filters.metric || exploreData.available_metrics?.[0] || '')}
+                metricDirection={getMetricDirection(activeSource.key, resolvedMetric)}
               />
             )}
           </div>
@@ -429,10 +433,10 @@ export default function ExplorePage() {
         {exploreData && (
           <ExploreQueryBar
             source={activeSource.key}
-            metric={filters.metric || exploreData.available_metrics?.[0] || null}
+            metric={resolvedMetric || null}
             stateFips={filters.selectedState}
             race={filters.race}
-            year={filters.year}
+            year={resolvedYear}
             accent={activeSource.accent}
           />
         )}
