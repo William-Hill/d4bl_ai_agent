@@ -1,8 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ExploreRow } from '@/lib/types';
 import { humanizeMetric } from '@/lib/explore-config';
+
+const COLLAPSE_KEY = "d4bl-table-collapsed";
+
+function loadCollapsePreference(defaultValue: boolean): boolean {
+  if (typeof window === "undefined") return defaultValue;
+  try {
+    const stored = localStorage.getItem(COLLAPSE_KEY);
+    return stored !== null ? stored === "true" : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
 
 export interface DataTableProps {
   rows: ExploreRow[];
@@ -11,6 +23,7 @@ export interface DataTableProps {
   selectedStateFips: string | null;
   onSelectState: (fips: string, name: string) => void;
   accent: string;
+  defaultCollapsed?: boolean;
 }
 
 type SortKey = 'name' | 'value' | 'rank' | 'vs_national';
@@ -77,10 +90,22 @@ export default function DataTable({
   selectedStateFips,
   onSelectState,
   accent,
+  defaultCollapsed,
 }: DataTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('rank');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
+  const [collapsed, setCollapsed] = useState(() =>
+    loadCollapsePreference(defaultCollapsed ?? false)
+  );
+
+  const toggleCollapse = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(COLLAPSE_KEY, String(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   // Compute deduplicated table rows: filter metric + race=total/null, one row per state, ranked
   const tableRows = useMemo<TableRow[]>(() => {
@@ -166,69 +191,79 @@ export default function DataTable({
         <span className="text-xs text-[#666] ml-auto">{tableRows.length} states</span>
       </div>
 
-      <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
-        <table className="w-full text-sm border-collapse">
-          <thead className="sticky top-0 bg-[#111] z-10">
-            <tr className="border-b border-[#333]">
-              <HeaderCell col="name" label="State" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
-              <HeaderCell col="value" label={metricLabel} align="right" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
-              <HeaderCell col="rank" label="Rank" align="right" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
-              {nationalAverage != null && (
-                <HeaderCell col="vs_national" label="vs National" align="right" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRows.map(row => {
-              const isSelected = row.fips === selectedStateFips;
-              return (
-                <tr
-                  key={row.fips}
-                  ref={isSelected ? selectedRowRef : null}
-                  onClick={() => onSelectState(row.fips, row.name)}
-                  className="border-b border-[#222] cursor-pointer transition-colors hover:bg-[#1a1a1a]"
-                  style={
-                    isSelected
-                      ? { backgroundColor: `${accent}18` }
-                      : undefined
-                  }
-                >
-                  <td className="px-3 py-2 text-[#e5e5e5] font-medium">
-                    {isSelected && (
-                      <span
-                        className="mr-1.5 inline-block w-1.5 h-1.5 rounded-full align-middle"
-                        style={{ backgroundColor: accent }}
-                      />
-                    )}
-                    {row.name}
-                  </td>
-                  <td className="px-3 py-2 text-right text-[#ccc] tabular-nums">
-                    {formatValue(row.value)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-[#999] tabular-nums">
-                    #{row.rank}
-                  </td>
-                  {nationalAverage != null && (
-                    <td
-                      className="px-3 py-2 text-right tabular-nums font-medium"
-                      style={{
-                        color:
-                          row.vsNational == null
-                            ? '#666'
-                            : row.vsNational >= 0
-                            ? '#22c55e'
-                            : '#ef4444',
-                      }}
-                    >
-                      {row.vsNational != null ? formatDiff(row.vsNational) : '—'}
+      <button
+        onClick={toggleCollapse}
+        className="flex w-full items-center justify-between px-3 py-2 text-xs text-[#999] hover:text-white"
+      >
+        <span>Data Table <span className="text-[#666]">({tableRows.length} states)</span></span>
+        <span>{collapsed ? "▶" : "▼"}</span>
+      </button>
+
+      {!collapsed && (
+        <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0 bg-[#111] z-10">
+              <tr className="border-b border-[#333]">
+                <HeaderCell col="name" label="State" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
+                <HeaderCell col="value" label={metricLabel} align="right" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
+                <HeaderCell col="rank" label="Rank" align="right" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
+                {nationalAverage != null && (
+                  <HeaderCell col="vs_national" label="vs National" align="right" sortKey={sortKey} sortDir={sortDir} accent={accent} onSort={handleSort} />
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map(row => {
+                const isSelected = row.fips === selectedStateFips;
+                return (
+                  <tr
+                    key={row.fips}
+                    ref={isSelected ? selectedRowRef : null}
+                    onClick={() => onSelectState(row.fips, row.name)}
+                    className="border-b border-[#222] cursor-pointer transition-colors hover:bg-[#1a1a1a]"
+                    style={
+                      isSelected
+                        ? { backgroundColor: `${accent}18` }
+                        : undefined
+                    }
+                  >
+                    <td className="px-3 py-2 text-[#e5e5e5] font-medium">
+                      {isSelected && (
+                        <span
+                          className="mr-1.5 inline-block w-1.5 h-1.5 rounded-full align-middle"
+                          style={{ backgroundColor: accent }}
+                        />
+                      )}
+                      {row.name}
                     </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                    <td className="px-3 py-2 text-right text-[#ccc] tabular-nums">
+                      {formatValue(row.value)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-[#999] tabular-nums">
+                      #{row.rank}
+                    </td>
+                    {nationalAverage != null && (
+                      <td
+                        className="px-3 py-2 text-right tabular-nums font-medium"
+                        style={{
+                          color:
+                            row.vsNational == null
+                              ? '#666'
+                              : row.vsNational >= 0
+                              ? '#22c55e'
+                              : '#ef4444',
+                        }}
+                      >
+                        {row.vsNational != null ? formatDiff(row.vsNational) : '—'}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
