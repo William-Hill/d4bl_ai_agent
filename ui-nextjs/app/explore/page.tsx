@@ -8,6 +8,7 @@ import DataSourceTabs from '@/components/explore/DataSourceTabs';
 import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
+import StateAnnotation from '@/components/explore/StateAnnotation';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
@@ -381,6 +382,12 @@ export default function ExplorePage() {
               <h2 className="text-base font-semibold text-white">{selectedStateName}</h2>
               <PolicyBadge bills={bills} stateName={selectedStateName} accent={activeSource.accent} />
             </div>
+            <StateAnnotation
+              source={activeSource.key}
+              stateFips={filters.selectedState}
+              metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+              accent={activeSource.accent}
+            />
             {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
               <RacialGapChart
                 indicators={exploreData.rows
