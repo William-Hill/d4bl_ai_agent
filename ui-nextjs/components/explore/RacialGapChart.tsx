@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { useMemo } from 'react';
 import { IndicatorRow } from '@/lib/types';
+import GapAnnotation from './GapAnnotation';
 
 interface Props {
   indicators: IndicatorRow[];
@@ -95,6 +96,11 @@ export default function RacialGapChart({ indicators, metric, stateName }: Props)
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      <GapAnnotation
+        type="racial-gap"
+        metric={metric}
+        raceValues={data.map((d) => ({ race: d.race, value: d.value }))}
+      />
     </div>
   );
 }

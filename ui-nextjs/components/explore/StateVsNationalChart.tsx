@@ -1,6 +1,7 @@
 'use client';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import GapAnnotation from './GapAnnotation';
 
 interface Props {
   stateValue: number;
@@ -54,6 +55,13 @@ export default function StateVsNationalChart({
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      <GapAnnotation
+        type="state-vs-national"
+        metric={metric}
+        stateValue={stateValue}
+        stateName={stateName}
+        nationalAverage={nationalAverage}
+      />
     </div>
   );
 }
