@@ -377,3 +377,31 @@ class KeywordMonitorResponse(BaseModel):
     created_by: str | None
     created_at: str | None
 
+
+# --- State Summary / Insights models ---
+
+
+class RacialGapGroup(BaseModel):
+    race: str
+    value: float
+
+
+class RacialGap(BaseModel):
+    groups: list[RacialGapGroup]
+    max_ratio: float
+    max_ratio_label: str
+
+
+class StateSummaryInsight(BaseModel):
+    state_fips: str
+    state_name: str
+    metric: str
+    value: float
+    national_average: float
+    national_rank: int
+    national_rank_total: int
+    percentile: float
+    racial_gap: RacialGap | None
+    year: int
+    source: str
+

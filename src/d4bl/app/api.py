@@ -25,6 +25,7 @@ from starlette.requests import Request
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.cache import explore_cache
 from d4bl.app.data_routes import router as data_router
+from d4bl.app.explore_insights import router as explore_insights_router
 from d4bl.app.explore_helpers import (
     FIPS_TO_STATE_NAME,
     build_response_from_summary,
@@ -219,6 +220,7 @@ app.add_middleware(
 )
 
 app.include_router(data_router)
+app.include_router(explore_insights_router)
 
 # ---------------------------------------------------------------------------
 # Admin ingestion: track background subprocess jobs
