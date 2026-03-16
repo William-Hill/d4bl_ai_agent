@@ -239,10 +239,11 @@ export function getDirectionalColors(
   metric: string,
   accent: string,
 ): { colorStart: string; colorEnd: string } {
-  const direction = getMetricDirection(sourceKey, metric);
-  if (direction === true) return { colorStart: "#444", colorEnd: "#22c55e" };  // green
-  if (direction === false) return { colorStart: "#444", colorEnd: "#ef4444" }; // red
-  return { colorStart: "#444", colorEnd: accent }; // neutral: source accent
+  // Always use the source accent color for the map gradient so the map
+  // visually matches the active tab. Directionality (good vs bad) is
+  // communicated through the legend label, gap annotations, and the
+  // DataTable's vs-national column colors — not the map gradient itself.
+  return { colorStart: "#444", colorEnd: accent };
 }
 
 export type ChartType = "racial-gap" | "state-vs-national";
