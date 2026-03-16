@@ -89,8 +89,15 @@ def _fetch_query(source: str) -> str:
 
 
 def _get_sync_session() -> Session:
-    """Create a synchronous SQLAlchemy session for ingestion use."""
-    url = get_database_url().replace("+asyncpg", "")
+    """Create a synchronous SQLAlchemy session for ingestion use.
+
+    Uses DAGSTER_POSTGRES_URL (same env var as other ingestion scripts)
+    so it works in both local and cloud environments. Falls back to the
+    app's database URL with the async driver stripped.
+    """
+    url = os.environ.get("DAGSTER_POSTGRES_URL")
+    if not url:
+        url = get_database_url().replace("+asyncpg", "")
     engine = create_engine(url)
     factory = sessionmaker(bind=engine)
     return factory()
