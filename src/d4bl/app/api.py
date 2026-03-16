@@ -1038,7 +1038,8 @@ async def get_police_violence(
         if state_fips and not state_abbrev:
             state_abbrev = FIPS_TO_ABBREV.get(state_fips)
 
-        query = select(
+        # Per-race breakdown
+        race_query = select(
             PoliceViolenceIncident.state,
             PoliceViolenceIncident.race,
             PoliceViolenceIncident.year,
@@ -1048,32 +1049,60 @@ async def get_police_violence(
             PoliceViolenceIncident.race,
             PoliceViolenceIncident.year,
         )
+        # State-level totals (race="total") for map/table display
+        total_query = select(
+            PoliceViolenceIncident.state,
+            PoliceViolenceIncident.year,
+            func.count().label("count"),
+        ).group_by(
+            PoliceViolenceIncident.state,
+            PoliceViolenceIncident.year,
+        )
+
         if state_abbrev:
-            query = query.where(PoliceViolenceIncident.state == state_abbrev)
+            race_query = race_query.where(PoliceViolenceIncident.state == state_abbrev)
+            total_query = total_query.where(PoliceViolenceIncident.state == state_abbrev)
         if race:
-            query = query.where(PoliceViolenceIncident.race == race)
+            race_query = race_query.where(PoliceViolenceIncident.race == race)
         if year:
-            query = query.where(PoliceViolenceIncident.year == year)
-        query = query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
+            race_query = race_query.where(PoliceViolenceIncident.year == year)
+            total_query = total_query.where(PoliceViolenceIncident.year == year)
 
-        result = await db.execute(query)
-        rows_raw = result.mappings().all()
+        race_query = race_query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
+        total_query = total_query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
 
-        row_dicts = [
-            {
-                "state_fips": ABBREV_TO_FIPS.get(r["state"], ""),
-                "state_name": FIPS_TO_NAME.get(ABBREV_TO_FIPS.get(r["state"], ""), r["state"]),
+        race_result = await db.execute(race_query)
+        total_result = await db.execute(total_query)
+
+        row_dicts = []
+        # Add per-race rows
+        for r in race_result.mappings().all():
+            fips = ABBREV_TO_FIPS.get(r["state"], "")
+            row_dicts.append({
+                "state_fips": fips,
+                "state_name": FIPS_TO_NAME.get(fips, r["state"]),
                 "value": float(r["count"]),
                 "metric": "incidents",
                 "year": r["year"],
                 "race": r["race"],
-            }
-            for r in rows_raw
-        ]
+            })
+        # Add "total" rows so the map and table can display state-level values
+        for r in total_result.mappings().all():
+            fips = ABBREV_TO_FIPS.get(r["state"], "")
+            row_dicts.append({
+                "state_fips": fips,
+                "state_name": FIPS_TO_NAME.get(fips, r["state"]),
+                "value": float(r["count"]),
+                "metric": "incidents",
+                "year": r["year"],
+                "race": "total",
+            })
 
         response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(row_dicts),
+            national_average=compute_national_avg(
+                [d for d in row_dicts if d["race"] == "total"]
+            ),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),

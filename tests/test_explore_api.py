@@ -418,17 +418,37 @@ class TestDoeEndpoint:
 
 class TestPoliceViolenceEndpoint:
     @pytest.mark.asyncio
-    async def test_returns_200_with_explore_response(self, override_auth):
+    async def test_returns_200_with_race_and_total_rows(self, override_auth):
         app = override_auth
         from d4bl.infra.database import get_db
 
-        mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
+        # Per-race query result
+        mock_race_result = MagicMock()
+        mock_race_result.mappings.return_value.all.return_value = [
             {"state": "MS", "race": "Black", "year": 2022, "count": 15}
         ]
+        # State-total query result
+        mock_total_result = MagicMock()
+        mock_total_result.mappings.return_value.all.return_value = [
+            {"state": "MS", "year": 2022, "count": 20}
+        ]
+
+        mock_freshness = MagicMock()
+        mock_freshness.scalar.return_value = None
+
+        real_results = [mock_race_result, mock_total_result]
+        call_idx = {"i": 0}
+
+        async def _mock_execute(stmt, *a, **kw):
+            s = str(stmt)
+            if "ingestion_run" in s.lower():
+                return mock_freshness
+            result = real_results[call_idx["i"]]
+            call_idx["i"] += 1
+            return result
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.execute = AsyncMock(side_effect=_mock_execute)
 
         async def override_get_db():
             yield mock_db
@@ -444,12 +464,13 @@ class TestPoliceViolenceEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data["rows"]) == 1
-        assert data["rows"][0]["state_fips"] == "28"
-        assert data["rows"][0]["value"] == 15.0
-        assert data["rows"][0]["metric"] == "incidents"
-        assert data["rows"][0]["race"] == "Black"
-        assert data["available_races"] == ["Black"]
+        assert len(data["rows"]) == 2  # 1 race + 1 total
+        race_row = [r for r in data["rows"] if r["race"] == "Black"][0]
+        total_row = [r for r in data["rows"] if r["race"] == "total"][0]
+        assert race_row["state_fips"] == "28"
+        assert race_row["value"] == 15.0
+        assert total_row["value"] == 20.0
+        assert "total" in data["available_races"]
 
 
 class TestCensusDemographicsEndpoint:
