@@ -9,8 +9,9 @@ import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
 import MapLegend from '@/components/explore/MapLegend';
+import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors } from '@/lib/explore-config';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors, getChartType, getMetricDirection } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 
@@ -360,6 +361,19 @@ export default function ExplorePage() {
           )}
         </div>
 
+        {/* Data Table */}
+        {exploreData && (
+          <DataTable
+            rows={exploreData.rows}
+            nationalAverage={exploreData.national_average}
+            metric={filters.metric}
+            selectedStateFips={filters.selectedState}
+            onSelectState={handleSelectState}
+            accent={activeSource.accent}
+            sourceKey={activeSource.key}
+          />
+        )}
+
         {/* Detail Chart + Policy Badge */}
         {filters.selectedState && exploreData && exploreData.rows.length > 0 && (
           <div className="mb-6">
@@ -367,7 +381,7 @@ export default function ExplorePage() {
               <h2 className="text-base font-semibold text-white">{selectedStateName}</h2>
               <PolicyBadge bills={bills} stateName={selectedStateName} accent={activeSource.accent} />
             </div>
-            {activeSource.hasRace ? (
+            {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
               <RacialGapChart
                 indicators={exploreData.rows
                   .filter(
@@ -386,6 +400,7 @@ export default function ExplorePage() {
                 stateName={selectedStateName}
                 metric={filters.metric || exploreData.available_metrics?.[0] || ''}
                 accent={activeSource.accent}
+                metricDirection={getMetricDirection(activeSource.key, filters.metric || exploreData.available_metrics?.[0] || '')}
               />
             )}
           </div>
