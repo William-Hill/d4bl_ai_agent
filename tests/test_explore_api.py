@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 class TestIndicatorsEndpoint:
     @pytest.mark.asyncio
-    async def test_returns_200_with_list(self, override_auth):
+    async def test_returns_200_with_explore_response(self, override_auth):
         app = override_auth
         from d4bl.infra.database import get_db
 
@@ -42,13 +42,25 @@ class TestIndicatorsEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert data[0]["fips_code"] == "28"
-        assert data[0]["value"] == 43.2
+        assert "rows" in data
+        assert "national_average" in data
+        assert "available_metrics" in data
+        assert "available_years" in data
+        assert "available_races" in data
+        assert len(data["rows"]) == 1
+        assert data["rows"][0]["state_fips"] == "28"
+        assert data["rows"][0]["state_name"] == "Mississippi"
+        assert data["rows"][0]["value"] == 43.2
+        assert data["rows"][0]["metric"] == "homeownership_rate"
+        assert data["rows"][0]["year"] == 2022
+        assert data["rows"][0]["race"] == "black"
+        assert data["national_average"] == 43.2
+        assert data["available_metrics"] == ["homeownership_rate"]
+        assert data["available_years"] == [2022]
+        assert data["available_races"] == ["black"]
 
     @pytest.mark.asyncio
-    async def test_returns_empty_list_when_no_data(self, override_auth):
+    async def test_returns_empty_rows_when_no_data(self, override_auth):
         app = override_auth
         from d4bl.infra.database import get_db
 
@@ -68,7 +80,12 @@ class TestIndicatorsEndpoint:
             response = await client.get("/api/explore/indicators")
 
         assert response.status_code == 200
-        assert response.json() == []
+        data = response.json()
+        assert data["rows"] == []
+        assert data["national_average"] is None
+        assert data["available_metrics"] == []
+        assert data["available_years"] == []
+        assert data["available_races"] == []
 
 
 class TestPoliciesEndpoint:
@@ -163,10 +180,16 @@ class TestEpaEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "06"
+        mock_row.state_name = "California"
+        mock_row.value = 10.5
+        mock_row.metric = "PM2.5"
+        mock_row.year = 2022
+        mock_row.race = "total"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {"state_fips": "06", "state_name": "California", "avg_value": 10.5, "indicator": "PM2.5", "year": 2022}
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -190,7 +213,7 @@ class TestEpaEndpoint:
         assert data["rows"][0]["value"] == 10.5
         assert data["rows"][0]["metric"] == "PM2.5"
         assert data["national_average"] == 10.5
-        assert data["available_races"] == []
+        assert data["available_races"] == ["total"]
 
 
 class TestFbiEndpoint:
@@ -318,10 +341,16 @@ class TestUsdaEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 22.3
+        mock_row.metric = "Low Access"
+        mock_row.year = 2019
+        mock_row.race = "total"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {"state_fips": "28", "state_name": "Mississippi", "avg_value": 22.3, "indicator": "Low Access", "year": 2019}
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -343,7 +372,7 @@ class TestUsdaEndpoint:
         assert len(data["rows"]) == 1
         assert data["rows"][0]["value"] == 22.3
         assert data["rows"][0]["metric"] == "Low Access"
-        assert data["available_races"] == []
+        assert data["available_races"] == ["total"]
 
 
 class TestDoeEndpoint:
@@ -352,10 +381,16 @@ class TestDoeEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 3.5
+        mock_row.metric = "Suspensions"
+        mock_row.year = 2020
+        mock_row.race = "Black"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {"state": "MS", "state_name": "Mississippi", "avg_value": 3.5, "metric_name": "Suspensions", "race": "Black", "school_year": "2020-2021"}
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -369,7 +404,7 @@ class TestDoeEndpoint:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
                 "/api/explore/doe",
-                params={"state": "MS", "metric": "Suspensions"},
+                params={"metric": "Suspensions"},
             )
 
         assert response.status_code == 200
@@ -423,17 +458,16 @@ class TestCensusDemographicsEndpoint:
         app = override_auth
         from d4bl.infra.database import get_db
 
+        mock_row = MagicMock()
+        mock_row.state_fips = "28"
+        mock_row.state_name = "Mississippi"
+        mock_row.value = 1000000.0
+        mock_row.metric = "population"
+        mock_row.year = 2020
+        mock_row.race = "Black"
+
         mock_result = MagicMock()
-        mock_result.mappings.return_value.all.return_value = [
-            {
-                "state_fips": "28",
-                "state_name": "Mississippi",
-                "year": 2020,
-                "race": "Black",
-                "total_pop": 1000000,
-                "avg_pct": 37.5,
-            }
-        ]
+        mock_result.scalars.return_value.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -546,10 +580,11 @@ class TestBjsEndpoint:
 
 
 class TestAllExploreEndpointsStandardShape:
-    """Verify all 11 explore endpoints return the standardized ExploreResponse shape."""
+    """Verify all 12 explore endpoints return the standardized ExploreResponse shape."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", [
+        "/api/explore/indicators",
         "/api/explore/cdc",
         "/api/explore/epa",
         "/api/explore/fbi",
@@ -620,8 +655,25 @@ class TestStatesEndpoint:
         mock_result_bills = MagicMock()
         mock_result_bills.mappings.return_value.all.return_value = [mock_bills_row._mapping]
 
+        # Build a mock DB that handles freshness check + two real queries.
+        # The freshness check may or may not fire (throttled to every 30s),
+        # so we use a stateful side_effect that returns freshness results for
+        # IngestionRun queries and real results in order for everything else.
+        real_results = [mock_result_metrics, mock_result_bills]
+        real_idx = {"i": 0}
+        mock_freshness_result = MagicMock()
+        mock_freshness_result.scalar.return_value = None
+
+        async def _mock_execute(stmt, *args, **kwargs):
+            stmt_str = str(stmt)
+            if "ingestion_run" in stmt_str.lower():
+                return mock_freshness_result
+            result = real_results[real_idx["i"]]
+            real_idx["i"] += 1
+            return result
+
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(side_effect=[mock_result_metrics, mock_result_bills])
+        mock_db.execute = AsyncMock(side_effect=_mock_execute)
 
         async def override_get_db():
             yield mock_db

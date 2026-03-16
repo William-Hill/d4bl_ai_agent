@@ -12,7 +12,8 @@ interface Props {
   selectedStateFips: string | null;
   onSelectState: (fips: string, name: string) => void;
   accent?: string;
-  nationalAverage?: number | null;
+  colorStart?: string;
+  colorEnd?: string;
 }
 
 export default function StateMap({
@@ -20,7 +21,8 @@ export default function StateMap({
   selectedStateFips,
   onSelectState,
   accent,
-  nationalAverage,
+  colorStart,
+  colorEnd,
 }: Props) {
   const [tooltip, setTooltip] = useState<{ name: string; value: number } | null>(null);
 
@@ -38,20 +40,18 @@ export default function StateMap({
     const values = Object.values(vByFips);
     const min = values.length ? Math.min(...values) : 0;
     const max = values.length ? Math.max(...values) : 100;
-    const avg = nationalAverage ?? (min + max) / 2;
+
+    const start = colorStart || '#444';
+    const end = colorEnd || accentColor;
 
     const scale = (val: number): string => {
-      if (min === max) return accentColor;
-      if (val <= avg) {
-        const t = avg === min ? 0 : (val - min) / (avg - min);
-        return interpolateRgb('#444', '#888')(Math.min(Math.max(t, 0), 1));
-      }
-      const t = avg === max ? 1 : (val - avg) / (max - avg);
-      return interpolateRgb('#888', accentColor)(Math.min(Math.max(t, 0), 1));
+      if (min === max) return end;
+      const t = (val - min) / (max - min);
+      return interpolateRgb(start, end)(Math.min(Math.max(t, 0), 1));
     };
 
     return { valueByFips: vByFips, colorScale: scale };
-  }, [indicators, accentColor, nationalAverage]);
+  }, [indicators, accentColor, colorStart, colorEnd]);
 
   return (
     <div className="relative bg-[#1a1a1a] rounded-lg border border-[#404040] overflow-hidden">

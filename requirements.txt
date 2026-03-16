@@ -11,6 +11,9 @@ sqlalchemy>=2.0.0
 asyncpg>=0.29.0
 alembic>=1.13.0
 
+# Caching
+cachetools>=5.3.0
+
 # Tools and utilities
 firecrawl-py>=0.0.20
 python-dotenv>=1.1.1

@@ -8,10 +8,48 @@ import DataSourceTabs from '@/components/explore/DataSourceTabs';
 import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
-import { IndicatorRow, PolicyBill, ExploreRow, ExploreResponse } from '@/lib/types';
-import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear } from '@/lib/explore-config';
+import MapLegend from '@/components/explore/MapLegend';
+import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
+import { DATA_SOURCES, DataSourceConfig, FIPS_TO_ABBREV, toIndicatorRow, collapseToLatestYear, getDirectionalColors } from '@/lib/explore-config';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
+
+const STORAGE_KEY = 'd4bl-explore-filters';
+
+interface PersistedFilters {
+  sourceKey: string;
+  metric: string | null;
+  race: string | null;
+  year: number | null;
+  selectedState: string | null;
+}
+
+function loadPersistedFilters(): PersistedFilters | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedFilters;
+  } catch {
+    return null;
+  }
+}
+
+function persistFilters(sourceKey: string, filters: ExploreFilters): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const data: PersistedFilters = {
+      sourceKey,
+      metric: filters.metric || null,
+      race: filters.race,
+      year: filters.year,
+      selectedState: filters.selectedState,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // Quota exceeded or storage unavailable — silently ignore
+  }
+}
 
 /** Reusable shimmer skeleton block. */
 function SkeletonBlock({ className = '' }: { className?: string }) {
@@ -22,21 +60,58 @@ function SkeletonBlock({ className = '' }: { className?: string }) {
   );
 }
 
+const DEFAULT_SOURCE_KEY = 'census';
+const DEFAULT_METRIC = 'median_household_income';
+
+function resolveInitialState(): { source: DataSourceConfig; filters: ExploreFilters } {
+  const persisted = loadPersistedFilters();
+  const defaultSource =
+    DATA_SOURCES.find(s => s.key === DEFAULT_SOURCE_KEY) ?? DATA_SOURCES[0];
+
+  if (persisted) {
+    const savedSource = DATA_SOURCES.find(s => s.key === persisted.sourceKey);
+    const source = savedSource ?? defaultSource;
+    return {
+      source,
+      filters: {
+        metric: persisted.metric ?? '',
+        race: persisted.race ?? (source.hasRace ? 'total' : null),
+        year: persisted.year,
+        selectedState: persisted.selectedState,
+      },
+    };
+  }
+
+  return {
+    source: defaultSource,
+    filters: {
+      metric: DEFAULT_METRIC,
+      race: 'total',
+      year: null,
+      selectedState: null,
+    },
+  };
+}
+
 export default function ExplorePage() {
   const { session, getHeaders } = useAuthHeaders();
-  const [activeSource, setActiveSource] = useState<DataSourceConfig>(DATA_SOURCES[0]);
+
+  const initialState = useRef(resolveInitialState());
+  const [activeSource, setActiveSource] = useState<DataSourceConfig>(initialState.current.source);
   const [exploreData, setExploreData] = useState<ExploreResponse | null>(null);
   const [bills, setBills] = useState<PolicyBill[]>([]);
-  const [chartIndicators, setChartIndicators] = useState<IndicatorRow[]>([]);
-  const [filters, setFilters] = useState<ExploreFilters>({
-    metric: '',
-    race: 'total',
-    year: null,
-    selectedState: null,
-  });
+
+  const [filters, setFilters] = useState<ExploreFilters>(initialState.current.filters);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didAutoSelectDefaults = useRef(false);
+  const initialized = useRef(false);
+
+  /** Persist filters to localStorage after initialization. */
+  useEffect(() => {
+    if (!initialized.current) return;
+    persistFilters(activeSource.key, filters);
+  }, [activeSource.key, filters]);
 
   /** Reset filters when switching data sources. */
   const handleSourceChange = (src: DataSourceConfig) => {
@@ -50,7 +125,7 @@ export default function ExplorePage() {
     });
     setExploreData(null);
     setBills([]);
-    setChartIndicators([]);
+
   };
 
   /** Unified data fetching for all sources. */
@@ -60,75 +135,19 @@ export default function ExplorePage() {
     setError(null);
 
     try {
-      // Build the main data promise
-      let dataPromise: Promise<{ data: ExploreResponse; chartRows: IndicatorRow[] }>;
+      // All endpoints (including Census) now return ExploreResponse directly
+      const params = new URLSearchParams();
+      if (filters.year != null) params.set('year', String(filters.year));
+      if (filters.metric) params.set(activeSource.primaryFilterKey, filters.metric);
+      if (filters.race) params.set('race', filters.race);
+      if (filters.selectedState) params.set('state_fips', filters.selectedState);
 
-      if (activeSource.key === 'census') {
-        // Legacy Census endpoint returns IndicatorRow[]
-        const params = new URLSearchParams({ geography_type: 'state' });
-        if (filters.year != null) params.set('year', String(filters.year));
-        if (filters.metric) params.set('metric', filters.metric);
-        if (filters.race) params.set('race', filters.race);
-
-        dataPromise = fetch(`${API_BASE}/api/explore/indicators?${params}`, {
-          signal, headers: getHeaders(),
-        }).then(async res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const rows: IndicatorRow[] = await res.json();
-
-          const exploreRows: ExploreRow[] = rows.map(r => ({
-            state_fips: r.state_fips,
-            state_name: r.geography_name,
-            value: r.value,
-            metric: r.metric,
-            year: r.year,
-            race: r.race,
-          }));
-          const avgVal = exploreRows.length
-            ? exploreRows.reduce((s, r) => s + r.value, 0) / exploreRows.length
-            : null;
-
-          const data: ExploreResponse = {
-            rows: exploreRows,
-            national_average: avgVal,
-            available_metrics: [...new Set(rows.map(r => r.metric))].sort(),
-            available_years: [...new Set(rows.map(r => r.year))].sort((a, b) => a - b),
-            available_races: [...new Set(rows.map(r => r.race))].sort(),
-          };
-
-          // Fetch racial breakdown for selected state (Census-specific)
-          let chartRows: IndicatorRow[] = [];
-          if (filters.selectedState) {
-            const chartParams = new URLSearchParams({
-              state_fips: filters.selectedState,
-              metric: filters.metric || 'homeownership_rate',
-              geography_type: 'state',
-            });
-            if (filters.year != null) chartParams.set('year', String(filters.year));
-            const chartRes = await fetch(`${API_BASE}/api/explore/indicators?${chartParams}`, {
-              signal, headers: getHeaders(),
-            });
-            if (chartRes.ok) chartRows = await chartRes.json();
-          }
-
-          return { data, chartRows };
-        });
-      } else {
-        // New endpoints return ExploreResponse directly
-        const params = new URLSearchParams();
-        if (filters.year != null) params.set('year', String(filters.year));
-        if (filters.metric) params.set(activeSource.primaryFilterKey, filters.metric);
-        if (filters.race) params.set('race', filters.race);
-        if (filters.selectedState) params.set('state_fips', filters.selectedState);
-
-        dataPromise = fetch(`${API_BASE}${activeSource.endpoint}?${params}`, {
-          signal, headers: getHeaders(),
-        }).then(async res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data: ExploreResponse = await res.json();
-          return { data, chartRows: [] };
-        });
-      }
+      const dataPromise = fetch(`${API_BASE}${activeSource.endpoint}?${params}`, {
+        signal, headers: getHeaders(),
+      }).then(async res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json() as ExploreResponse;
+      });
 
       // Build bills promise (runs in parallel with data fetch)
       const abbrev = filters.selectedState ? FIPS_TO_ABBREV[filters.selectedState] : null;
@@ -138,7 +157,7 @@ export default function ExplorePage() {
           }).then(res => (res.ok ? res.json() : []))
         : Promise.resolve([]);
 
-      const [{ data, chartRows }, billsData] = await Promise.all([dataPromise, billsPromise]);
+      const [data, billsData] = await Promise.all([dataPromise, billsPromise]);
 
       // When no year filter, collapse multi-year rows to latest per state+metric+race
       const normalizedRows = filters.year == null ? collapseToLatestYear(data.rows) : data.rows;
@@ -151,8 +170,10 @@ export default function ExplorePage() {
       };
 
       setExploreData(normalizedData);
-      setChartIndicators(chartRows);
       setBills(billsData);
+
+      // Mark as initialized after first successful data load so persistence kicks in
+      initialized.current = true;
 
       // Auto-select first metric if none selected (year stays null = "all years")
       if (!didAutoSelectDefaults.current && !filters.metric && data.available_metrics?.length > 0) {
@@ -203,6 +224,22 @@ export default function ExplorePage() {
     if (!exploreData) return [];
     return exploreData.rows.map(toIndicatorRow);
   }, [exploreData]);
+
+  /** Pre-compute min/max for the MapLegend so the IIFE is not re-run in JSX. */
+  const legendData = useMemo(() => {
+    if (!exploreData || !filters.metric) return null;
+    const values = exploreData.rows
+      .filter((r) => r.metric === filters.metric)
+      .map((r) => r.value)
+      .filter((v): v is number => v != null);
+    if (values.length === 0) return null;
+    return { min: Math.min(...values), max: Math.max(...values) };
+  }, [exploreData, filters.metric]);
+
+  /** Directional colors based on current source + metric. */
+  const dirColors = filters.metric
+    ? getDirectionalColors(activeSource.key, filters.metric, activeSource.accent)
+    : { colorStart: '#444', colorEnd: activeSource.accent };
 
   return (
     <div className="min-h-screen bg-[#292929]">
@@ -266,8 +303,20 @@ export default function ExplorePage() {
                   selectedStateFips={filters.selectedState}
                   onSelectState={handleSelectState}
                   accent={activeSource.accent}
-                  nationalAverage={exploreData.national_average}
+                  colorStart={dirColors.colorStart}
+                  colorEnd={dirColors.colorEnd}
                 />
+                {legendData && (
+                  <MapLegend
+                    min={legendData.min}
+                    max={legendData.max}
+                    nationalAverage={exploreData.national_average}
+                    metric={filters.metric}
+                    colorStart={dirColors.colorStart}
+                    colorEnd={dirColors.colorEnd}
+                    accent={activeSource.accent}
+                  />
+                )}
                 {loading && (
                   <div
                     className="absolute inset-0 bg-[#292929]/60 rounded-lg flex items-center justify-center"
@@ -319,22 +368,17 @@ export default function ExplorePage() {
               <PolicyBadge bills={bills} stateName={selectedStateName} accent={activeSource.accent} />
             </div>
             {activeSource.hasRace ? (
-              activeSource.key === 'census' ? (
-                <RacialGapChart
-                  indicators={chartIndicators}
-                  metric={filters.metric || 'homeownership_rate'}
-                  stateName={selectedStateName}
-                />
-              ) : (
-                /* For non-Census race sources, build chart from exploreData rows filtered to state */
-                <RacialGapChart
-                  indicators={exploreData.rows
-                    .filter(r => r.state_fips === filters.selectedState)
-                    .map(toIndicatorRow)}
-                  metric={filters.metric || exploreData.available_metrics?.[0] || ''}
-                  stateName={selectedStateName}
-                />
-              )
+              <RacialGapChart
+                indicators={exploreData.rows
+                  .filter(
+                    (r) =>
+                      r.state_fips === filters.selectedState &&
+                      r.metric === (filters.metric || exploreData.available_metrics?.[0]),
+                  )
+                  .map(toIndicatorRow)}
+                metric={filters.metric || exploreData.available_metrics?.[0] || ''}
+                stateName={selectedStateName}
+              />
             ) : (
               <StateVsNationalChart
                 stateValue={stateDetailValue}

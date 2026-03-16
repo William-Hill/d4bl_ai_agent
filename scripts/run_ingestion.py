@@ -179,6 +179,28 @@ def main() -> int:
     print_summary(results)
 
     has_failures = any(status != "ok" for _, _, _, status in results)
+
+    # Run state-level aggregation for sources that completed successfully.
+    AGGREGATION_SOURCES = {"epa", "usda", "census_decennial", "doe"}
+    completed_sources = [
+        name
+        for name, _, _, status in results
+        if status == "ok" and name in AGGREGATION_SOURCES
+    ]
+    if completed_sources:
+        print(
+            f"\nRunning state-level aggregation for: "
+            f"{', '.join(completed_sources)}"
+        )
+        try:
+            from ingestion.aggregate_state_summaries import run_aggregation
+
+            run_aggregation(completed_sources)
+            print("State-level aggregation complete.")
+        except Exception as exc:
+            print(f"State-level aggregation FAILED: {exc}")
+            has_failures = True
+
     return 1 if has_failures else 0
 
 

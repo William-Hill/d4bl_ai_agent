@@ -79,6 +79,19 @@ def mock_ollama_embedding(sample_embedding):
     return mock_response
 
 
+@pytest.fixture(autouse=True)
+def _clear_explore_cache():
+    """Clear the explore endpoint cache and reset freshness throttle before each test."""
+    from d4bl.app.api import _reset_freshness_state
+    from d4bl.app.cache import explore_cache
+
+    explore_cache.clear()
+    _reset_freshness_state()
+    yield
+    explore_cache.clear()
+    _reset_freshness_state()
+
+
 @pytest.fixture
 def override_auth():
     """Override get_current_user dependency to bypass JWT auth in tests.
