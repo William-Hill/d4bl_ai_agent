@@ -409,6 +409,25 @@ class StateSummaryInsight(BaseModel):
 # --- Explain (LLM narrative) models ---
 
 
+class ExploreQueryContext(BaseModel):
+    source: str
+    metric: str | None = None
+    state_fips: str | None = None
+    race: str | None = None
+    year: int | None = None
+
+
+class ExploreQueryRequest(BaseModel):
+    question: str
+    context: ExploreQueryContext
+
+
+class ExploreQueryResponse(BaseModel):
+    answer: str
+    data: list[ExploreRow] | None = None
+    visualization_hint: str | None = None
+
+
 class ExplainRequest(BaseModel):
     source: str
     metric: str

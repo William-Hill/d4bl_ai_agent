@@ -212,3 +212,98 @@ class TestStateSummary404:
             )
 
         assert resp.status_code == 404
+
+
+class TestExploreQuery:
+    """Tests for POST /api/explore/query endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_explore_query_success(self, override_auth, monkeypatch):
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_db = AsyncMock()
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        # Mock the query engine
+        mock_result = MagicMock()
+        mock_result.answer = "Test answer about poverty rates"
+
+        mock_engine = MagicMock()
+        mock_engine.query = AsyncMock(return_value=mock_result)
+
+        import d4bl.app.explore_insights as ei_mod
+
+        monkeypatch.setattr(ei_mod, "_get_query_engine", lambda: mock_engine)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/explore/query",
+                json={
+                    "question": "Which states improved?",
+                    "context": {
+                        "source": "census",
+                        "metric": "poverty_rate",
+                        "state_fips": "28",
+                    },
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["answer"] == "Test answer about poverty rates"
+        assert data["data"] is None
+        assert data["visualization_hint"] is None
+
+        # Verify the augmented question was passed correctly
+        call_kwargs = mock_engine.query.call_args
+        question_arg = call_kwargs.kwargs.get(
+            "question", call_kwargs.args[0] if call_kwargs.args else ""
+        )
+        assert "Data source: census" in question_arg
+        assert "Metric: poverty_rate" in question_arg
+        assert "State FIPS: 28" in question_arg
+
+    @pytest.mark.asyncio
+    async def test_explore_query_503_on_failure(
+        self, override_auth, monkeypatch
+    ):
+        app = override_auth
+        from d4bl.infra.database import get_db
+
+        mock_db = AsyncMock()
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_engine = MagicMock()
+        mock_engine.query = AsyncMock(
+            side_effect=RuntimeError("LLM unavailable")
+        )
+
+        import d4bl.app.explore_insights as ei_mod
+
+        monkeypatch.setattr(ei_mod, "_get_query_engine", lambda: mock_engine)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/explore/query",
+                json={
+                    "question": "Tell me about this data",
+                    "context": {"source": "cdc"},
+                },
+            )
+
+        assert resp.status_code == 503

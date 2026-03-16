@@ -15,10 +15,13 @@ from d4bl.app.auth import CurrentUser, get_current_user
 from d4bl.app.schemas import (
     ExplainRequest,
     ExplainResponse,
+    ExploreQueryRequest,
+    ExploreQueryResponse,
     RacialGap,
     RacialGapGroup,
     StateSummaryInsight,
 )
+from d4bl.query.engine import QueryEngine
 from d4bl.infra.database import get_db
 from d4bl.infra.state_summary import StateSummary
 from d4bl.settings import get_settings
@@ -26,6 +29,54 @@ from d4bl.settings import get_settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/explore", tags=["explore-insights"])
+
+# ---------------------------------------------------------------------------
+# Lazy-loaded QueryEngine singleton
+# ---------------------------------------------------------------------------
+_query_engine: QueryEngine | None = None
+
+
+def _get_query_engine() -> QueryEngine:
+    global _query_engine
+    if _query_engine is None:
+        _query_engine = QueryEngine()
+    return _query_engine
+
+
+@router.post("/query", response_model=ExploreQueryResponse)
+async def explore_query(
+    request: ExploreQueryRequest,
+    _user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExploreQueryResponse:
+    """Answer a natural-language question using the current explore context."""
+    ctx = request.context
+    context_parts = [f"Data source: {ctx.source}"]
+    if ctx.metric:
+        context_parts.append(f"Metric: {ctx.metric}")
+    if ctx.state_fips:
+        context_parts.append(f"State FIPS: {ctx.state_fips}")
+    if ctx.race:
+        context_parts.append(f"Race filter: {ctx.race}")
+    if ctx.year:
+        context_parts.append(f"Year: {ctx.year}")
+
+    augmented = (
+        f"Context: {', '.join(context_parts)}. "
+        f"Question: {request.question}"
+    )
+
+    try:
+        engine = _get_query_engine()
+        result = await engine.query(db=db, question=augmented)
+        return ExploreQueryResponse(
+            answer=result.answer,
+            data=None,
+            visualization_hint=None,
+        )
+    except Exception as exc:
+        logger.error("Explore query failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.get("/state-summary", response_model=StateSummaryInsight)
