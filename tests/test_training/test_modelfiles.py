@@ -27,7 +27,7 @@ class TestModelfileStructure:
 
     def test_from_references_gguf(self, modelfile):
         name, content = modelfile
-        from_line = [l for l in content.splitlines() if l.startswith("FROM ")][0]
+        from_line = next(line for line in content.splitlines() if line.startswith("FROM "))
         assert ".gguf" in from_line, f"{name}: FROM must reference a .gguf file"
 
     def test_has_temperature(self, modelfile):
@@ -54,26 +54,14 @@ class TestModelfileStructure:
 class TestModelfileSpecifics:
     """Task-specific parameter validation."""
 
-    def test_parser_low_temperature(self):
-        content = MODELFILES["query-parser"].read_text()
-        assert "PARAMETER temperature 0.1" in content
-
-    def test_parser_ctx_2048(self):
-        content = MODELFILES["query-parser"].read_text()
-        assert "PARAMETER num_ctx 2048" in content
-
-    def test_explainer_moderate_temperature(self):
-        content = MODELFILES["explainer"].read_text()
-        assert "PARAMETER temperature 0.3" in content
-
-    def test_explainer_ctx_4096(self):
-        content = MODELFILES["explainer"].read_text()
-        assert "PARAMETER num_ctx 4096" in content
-
-    def test_evaluator_low_temperature(self):
-        content = MODELFILES["evaluator"].read_text()
-        assert "PARAMETER temperature 0.1" in content
-
-    def test_evaluator_ctx_2048(self):
-        content = MODELFILES["evaluator"].read_text()
-        assert "PARAMETER num_ctx 2048" in content
+    @pytest.mark.parametrize("model,param,value", [
+        ("query-parser", "temperature", "0.1"),
+        ("query-parser", "num_ctx", "2048"),
+        ("explainer", "temperature", "0.3"),
+        ("explainer", "num_ctx", "4096"),
+        ("evaluator", "temperature", "0.1"),
+        ("evaluator", "num_ctx", "2048"),
+    ])
+    def test_parameter_value(self, model, param, value):
+        content = MODELFILES[model].read_text()
+        assert f"PARAMETER {param} {value}" in content

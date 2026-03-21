@@ -20,6 +20,7 @@ class ValidationResult:
 
 
 _VALID_INTENTS = {"compare", "trend", "lookup", "aggregate"}
+_JSON_RE = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.DOTALL)
 
 
 def _extract_json(raw: str) -> tuple[dict | None, str | None]:
@@ -29,7 +30,7 @@ def _extract_json(raw: str) -> tuple[dict | None, str | None]:
         return json.loads(raw), None
     except json.JSONDecodeError:
         pass
-    match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", raw, re.DOTALL)
+    match = _JSON_RE.search(raw)
     if match:
         try:
             return json.loads(match.group()), None

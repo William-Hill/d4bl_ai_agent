@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 
 import pytest
 
@@ -20,26 +21,28 @@ from scripts.training.validate_model_output import (
 )
 
 
-def _ollama_available() -> bool:
-    """Check if Ollama is running."""
+def _get_ollama_models() -> set[str] | None:
+    """Return loaded model names, or None if Ollama is unreachable."""
     try:
         result = subprocess.run(
             ["ollama", "list"], capture_output=True, text=True, timeout=5
         )
-        return result.returncode == 0
+        if result.returncode != 0:
+            return None
+        return set(result.stdout)
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        return None
+
+
+_OLLAMA_MODELS = _get_ollama_models()
+
+
+def _ollama_available() -> bool:
+    return _OLLAMA_MODELS is not None
 
 
 def _model_loaded(model_name: str) -> bool:
-    """Check if a specific model is registered in Ollama."""
-    try:
-        result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=5
-        )
-        return model_name in result.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+    return _OLLAMA_MODELS is not None and model_name in _OLLAMA_MODELS
 
 
 def _run_model(model_name: str, prompt: str, timeout: int = 120) -> str:
@@ -76,7 +79,6 @@ class TestQueryParserIntegration:
         )
         result = validate_parser_output(response)
         assert result.valid, f"Invalid output: {result.errors}\nRaw: {response}"
-        assert result.parsed["intent"] in ("lookup", "compare", "trend", "aggregate")
 
     def test_comparison_query(self):
         response = _run_model(
@@ -190,9 +192,8 @@ class TestModelLatency:
 
     def test_parser_responds_under_10s(self):
         """Query parser P95 target: <1s. Allow 10s for cold start."""
-        import time
         start = time.monotonic()
-        response = _run_model(
+        _run_model(
             "d4bl-query-parser",
             "What is the poverty rate in Alabama?",
             timeout=10,
@@ -202,9 +203,8 @@ class TestModelLatency:
 
     def test_explainer_responds_under_30s(self):
         """Explainer P95 target: <3s. Allow 30s for cold start."""
-        import time
         start = time.monotonic()
         prompt = json.dumps({"metric": "poverty_rate", "geography": "Alabama", "value": 18.2, "year": 2022})
-        response = _run_model("d4bl-explainer", prompt, timeout=30)
+        _run_model("d4bl-explainer", prompt, timeout=30)
         elapsed = time.monotonic() - start
         assert elapsed < 30, f"Explainer took {elapsed:.1f}s (target: <30s with cold start)"
