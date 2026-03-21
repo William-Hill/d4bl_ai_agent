@@ -559,3 +559,134 @@ del evaluator_trainer
 gc.collect()
 torch.cuda.empty_cache()
 print("VRAM freed.")
+
+# %% [markdown]
+# ## 4. Phase 3: GGUF Export
+#
+# For each task adapter we:
+# 1. Load the domain-merged base model in **full precision** (load_in_4bit=False)
+#    so that unsloth can merge + quantise without precision loss.
+# 2. Load the task adapter weights on top.
+# 3. Export to GGUF with `q4_k_m` quantisation — a good balance of size (~1.7 GB
+#    per model) and quality for CPU inference via Ollama.
+#
+# The three output files can be registered as separate Ollama model families
+# (e.g., `d4bl-parser:q4_k_m`, `d4bl-explainer:q4_k_m`, `d4bl-evaluator:q4_k_m`).
+
+# %%
+from peft import PeftModel
+
+# Adapter registry: name → paths and sequence length used during export
+ADAPTERS = {
+    "parser": {
+        "adapter_dir": ADAPTER_PARSER_DIR,
+        "output_name": "d4bl_parser",
+        "max_seq_length": MAX_SEQ_LENGTH_TASK,
+    },
+    "explainer": {
+        "adapter_dir": ADAPTER_EXPLAINER_DIR,
+        "output_name": "d4bl_explainer",
+        "max_seq_length": MAX_SEQ_LENGTH_EXPLAINER,
+    },
+    "evaluator": {
+        "adapter_dir": ADAPTER_EVALUATOR_DIR,
+        "output_name": "d4bl_evaluator",
+        "max_seq_length": MAX_SEQ_LENGTH_TASK,
+    },
+}
+
+gguf_output_paths = {}
+
+for adapter_name, cfg in ADAPTERS.items():
+    print(f"\n--- Exporting '{adapter_name}' to GGUF ---")
+
+    # Load domain-merged model in full precision for clean quantisation
+    export_model, export_tokenizer = FastLanguageModel.from_pretrained(
+        model_name=DOMAIN_MERGED_DIR,
+        max_seq_length=cfg["max_seq_length"],
+        dtype=None,
+        load_in_4bit=False,  # full precision required for GGUF export
+    )
+
+    # Load task adapter weights
+    export_model = PeftModel.from_pretrained(export_model, cfg["adapter_dir"])
+    export_model = export_model.merge_and_unload()
+
+    # Export to GGUF (q4_k_m quantisation)
+    gguf_path = str(Path(GGUF_DIR) / cfg["output_name"])
+    export_model.save_pretrained_gguf(
+        gguf_path,
+        export_tokenizer,
+        quantization_method="q4_k_m",
+    )
+    gguf_output_paths[adapter_name] = gguf_path
+    print(f"  Saved: {gguf_path}")
+
+    # Free VRAM before next adapter
+    del export_model
+    gc.collect()
+    torch.cuda.empty_cache()
+
+print("\nAll GGUF files exported.")
+
+# %%
+# List GGUF output files with sizes
+import os
+
+print(f"{'File':<55} {'Size (MB)':>10}")
+print("-" * 67)
+for adapter_name, base_path in gguf_output_paths.items():
+    # unsloth appends the quant suffix to the filename
+    for fname in sorted(os.listdir(GGUF_DIR)):
+        if fname.startswith(Path(base_path).name) and fname.endswith(".gguf"):
+            fpath = os.path.join(GGUF_DIR, fname)
+            size_mb = os.path.getsize(fpath) / (1024 ** 2)
+            print(f"{fname:<55} {size_mb:>10.1f}")
+
+# %% [markdown]
+# ## 5. Download GGUF Files
+#
+# Run the cell below to download all three GGUF files to your local machine.
+# Each file is approximately 1.7 GB with q4_k_m quantisation.
+
+# %%
+from google.colab import files as colab_files
+
+print("Downloading GGUF files...")
+for fname in sorted(os.listdir(GGUF_DIR)):
+    if fname.endswith(".gguf"):
+        fpath = os.path.join(GGUF_DIR, fname)
+        size_mb = os.path.getsize(fpath) / (1024 ** 2)
+        print(f"  Downloading {fname} ({size_mb:.1f} MB)...")
+        colab_files.download(fpath)
+
+print("All downloads initiated.")
+
+# %% [markdown]
+# ## 6. Training Summary
+#
+# Final training losses for all phases and adapters.
+
+# %%
+# Print a consolidated training summary
+print("=" * 60)
+print("D4BL Fine-Tuning — Training Summary")
+print("=" * 60)
+
+summary_rows = [
+    ("Phase 1 — Domain Adaptation", domain_stats),
+    ("Phase 2a — Query Parser",     parser_stats),
+    ("Phase 2b — Data Explainer",   explainer_stats),
+    ("Phase 2c — Evaluator",        evaluator_stats),
+]
+
+for label, stats in summary_rows:
+    loss = stats.training_loss
+    print(f"  {label:<35} training loss: {loss:.4f}")
+
+print("=" * 60)
+print("\nAll GGUF models are ready for Ollama deployment.")
+print("Register each model with:")
+print("  ollama create d4bl-parser    -f /path/to/d4bl_parser-Q4_K_M.gguf")
+print("  ollama create d4bl-explainer -f /path/to/d4bl_explainer-Q4_K_M.gguf")
+print("  ollama create d4bl-evaluator -f /path/to/d4bl_evaluator-Q4_K_M.gguf")
