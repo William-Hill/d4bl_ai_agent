@@ -15,9 +15,9 @@ import time
 import pytest
 
 from scripts.training.validate_model_output import (
-    validate_parser_output,
-    validate_explainer_output,
     validate_evaluator_output,
+    validate_explainer_output,
+    validate_parser_output,
 )
 
 
