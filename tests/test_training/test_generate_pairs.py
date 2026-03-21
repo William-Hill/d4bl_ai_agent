@@ -1,0 +1,279 @@
+"""Tests for scripts/training/generate_training_pairs.py — pure functions only.
+
+No Claude API calls or database connections are made in these tests.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+
+import pytest
+
+from scripts.training.generate_training_pairs import (
+    _validate_json,
+    format_as_chatml,
+    generate_query_parser_questions,
+    write_pairs_jsonl,
+)
+
+
+# ---------------------------------------------------------------------------
+# format_as_chatml
+# ---------------------------------------------------------------------------
+
+
+class TestFormatAsChatml:
+    def test_returns_dict_with_messages_key(self):
+        result = format_as_chatml("sys", "user msg", "assistant msg")
+        assert isinstance(result, dict)
+        assert "messages" in result
+
+    def test_messages_has_three_items(self):
+        result = format_as_chatml("sys", "user msg", "assistant msg")
+        assert len(result["messages"]) == 3
+
+    def test_system_role_and_content(self):
+        result = format_as_chatml("my system prompt", "u", "a")
+        system_msg = result["messages"][0]
+        assert system_msg["role"] == "system"
+        assert system_msg["content"] == "my system prompt"
+
+    def test_user_role_and_content(self):
+        result = format_as_chatml("s", "hello user", "a")
+        user_msg = result["messages"][1]
+        assert user_msg["role"] == "user"
+        assert user_msg["content"] == "hello user"
+
+    def test_assistant_role_and_content(self):
+        result = format_as_chatml("s", "u", "hello assistant")
+        asst_msg = result["messages"][2]
+        assert asst_msg["role"] == "assistant"
+        assert asst_msg["content"] == "hello assistant"
+
+    def test_messages_order(self):
+        result = format_as_chatml("s", "u", "a")
+        roles = [m["role"] for m in result["messages"]]
+        assert roles == ["system", "user", "assistant"]
+
+    def test_empty_strings_allowed(self):
+        result = format_as_chatml("", "", "")
+        assert len(result["messages"]) == 3
+
+    def test_multiline_content_preserved(self):
+        system = "line1\nline2"
+        result = format_as_chatml(system, "u", "a")
+        assert result["messages"][0]["content"] == system
+
+
+# ---------------------------------------------------------------------------
+# write_pairs_jsonl
+# ---------------------------------------------------------------------------
+
+
+class TestWritePairsJsonl:
+    def test_returns_count_of_pairs(self):
+        pairs = [{"messages": [{"role": "user", "content": "hi"}]}] * 5
+        buf = io.StringIO()
+        count = write_pairs_jsonl(pairs, buf)
+        assert count == 5
+
+    def test_returns_zero_for_empty_list(self):
+        buf = io.StringIO()
+        count = write_pairs_jsonl([], buf)
+        assert count == 0
+
+    def test_each_line_is_valid_json(self):
+        pairs = [
+            {"messages": [{"role": "user", "content": f"msg {i}"}]}
+            for i in range(3)
+        ]
+        buf = io.StringIO()
+        write_pairs_jsonl(pairs, buf)
+        buf.seek(0)
+        lines = buf.read().strip().split("\n")
+        assert len(lines) == 3
+        for line in lines:
+            obj = json.loads(line)
+            assert "messages" in obj
+
+    def test_one_json_object_per_line(self):
+        pairs = [{"a": 1}, {"b": 2}]
+        buf = io.StringIO()
+        write_pairs_jsonl(pairs, buf)
+        buf.seek(0)
+        lines = [ln for ln in buf.read().splitlines() if ln.strip()]
+        assert len(lines) == 2
+
+    def test_writes_to_file_path(self, tmp_path):
+        pairs = [{"messages": [{"role": "user", "content": "test"}]}]
+        outfile = tmp_path / "out.jsonl"
+        count = write_pairs_jsonl(pairs, outfile)
+        assert count == 1
+        lines = outfile.read_text().strip().splitlines()
+        assert len(lines) == 1
+        obj = json.loads(lines[0])
+        assert obj["messages"][0]["content"] == "test"
+
+    def test_preserves_pair_content(self):
+        pairs = [{"messages": [{"role": "assistant", "content": "answer"}]}]
+        buf = io.StringIO()
+        write_pairs_jsonl(pairs, buf)
+        buf.seek(0)
+        obj = json.loads(buf.read().strip())
+        assert obj["messages"][0]["role"] == "assistant"
+        assert obj["messages"][0]["content"] == "answer"
+
+
+# ---------------------------------------------------------------------------
+# generate_query_parser_questions
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateQueryParserQuestions:
+    def _sample_seed_rows(self) -> list[dict]:
+        return [
+            {
+                "state": "Mississippi",
+                "metric_name": "infant_mortality_rate",
+                "value": 8.9,
+                "race": "Black",
+                "year": 2021,
+            },
+            {
+                "state": "Louisiana",
+                "metric_name": "uninsured_rate",
+                "value": 0.19,
+                "race": "Hispanic",
+                "year": 2022,
+            },
+            {
+                "state": "Alabama",
+                "metric_name": "poverty_rate",
+                "value": 0.24,
+                "race": "Black",
+                "year": 2021,
+            },
+        ]
+
+    def test_returns_list(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=3)
+        assert isinstance(result, list)
+
+    def test_returns_requested_count(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=6)
+        assert len(result) == 6
+
+    def test_each_item_has_question_key(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=3)
+        for item in result:
+            assert "question" in item
+
+    def test_each_item_has_style_key(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=3)
+        for item in result:
+            assert "style" in item
+
+    def test_each_item_has_seed_data_key(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=3)
+        for item in result:
+            assert "seed_data" in item
+
+    def test_question_is_non_empty_string(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=3)
+        for item in result:
+            assert isinstance(item["question"], str)
+            assert len(item["question"].strip()) > 0
+
+    def test_style_is_valid(self):
+        rows = self._sample_seed_rows()
+        valid_styles = {"standard", "community", "adversarial"}
+        result = generate_query_parser_questions(rows, count=9)
+        for item in result:
+            assert item["style"] in valid_styles
+
+    def test_seed_data_references_row(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=3)
+        # seed_data should be one of the original rows
+        for item in result:
+            assert item["seed_data"] in rows
+
+    def test_all_styles_represented_with_enough_count(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=9)
+        styles = {item["style"] for item in result}
+        assert "standard" in styles
+        assert "community" in styles
+        assert "adversarial" in styles
+
+    def test_works_with_single_seed_row(self):
+        rows = [self._sample_seed_rows()[0]]
+        result = generate_query_parser_questions(rows, count=3)
+        assert len(result) == 3
+
+    def test_count_zero_returns_empty(self):
+        rows = self._sample_seed_rows()
+        result = generate_query_parser_questions(rows, count=0)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# _validate_json
+# ---------------------------------------------------------------------------
+
+
+class TestValidateJson:
+    def test_valid_json_object_returned_as_dict(self):
+        result = _validate_json('{"key": "value"}')
+        assert result == {"key": "value"}
+
+    def test_valid_nested_json(self):
+        text = '{"a": {"b": [1, 2, 3]}}'
+        result = _validate_json(text)
+        assert result == {"a": {"b": [1, 2, 3]}}
+
+    def test_invalid_json_returns_none(self):
+        result = _validate_json("not valid json")
+        assert result is None
+
+    def test_empty_string_returns_none(self):
+        result = _validate_json("")
+        assert result is None
+
+    def test_strips_markdown_json_fence(self):
+        text = '```json\n{"key": "value"}\n```'
+        result = _validate_json(text)
+        assert result == {"key": "value"}
+
+    def test_strips_plain_code_fence(self):
+        text = '```\n{"key": "value"}\n```'
+        result = _validate_json(text)
+        assert result == {"key": "value"}
+
+    def test_strips_whitespace_around_json(self):
+        text = '  \n  {"key": "value"}  \n  '
+        result = _validate_json(text)
+        assert result == {"key": "value"}
+
+    def test_json_array_returns_none(self):
+        # We only handle objects (dicts), not bare arrays
+        result = _validate_json('[1, 2, 3]')
+        assert result is None
+
+    def test_json_with_numbers_and_booleans(self):
+        text = '{"score": 4, "passed": true, "note": null}'
+        result = _validate_json(text)
+        assert result == {"score": 4, "passed": True, "note": None}
+
+    def test_partial_fence_still_parsed(self):
+        # Leading fence marker but no closing
+        text = '```json\n{"key": "value"}'
+        result = _validate_json(text)
+        assert result == {"key": "value"}
