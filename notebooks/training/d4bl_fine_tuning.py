@@ -52,9 +52,11 @@ Colab's userdata store. Training data files are uploaded at runtime.
 # Install dependencies
 # unsloth provides optimised LoRA training; install before other packages
 # so it can patch transformers/peft correctly at import time.
-!pip install unsloth
-!pip install --upgrade transformers datasets trl peft accelerate bitsandbytes
-!pip install huggingface_hub
+import subprocess, sys  # noqa: E401
+subprocess.run([sys.executable, "-m", "pip", "install", "unsloth"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps",
+                "trl", "peft", "accelerate", "bitsandbytes"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
 
 # %%
 import json
@@ -582,17 +584,17 @@ print("VRAM freed.")
 ADAPTERS = {
     "parser": {
         "adapter_dir": ADAPTER_PARSER_DIR,
-        "output_name": "d4bl_parser",
+        "output_name": "d4bl-query-parser-q4_k_m",
         "max_seq_length": MAX_SEQ_LENGTH_TASK,
     },
     "explainer": {
         "adapter_dir": ADAPTER_EXPLAINER_DIR,
-        "output_name": "d4bl_explainer",
+        "output_name": "d4bl-explainer-q4_k_m",
         "max_seq_length": MAX_SEQ_LENGTH_EXPLAINER,
     },
     "evaluator": {
         "adapter_dir": ADAPTER_EVALUATOR_DIR,
-        "output_name": "d4bl_evaluator",
+        "output_name": "d4bl-evaluator-q4_k_m",
         "max_seq_length": MAX_SEQ_LENGTH_TASK,
     },
 }

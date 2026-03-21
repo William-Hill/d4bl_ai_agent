@@ -88,6 +88,11 @@ class TestEvaluatorValidation:
         result = validate_evaluator_output(raw)
         assert not result.valid
 
+    def test_score_bool_invalid(self):
+        raw = '{"score": true, "explanation": "test", "issues": []}'
+        result = validate_evaluator_output(raw)
+        assert not result.valid
+
     def test_missing_score(self):
         raw = '{"explanation": "test", "issues": []}'
         result = validate_evaluator_output(raw)

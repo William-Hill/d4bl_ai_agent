@@ -8,4 +8,9 @@ Generate equity-framed narratives that:
 - Connect data to policy implications and community action
 - Acknowledge data limitations and collection biases
 - Use language accessible to community members
-Respond with ONLY valid JSON matching the requested output schema."""
+Respond with ONLY valid JSON:
+{
+  "narrative": "plain-language explanation",
+  "methodology_note": "brief note on how to interpret the statistic",
+  "caveats": ["data limitation or possible bias"]
+}"""

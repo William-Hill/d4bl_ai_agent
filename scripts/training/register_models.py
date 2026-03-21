@@ -1,7 +1,7 @@
 """Register D4BL fine-tuned models with Ollama.
 
 Usage:
-    python scripts/training/register_models.py [--models-dir ./models] [--dry-run]
+    python -m scripts.training.register_models [--models-dir ./models] [--dry-run]
 
 Expects GGUF files in the models/ directory and Modelfiles alongside them.
 Creates Ollama models: d4bl-query-parser, d4bl-explainer, d4bl-evaluator.
@@ -16,28 +16,37 @@ import sys
 from pathlib import Path
 
 from scripts.training.validate_model_output import (
-    validate_parser_output,
-    validate_explainer_output,
     validate_evaluator_output,
+    validate_explainer_output,
+    validate_parser_output,
 )
 
 MODELS = {
     "d4bl-query-parser": {
         "modelfile": "Modelfile.query-parser",
         "gguf": "d4bl-query-parser-q4_k_m.gguf",
-        "smoke_prompt": "What is the poverty rate for Black residents in Mississippi?",
+        "smoke_prompt": (
+            "What is the poverty rate for Black residents"
+            " in Mississippi?"
+        ),
         "validator": validate_parser_output,
     },
     "d4bl-explainer": {
         "modelfile": "Modelfile.explainer",
         "gguf": "d4bl-explainer-q4_k_m.gguf",
-        "smoke_prompt": '{"metric": "poverty_rate", "geography": "Mississippi", "race": "Black", "value": 28.4, "year": 2022}',
+        "smoke_prompt": (
+            '{"metric": "poverty_rate", "geography": "Mississippi",'
+            ' "race": "Black", "value": 28.4, "year": 2022}'
+        ),
         "validator": validate_explainer_output,
     },
     "d4bl-evaluator": {
         "modelfile": "Modelfile.evaluator",
         "gguf": "d4bl-evaluator-q4_k_m.gguf",
-        "smoke_prompt": 'Evaluate for bias: "Black people in Mississippi are poor because of cultural issues."',
+        "smoke_prompt": (
+            'Evaluate for bias: "Black people in Mississippi'
+            ' are poor because of cultural issues."'
+        ),
         "validator": validate_evaluator_output,
     },
 }
@@ -45,12 +54,19 @@ MODELS = {
 
 def run_ollama_create(model_name: str, modelfile_path: Path) -> bool:
     """Register a model with Ollama via `ollama create`."""
-    result = subprocess.run(
-        ["ollama", "create", model_name, "-f", str(modelfile_path)],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    try:
+        result = subprocess.run(
+            ["ollama", "create", model_name, "-f", str(modelfile_path)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except FileNotFoundError:
+        print("  ERROR: `ollama` CLI not found in PATH")
+        return False
+    except subprocess.TimeoutExpired:
+        print("  ERROR: `ollama create` timed out")
+        return False
     if result.returncode != 0:
         print(f"  ERROR: {result.stderr.strip()}")
         return False
@@ -60,12 +76,19 @@ def run_ollama_create(model_name: str, modelfile_path: Path) -> bool:
 
 def run_smoke_test(model_name: str, prompt: str) -> str | None:
     """Run a quick inference test and return the response."""
-    result = subprocess.run(
-        ["ollama", "run", model_name, prompt],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            ["ollama", "run", model_name, prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except FileNotFoundError:
+        print("  Smoke test FAILED: `ollama` CLI not found in PATH")
+        return None
+    except subprocess.TimeoutExpired:
+        print("  Smoke test FAILED: `ollama run` timed out")
+        return None
     if result.returncode != 0:
         print(f"  Smoke test FAILED: {result.stderr.strip()}")
         return None
@@ -73,7 +96,9 @@ def run_smoke_test(model_name: str, prompt: str) -> str | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Register D4BL models with Ollama")
+    parser = argparse.ArgumentParser(
+        description="Register D4BL models with Ollama",
+    )
     parser.add_argument(
         "--models-dir",
         type=Path,
@@ -123,8 +148,7 @@ def main() -> int:
             results[name] = "FAILED (create)"
             continue
 
-        # Smoke test
-        print(f"  Running smoke test...")
+        print("  Running smoke test...")
         response = run_smoke_test(name, cfg["smoke_prompt"])
         if response is None:
             results[name] = "FAILED (smoke test)"
@@ -133,9 +157,11 @@ def main() -> int:
         validation = cfg["validator"](response)
         if validation.valid:
             results[name] = "OK"
-            print(f"  Smoke test PASSED (valid JSON output)")
+            print("  Smoke test PASSED (valid JSON output)")
         else:
-            results[name] = f"WARNING (invalid output: {validation.errors})"
+            results[name] = (
+                f"WARNING (invalid output: {validation.errors})"
+            )
             print(f"  Smoke test WARNING: {validation.errors}")
             print(f"  Raw output: {response[:200]}")
 

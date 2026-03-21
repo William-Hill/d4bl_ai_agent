@@ -48,6 +48,8 @@ def validate_parser_output(raw: str) -> ValidationResult:
     errors = []
     if "intent" not in parsed:
         errors.append("Missing required field: intent")
+    elif not isinstance(parsed["intent"], str):
+        errors.append(f"intent must be a string, got {type(parsed['intent']).__name__}")
     elif parsed["intent"] not in _VALID_INTENTS:
         errors.append(
             f"Invalid intent '{parsed['intent']}', must be one of: {_VALID_INTENTS}"
@@ -78,7 +80,9 @@ def validate_evaluator_output(raw: str) -> ValidationResult:
     errors = []
     if "score" not in parsed:
         errors.append("Missing required field: score")
-    elif not isinstance(parsed["score"], (int, float)) or not (1 <= parsed["score"] <= 5):
-        errors.append(f"Invalid score {parsed.get('score')}: must be 1-5")
+    elif isinstance(parsed["score"], bool) or not isinstance(parsed["score"], (int, float)):
+        errors.append(f"score must be a number, got {type(parsed['score']).__name__}")
+    elif not (1 <= parsed["score"] <= 5):
+        errors.append(f"Invalid score {parsed['score']}: must be 1-5")
 
     return ValidationResult(valid=len(errors) == 0, parsed=parsed, errors=errors)

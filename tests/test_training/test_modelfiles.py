@@ -27,7 +27,11 @@ class TestModelfileStructure:
 
     def test_from_references_gguf(self, modelfile):
         name, content = modelfile
-        from_line = next(line for line in content.splitlines() if line.startswith("FROM "))
+        from_line = next(
+            (line for line in content.splitlines() if line.startswith("FROM ")),
+            None,
+        )
+        assert from_line is not None, f"{name}: missing FROM directive"
         assert ".gguf" in from_line, f"{name}: FROM must reference a .gguf file"
 
     def test_has_temperature(self, modelfile):

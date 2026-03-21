@@ -29,7 +29,10 @@ def _get_ollama_models() -> set[str] | None:
         )
         if result.returncode != 0:
             return None
-        return set(result.stdout)
+        lines = result.stdout.strip().splitlines()
+        if len(lines) <= 1:
+            return set()
+        return {line.split()[0] for line in lines[1:] if line.strip()}
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
@@ -164,7 +167,11 @@ class TestEvaluatorIntegration:
     def test_good_content_evaluation(self):
         response = _run_model(
             self.MODEL,
-            'Evaluate for equity_framing: "The 2.7x disparity in poverty rates between Black and White residents in Mississippi reflects decades of structural disinvestment, including exclusion from federal homeownership programs."',
+            'Evaluate for equity_framing: "The 2.7x disparity in '
+            "poverty rates between Black and White residents in "
+            "Mississippi reflects decades of structural "
+            "disinvestment, including exclusion from federal "
+            'homeownership programs."',
         )
         result = validate_evaluator_output(response)
         assert result.valid, f"Invalid output: {result.errors}\nRaw: {response}"
