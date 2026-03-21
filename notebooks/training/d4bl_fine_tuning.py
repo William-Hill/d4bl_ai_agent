@@ -1,0 +1,266 @@
+"""
+D4BL Fine-Tuning Notebook — Colab-Compatible Training Script
+
+This notebook fine-tunes Qwen2.5-3B-Instruct using a three-phase LoRA strategy
+for the Data for Black Lives (D4BL) AI agent:
+
+  Phase 1 — Domain-Adaptive LoRA Pre-Training:
+    Adapts the base model to D4BL's equity-focused corpus (corpus_pretrain.jsonl)
+    using a full-layer LoRA (r=16) for one epoch. The domain LoRA is then merged
+    into the base weights and saved as a new checkpoint.
+
+  Phase 2 — Task-Specific LoRA Adapters (three adapters trained sequentially):
+    Adapter A — Query Parser:  lightweight attention-only LoRA (r=8) trained on
+                               ~300 structured query examples for 3 epochs.
+    Adapter B — Data Explainer: larger LoRA (r=32, attention+FFN) trained on
+                                long-form explanation data at 4096-token context.
+    Adapter C — Evaluator:     medium attention-only LoRA (r=16) trained on
+                               ~600 evaluation examples for 3 epochs.
+
+  Phase 3 — GGUF Export:
+    Each task adapter is loaded over the domain-adapted base, then exported to
+    GGUF format (q4_k_m quantization) for local Ollama deployment.
+
+Run in Google Colab with a T4 or A100 GPU. All secrets (HF token) are read from
+Colab's userdata store. Training data files are uploaded at runtime.
+"""
+
+# %% [markdown]
+# # D4BL Fine-Tuning: Qwen2.5-3B-Instruct with LoRA
+#
+# **Overview**
+#
+# This notebook implements a three-phase fine-tuning pipeline for the D4BL AI agent:
+#
+# | Phase | What it does | LoRA rank | Epochs |
+# |-------|--------------|-----------|--------|
+# | 1 — Domain Adaptation | Teach the model D4BL vocabulary and equity framing | r=16 (all layers) | 1 |
+# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 3 |
+# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 3 |
+# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 3 |
+# | 3 — GGUF Export | Quantise each adapter to q4_k_m for Ollama deployment | — | — |
+#
+# **Prerequisites**
+# - Google Colab with T4 or A100 GPU runtime
+# - Hugging Face token stored in Colab Secrets as `HF_TOKEN`
+# - Training data files (see Section 1 for the full list)
+
+# %% [markdown]
+# ## 0. Environment Setup
+
+# %%
+# Install dependencies
+# unsloth provides optimised LoRA training; install before other packages
+# so it can patch transformers/peft correctly at import time.
+!pip install unsloth
+!pip install --upgrade transformers datasets trl peft accelerate bitsandbytes
+!pip install huggingface_hub
+
+# %%
+import json
+import os
+from pathlib import Path
+
+from datasets import Dataset
+from google.colab import userdata
+from huggingface_hub import login
+from transformers import TrainingArguments
+from trl import SFTTrainer
+from unsloth import FastLanguageModel
+
+# Authenticate with Hugging Face
+HF_TOKEN = userdata.get("HF_TOKEN")
+login(token=HF_TOKEN)
+
+# %%
+# ---------------------------------------------------------------------------
+# Configuration constants
+# ---------------------------------------------------------------------------
+
+# Sequence length caps for each phase / adapter
+MAX_SEQ_LENGTH_DOMAIN = 2048      # Phase 1 — domain pre-training
+MAX_SEQ_LENGTH_TASK = 2048        # Phase 2 task adapters (parser, evaluator)
+MAX_SEQ_LENGTH_EXPLAINER = 4096   # Phase 2b — explainer needs longer context
+
+# Base directory for all saved checkpoints and merged models
+OUTPUT_DIR = Path("/content/d4bl_training")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+DOMAIN_MERGED_DIR = str(OUTPUT_DIR / "domain_merged")
+ADAPTER_PARSER_DIR = str(OUTPUT_DIR / "adapter_parser")
+ADAPTER_EXPLAINER_DIR = str(OUTPUT_DIR / "adapter_explainer")
+ADAPTER_EVALUATOR_DIR = str(OUTPUT_DIR / "adapter_evaluator")
+GGUF_DIR = str(OUTPUT_DIR / "gguf")
+
+Path(GGUF_DIR).mkdir(parents=True, exist_ok=True)
+
+print("Output directory:", OUTPUT_DIR)
+print("Configuration loaded.")
+
+# %% [markdown]
+# ## 1. Upload Training Data
+#
+# Use the file picker below to upload **all** training data files before
+# proceeding. Expected files:
+#
+# | File | Used in |
+# |------|---------|
+# | `corpus_pretrain.jsonl` | Phase 1 — domain adaptation |
+# | `query_parser_train.jsonl` | Phase 2a — parser training split |
+# | `query_parser_val.jsonl` | Phase 2a — parser validation split |
+# | `explainer_train.jsonl` | Phase 2b — explainer training split |
+# | `explainer_val.jsonl` | Phase 2b — explainer validation split |
+# | `evaluator_train.jsonl` | Phase 2c — evaluator training split |
+# | `evaluator_val.jsonl` | Phase 2c — evaluator validation split |
+#
+# Each file must be newline-delimited JSON with at minimum a `"text"` key per
+# record (the formatted prompt+completion string).
+
+# %%
+from google.colab import files as colab_files
+
+print("Select all training data files (Ctrl/Cmd+click for multi-select)...")
+uploaded = colab_files.upload()
+print(f"\nUploaded {len(uploaded)} file(s):")
+for name in uploaded:
+    size_kb = len(uploaded[name]) / 1024
+    print(f"  {name:40s} {size_kb:.1f} KB")
+
+# %%
+def load_jsonl(path: str) -> list[dict]:
+    """Read a newline-delimited JSON file and return a list of records."""
+    records = []
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    return records
+
+
+def load_dataset_from_jsonl(path: str) -> Dataset:
+    """Load a JSONL file as a HuggingFace Dataset."""
+    records = load_jsonl(path)
+    return Dataset.from_list(records)
+
+
+# Load all datasets
+corpus_dataset = load_dataset_from_jsonl("corpus_pretrain.jsonl")
+
+parser_train_dataset = load_dataset_from_jsonl("query_parser_train.jsonl")
+parser_val_dataset = load_dataset_from_jsonl("query_parser_val.jsonl")
+
+explainer_train_dataset = load_dataset_from_jsonl("explainer_train.jsonl")
+explainer_val_dataset = load_dataset_from_jsonl("explainer_val.jsonl")
+
+evaluator_train_dataset = load_dataset_from_jsonl("evaluator_train.jsonl")
+evaluator_val_dataset = load_dataset_from_jsonl("evaluator_val.jsonl")
+
+print("Datasets loaded:")
+print(f"  corpus_pretrain       : {len(corpus_dataset):>5} examples")
+print(f"  query_parser_train    : {len(parser_train_dataset):>5} examples")
+print(f"  query_parser_val      : {len(parser_val_dataset):>5} examples")
+print(f"  explainer_train       : {len(explainer_train_dataset):>5} examples")
+print(f"  explainer_val         : {len(explainer_val_dataset):>5} examples")
+print(f"  evaluator_train       : {len(evaluator_train_dataset):>5} examples")
+print(f"  evaluator_val         : {len(evaluator_val_dataset):>5} examples")
+
+# %% [markdown]
+# ## 2. Phase 1: Domain-Adaptive LoRA Pre-Training
+#
+# We load Qwen2.5-3B-Instruct in 4-bit (NF4) quantisation, attach a full-layer
+# LoRA (r=16, all projection matrices including embeddings and LM head), and
+# train for one epoch on the D4BL equity corpus. The goal is to shift the
+# model's prior toward D4BL terminology and framing before task-specific
+# fine-tuning.
+#
+# After training the domain LoRA is **merged** into the base weights so that
+# subsequent adapters compose cleanly on top of a single checkpoint.
+
+# %%
+# Load Qwen2.5-3B-Instruct in 4-bit quantisation
+domain_model, domain_tokenizer = FastLanguageModel.from_pretrained(
+    model_name="Qwen/Qwen2.5-3B-Instruct",
+    max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
+    dtype=None,           # auto-detect (bfloat16 on Ampere+, float16 on T4)
+    load_in_4bit=True,
+)
+print("Base model loaded.")
+print(f"  Parameters : {domain_model.num_parameters():,}")
+
+# %%
+# Attach domain-adaptation LoRA adapters
+domain_model = FastLanguageModel.get_peft_model(
+    domain_model,
+    r=16,
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "embed_tokens",
+        "lm_head",
+    ],
+    lora_alpha=32,
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+    random_state=42,
+)
+print("Domain LoRA adapters attached.")
+domain_model.print_trainable_parameters()
+
+# %%
+# Train Phase 1 — domain adaptation
+domain_training_args = TrainingArguments(
+    output_dir=str(OUTPUT_DIR / "phase1_checkpoints"),
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=4,
+    warmup_steps=50,
+    num_train_epochs=1,
+    learning_rate=2e-4,
+    fp16=True,
+    logging_steps=10,
+    optim="adamw_8bit",
+    seed=42,
+    save_steps=500,
+    save_total_limit=2,
+    report_to="none",
+)
+
+domain_trainer = SFTTrainer(
+    model=domain_model,
+    tokenizer=domain_tokenizer,
+    train_dataset=corpus_dataset,
+    dataset_text_field="text",
+    max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
+    args=domain_training_args,
+)
+
+print("Starting Phase 1 training...")
+domain_stats = domain_trainer.train()
+print("Phase 1 training complete.")
+print(f"  Training loss : {domain_stats.training_loss:.4f}")
+
+# %%
+# Merge domain LoRA into base weights and save merged checkpoint
+print("Merging domain LoRA into base weights...")
+domain_model.save_pretrained_merged(
+    DOMAIN_MERGED_DIR,
+    domain_tokenizer,
+    save_method="merged_16bit",
+)
+print(f"Domain-merged model saved to: {DOMAIN_MERGED_DIR}")
+
+# Free VRAM before loading the next model
+import gc
+import torch
+
+del domain_model
+del domain_trainer
+gc.collect()
+torch.cuda.empty_cache()
+print("VRAM freed.")
