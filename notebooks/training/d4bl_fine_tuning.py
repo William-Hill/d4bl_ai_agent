@@ -687,6 +687,40 @@ for label, stats in summary_rows:
 print("=" * 60)
 print("\nAll GGUF models are ready for Ollama deployment.")
 print("Register each model with:")
-print("  ollama create d4bl-parser    -f /path/to/d4bl_parser-Q4_K_M.gguf")
-print("  ollama create d4bl-explainer -f /path/to/d4bl_explainer-Q4_K_M.gguf")
-print("  ollama create d4bl-evaluator -f /path/to/d4bl_evaluator-Q4_K_M.gguf")
+print("  python scripts/training/register_models.py")
+
+# %% [markdown]
+# ## Troubleshooting
+#
+# ### Out of VRAM
+# - Reduce `per_device_train_batch_size` (e.g., 4 → 2)
+# - Ensure `use_gradient_checkpointing="unsloth"` is set
+# - Check no other notebooks are using the GPU: `!nvidia-smi`
+#
+# ### Colab Session Timeout
+# - Phase 1 + Phase 2 + Phase 3 total ~2.5 hours
+# - Free tier sessions may disconnect after 90 minutes of inactivity
+# - **Mitigation:** Save checkpoints frequently (`save_steps`) and resume from last checkpoint
+# - If disconnected mid-Phase-2, skip Phase 1 (merged model is saved) and retrain only the current adapter
+#
+# ### GGUF Export Fails
+# - Ensure sufficient disk space: `!df -h`
+# - Each GGUF is ~1.8GB, need ~6GB free for all three
+# - If Colab storage is full, download Phase 1-2 outputs and clear before Phase 3
+#
+# ### Model Produces Invalid JSON
+# - Check val loss — if it diverged from train loss, the model overfit
+# - Increase training data or reduce epochs
+# - Check that training data JSONL has correct chat template formatting
+#
+# ### Resuming from Checkpoint
+# To resume an interrupted adapter training:
+# ```python
+# # Find the latest checkpoint
+# import glob
+# checkpoints = sorted(glob.glob("outputs/query_parser/checkpoint-*"))
+# latest = checkpoints[-1] if checkpoints else None
+# print(f"Resuming from: {latest}")
+# # Pass resume_from_checkpoint to trainer.train()
+# trainer.train(resume_from_checkpoint=latest)
+# ```
