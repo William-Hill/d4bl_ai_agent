@@ -264,3 +264,298 @@ del domain_trainer
 gc.collect()
 torch.cuda.empty_cache()
 print("VRAM freed.")
+
+# %% [markdown]
+# ## 3. Phase 2: Task-Specific LoRA Adapters
+#
+# Each adapter is trained on top of the **domain-merged** checkpoint saved in
+# Phase 1. We load that checkpoint fresh for each adapter, attach a smaller
+# LoRA sized for the task, train, save only the adapter weights, then free
+# VRAM before moving to the next adapter.
+
+# %% [markdown]
+# ### 3a. Adapter A: Query Parser
+#
+# **Goal:** Structured intent extraction — map a natural-language query to a
+# typed JSON payload (metric, geography, filters, comparison).
+#
+# | Hyperparameter | Value |
+# |----------------|-------|
+# | LoRA rank | r=8 (attention-only) |
+# | Target modules | q_proj, k_proj, v_proj, o_proj |
+# | lora_alpha | 16 |
+# | Training examples | ~300 |
+# | Epochs | 3 |
+# | Learning rate | 1e-4 |
+#
+# Attention-only adapters are sufficient for short, highly-structured outputs
+# and keep the parameter count low.
+
+# %%
+# Load domain-adapted model for parser adapter training
+parser_model, parser_tokenizer = FastLanguageModel.from_pretrained(
+    model_name=DOMAIN_MERGED_DIR,
+    max_seq_length=MAX_SEQ_LENGTH_TASK,
+    dtype=None,
+    load_in_4bit=True,
+)
+print("Domain-merged model loaded for parser adapter.")
+
+# Attach parser LoRA — attention-only, r=8
+parser_model = FastLanguageModel.get_peft_model(
+    parser_model,
+    r=8,
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+    ],
+    lora_alpha=16,
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+    random_state=42,
+)
+print("Parser LoRA adapters attached.")
+parser_model.print_trainable_parameters()
+
+# %%
+# Train Adapter A — Query Parser
+parser_training_args = TrainingArguments(
+    output_dir=str(OUTPUT_DIR / "parser_checkpoints"),
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=2,
+    warmup_steps=20,
+    num_train_epochs=3,
+    learning_rate=1e-4,
+    fp16=True,
+    logging_steps=10,
+    optim="adamw_8bit",
+    seed=42,
+    evaluation_strategy="steps",
+    eval_steps=25,
+    load_best_model_at_end=True,
+    save_steps=25,
+    save_total_limit=3,
+    report_to="none",
+)
+
+parser_trainer = SFTTrainer(
+    model=parser_model,
+    tokenizer=parser_tokenizer,
+    train_dataset=parser_train_dataset,
+    eval_dataset=parser_val_dataset,
+    dataset_text_field="text",
+    max_seq_length=MAX_SEQ_LENGTH_TASK,
+    args=parser_training_args,
+)
+
+print("Starting Adapter A (Query Parser) training...")
+parser_stats = parser_trainer.train()
+print("Parser adapter training complete.")
+print(f"  Training loss : {parser_stats.training_loss:.4f}")
+
+# Save only the adapter weights
+parser_model.save_pretrained(ADAPTER_PARSER_DIR)
+parser_tokenizer.save_pretrained(ADAPTER_PARSER_DIR)
+print(f"Parser adapter saved to: {ADAPTER_PARSER_DIR}")
+
+# Free VRAM
+del parser_model
+del parser_trainer
+gc.collect()
+torch.cuda.empty_cache()
+print("VRAM freed.")
+
+# %% [markdown]
+# ### 3b. Adapter B: Data Explainer
+#
+# **Goal:** Generate plain-language, equity-framed explanations of statistical
+# data for a general audience — e.g., "What does a Gini coefficient of 0.49
+# mean for Black households in Cook County?"
+#
+# | Hyperparameter | Value |
+# |----------------|-------|
+# | LoRA rank | r=32 (attention + FFN) |
+# | Target modules | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj |
+# | lora_alpha | 64 |
+# | Max sequence length | 4096 |
+# | Epochs | 3 |
+# | Learning rate | 1e-4 |
+#
+# The larger rank and FFN coverage are needed for long-form generation quality.
+# The 4096-token context handles data tables embedded in prompts.
+
+# %%
+# Load domain-adapted model for explainer adapter training
+explainer_model, explainer_tokenizer = FastLanguageModel.from_pretrained(
+    model_name=DOMAIN_MERGED_DIR,
+    max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
+    dtype=None,
+    load_in_4bit=True,
+)
+print("Domain-merged model loaded for explainer adapter.")
+
+# Attach explainer LoRA — attention + FFN, r=32
+explainer_model = FastLanguageModel.get_peft_model(
+    explainer_model,
+    r=32,
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+    lora_alpha=64,
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+    random_state=42,
+)
+print("Explainer LoRA adapters attached.")
+explainer_model.print_trainable_parameters()
+
+# %%
+# Train Adapter B — Data Explainer
+explainer_training_args = TrainingArguments(
+    output_dir=str(OUTPUT_DIR / "explainer_checkpoints"),
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=4,
+    warmup_steps=30,
+    num_train_epochs=3,
+    learning_rate=1e-4,
+    fp16=True,
+    logging_steps=10,
+    optim="adamw_8bit",
+    seed=42,
+    evaluation_strategy="steps",
+    eval_steps=20,
+    load_best_model_at_end=True,
+    save_steps=20,
+    save_total_limit=3,
+    report_to="none",
+)
+
+explainer_trainer = SFTTrainer(
+    model=explainer_model,
+    tokenizer=explainer_tokenizer,
+    train_dataset=explainer_train_dataset,
+    eval_dataset=explainer_val_dataset,
+    dataset_text_field="text",
+    max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
+    args=explainer_training_args,
+)
+
+print("Starting Adapter B (Data Explainer) training...")
+explainer_stats = explainer_trainer.train()
+print("Explainer adapter training complete.")
+print(f"  Training loss : {explainer_stats.training_loss:.4f}")
+
+# Save only the adapter weights
+explainer_model.save_pretrained(ADAPTER_EXPLAINER_DIR)
+explainer_tokenizer.save_pretrained(ADAPTER_EXPLAINER_DIR)
+print(f"Explainer adapter saved to: {ADAPTER_EXPLAINER_DIR}")
+
+# Free VRAM
+del explainer_model
+del explainer_trainer
+gc.collect()
+torch.cuda.empty_cache()
+print("VRAM freed.")
+
+# %% [markdown]
+# ### 3c. Adapter C: Evaluator
+#
+# **Goal:** Score and critique D4BL research outputs on four dimensions:
+# factual accuracy, equity framing, source quality, and actionability.
+# Returns a structured JSON rubric with scores and a brief rationale.
+#
+# | Hyperparameter | Value |
+# |----------------|-------|
+# | LoRA rank | r=16 (attention-only) |
+# | Target modules | q_proj, k_proj, v_proj, o_proj |
+# | lora_alpha | 32 |
+# | Training examples | ~600 |
+# | Epochs | 3 |
+# | Learning rate | 1e-4 |
+
+# %%
+# Load domain-adapted model for evaluator adapter training
+evaluator_model, evaluator_tokenizer = FastLanguageModel.from_pretrained(
+    model_name=DOMAIN_MERGED_DIR,
+    max_seq_length=MAX_SEQ_LENGTH_TASK,
+    dtype=None,
+    load_in_4bit=True,
+)
+print("Domain-merged model loaded for evaluator adapter.")
+
+# Attach evaluator LoRA — attention-only, r=16
+evaluator_model = FastLanguageModel.get_peft_model(
+    evaluator_model,
+    r=16,
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+    ],
+    lora_alpha=32,
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+    random_state=42,
+)
+print("Evaluator LoRA adapters attached.")
+evaluator_model.print_trainable_parameters()
+
+# %%
+# Train Adapter C — Evaluator
+evaluator_training_args = TrainingArguments(
+    output_dir=str(OUTPUT_DIR / "evaluator_checkpoints"),
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=2,
+    warmup_steps=20,
+    num_train_epochs=3,
+    learning_rate=1e-4,
+    fp16=True,
+    logging_steps=10,
+    optim="adamw_8bit",
+    seed=42,
+    evaluation_strategy="steps",
+    eval_steps=25,
+    load_best_model_at_end=True,
+    save_steps=25,
+    save_total_limit=3,
+    report_to="none",
+)
+
+evaluator_trainer = SFTTrainer(
+    model=evaluator_model,
+    tokenizer=evaluator_tokenizer,
+    train_dataset=evaluator_train_dataset,
+    eval_dataset=evaluator_val_dataset,
+    dataset_text_field="text",
+    max_seq_length=MAX_SEQ_LENGTH_TASK,
+    args=evaluator_training_args,
+)
+
+print("Starting Adapter C (Evaluator) training...")
+evaluator_stats = evaluator_trainer.train()
+print("Evaluator adapter training complete.")
+print(f"  Training loss : {evaluator_stats.training_loss:.4f}")
+
+# Save only the adapter weights
+evaluator_model.save_pretrained(ADAPTER_EVALUATOR_DIR)
+evaluator_tokenizer.save_pretrained(ADAPTER_EVALUATOR_DIR)
+print(f"Evaluator adapter saved to: {ADAPTER_EVALUATOR_DIR}")
+
+# Free VRAM
+del evaluator_model
+del evaluator_trainer
+gc.collect()
+torch.cuda.empty_cache()
+print("VRAM freed.")
