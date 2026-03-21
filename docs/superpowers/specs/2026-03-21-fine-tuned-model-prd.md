@@ -152,7 +152,7 @@ Community members flag outputs → corrections become training data → retrain 
 ### Phase 2: Full Adapter Suite (1 week)
 
 **Scope:**
-- Generate explainer training data (300 pairs × 3 registers)
+- Generate explainer training data (300 total pairs covering all 3 registers)
 - Generate evaluator training data (600 pairs × 4 tasks)
 - Train explainer and evaluator adapters
 - Integration with existing FastAPI endpoints
@@ -193,6 +193,19 @@ Community members flag outputs → corrections become training data → retrain 
 
 ## Risks & Mitigations
 
+### Cost Estimates
+
+| Item | Cost | Frequency |
+|------|------|-----------|
+| Google Colab T4 (training) | Free | Per training run |
+| Google Colab Pro (backup) | $10/month | Monthly if needed |
+| Claude API (distillation) | ~$15-30 | Per dataset version |
+| RunPod Serverless (production) | $5-25/month | Monthly |
+| Hugging Face Hub | Free (public) | Monthly |
+| **Total MVP** | **~$20-55 one-time + $5-25/month** | |
+
+### Risks & Mitigations
+
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|-----------|-----------|
 | Model reproduces biased framing | High | Medium | Equity alignment evaluator; D4BL-aligned training prompts; community review |
@@ -202,6 +215,9 @@ Community members flag outputs → corrections become training data → retrain 
 | Mobile memory pressure | Low | Medium | 1.5B model at 0.9GB; task-limited on-device |
 | Community feedback insufficient | Medium | Medium | Seed feedback with D4BL staff; integrate into existing platform workflows |
 | Model versioning confusion | Low | Low | Hugging Face Hub model cards; eval result database; ship criteria gates |
+| Colab free tier session limits | Medium | Medium | Training pipeline (~135 min) may exceed session; Colab Pro or local GPU backup |
+| Claude distillation costs | Low | Low | Budget ~$15-30; track token usage during generation |
+| Evaluator circular dependency | Medium | Low | Use Claude as judge during evaluator training; self-evaluation only in production |
 
 ---
 
