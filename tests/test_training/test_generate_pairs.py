@@ -8,15 +8,12 @@ from __future__ import annotations
 import io
 import json
 
-import pytest
-
 from scripts.training.generate_training_pairs import (
     _validate_json,
     format_as_chatml,
     generate_query_parser_questions,
     write_pairs_jsonl,
 )
-
 
 # ---------------------------------------------------------------------------
 # format_as_chatml

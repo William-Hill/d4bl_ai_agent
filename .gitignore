@@ -25,4 +25,4 @@ eval_results*.csv
 .worktrees/
 # Training data (large, generated)
 scripts/training_data/*
-\!scripts/training_data/.gitkeep
+!scripts/training_data/.gitkeep

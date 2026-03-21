@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
-
 from scripts.training.templates import (
-    render_census_passage,
-    render_cdc_passage,
-    render_epa_passage,
-    render_police_violence_passage,
     render_bjs_passage,
+    render_cdc_passage,
+    render_census_passage,
+    render_epa_passage,
     render_fbi_passage,
+    render_police_violence_passage,
 )
-
 
 # ---------------------------------------------------------------------------
 # Census
@@ -407,5 +404,5 @@ class TestRenderFbiPassage:
             "year": 2021,
         }
         passage = render_fbi_passage(row)
-        # 5000 / 1000000 * 100000 = 500.0
-        assert "500" in passage
+        # 5000 / 1000000 * 100000 = 500.0 → rendered as "500.0 per 100,000 people"
+        assert "500.0 per 100,000" in passage

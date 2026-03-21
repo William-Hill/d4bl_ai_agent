@@ -105,7 +105,7 @@ def render_census_passage(row: dict) -> str:
     )
 
     if moe is not None:
-        formatted_moe = f"${int(moe):,}" if metric in _DOLLAR_METRICS else f"{moe:.1f}"
+        formatted_moe = _format_value(moe, metric)
         passage += f" The margin of error was {formatted_moe}."
 
     return passage

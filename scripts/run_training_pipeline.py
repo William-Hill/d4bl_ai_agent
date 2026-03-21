@@ -14,6 +14,17 @@ import sys
 import time
 
 
+def _positive_int(value: str) -> int:
+    """Argparse type function that accepts only positive integers."""
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer")
+    if ivalue <= 0:
+        raise argparse.ArgumentTypeError(f"{value!r} must be a positive integer (got {ivalue})")
+    return ivalue
+
+
 def main():
     parser = argparse.ArgumentParser(description="Training data pipeline")
     parser.add_argument(
@@ -26,7 +37,7 @@ def main():
         choices=["query_parser", "explainer", "evaluator", "all"],
         default="all",
     )
-    parser.add_argument("--max-per-table", type=int, default=10_000)
+    parser.add_argument("--max-per-table", type=_positive_int, default=10_000)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 

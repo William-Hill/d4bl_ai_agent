@@ -1,14 +1,10 @@
 """Tests for corpus extraction."""
 
 import json
-from pathlib import Path
-
-import pytest
 
 from scripts.training.extract_corpus import (
-    extract_table,
-    write_passages_jsonl,
     EXTRACTORS,
+    write_passages_jsonl,
 )
 
 

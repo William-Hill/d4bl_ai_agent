@@ -19,8 +19,11 @@ import sys
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id, safe_int,
     STATE_ABBREV_TO_NAME,
+    execute_batch,
+    get_db_connection,
+    make_record_id,
+    safe_int,
 )
 
 # FBI Crime Data Explorer base URL

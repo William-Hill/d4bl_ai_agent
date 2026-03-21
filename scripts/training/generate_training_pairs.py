@@ -42,6 +42,27 @@ from scripts.training.prompts import (
 )
 
 # ---------------------------------------------------------------------------
+# Student-model system prompts (short, task-specific)
+# ---------------------------------------------------------------------------
+
+_STUDENT_QUERY_PARSER_SYSTEM = (
+    "Parse the user's research question into a structured JSON object with keys: "
+    "entities, search_queries, data_sources, community_framing. "
+    "Respond with ONLY valid JSON."
+)
+
+_STUDENT_EXPLAINER_SYSTEM = (
+    "Generate a structured JSON explanation of the provided data finding. "
+    "Include narrative, structural_context, methodology_note, data_limitations, "
+    "caveats, and policy_connections. Respond with ONLY valid JSON."
+)
+
+_STUDENT_EVALUATOR_SYSTEM = (
+    "Evaluate the model output against the provided context and return a structured "
+    "JSON judgment. Respond with ONLY valid JSON."
+)
+
+# ---------------------------------------------------------------------------
 # Allowlist for safe table name interpolation
 # ---------------------------------------------------------------------------
 
@@ -127,7 +148,7 @@ def _extract_template_vars(row: dict) -> dict[str, str]:
         or row.get("state_name")
         or "this state"
     )
-    raw_metric = row.get("metric_name") or row.get("indicator_name") or "health outcome"
+    raw_metric = row.get("metric_name") or row.get("metric") or row.get("indicator_name") or "health outcome"
     metric = _DEFAULT_METRIC_LABELS.get(str(raw_metric), str(raw_metric).replace("_", " "))
     race = row.get("race") or row.get("race_ethnicity") or "Black"
     year = str(row.get("year") or "2022")
@@ -348,37 +369,39 @@ def _fetch_seed_data(conn: Any, table: str, limit: int = 200) -> list[dict]:
 
 
 def _load_seed_rows(conn: Any, limit: int = 200) -> list[dict]:
-    """Fetch seed rows from the first available table.
+    """Fetch seed rows aggregated across all available tables.
 
-    Tries ``census_indicators``, ``cdc_health_outcomes``, and
-    ``census_demographics`` in order.  Falls back to a hardcoded sentinel row
-    if none of the tables are available.
+    Attempts ``census_indicators``, ``cdc_health_outcomes``, and
+    ``census_demographics`` and combines rows from all that are accessible.
+    The combined list is shuffled before being truncated to *limit*.
+    Falls back to a hardcoded sentinel row if none of the tables are available.
 
     Args:
         conn: A live psycopg2 connection.
-        limit: Maximum number of rows to fetch.
+        limit: Maximum number of rows to return in total.
 
     Returns:
         A list of row dicts (never empty).
     """
+    fallback_row = {
+        "geography_name": "Mississippi",
+        "state_name": "Mississippi",
+        "state_fips": "28",
+        "metric": "median_household_income",
+        "race": "black",
+        "year": 2022,
+        "value": 35400.0,
+    }
+    rows: list[dict] = []
     for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
         try:
-            rows = _fetch_seed_data(conn, table, limit=limit)
-            if rows:
-                return rows
+            rows.extend(_fetch_seed_data(conn, table, limit=limit))
         except Exception:  # noqa: BLE001
             continue
-    return [
-        {
-            "geography_name": "Mississippi",
-            "state_name": "Mississippi",
-            "state_fips": "28",
-            "metric": "median_household_income",
-            "race": "black",
-            "year": 2022,
-            "value": 35400.0,
-        }
-    ]
+    if rows:
+        random.shuffle(rows)
+        return rows[:limit]
+    return [fallback_row]
 
 
 # ---------------------------------------------------------------------------
@@ -408,13 +431,13 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
     for idx, q in enumerate(questions):
         if idx > 0 and idx % 25 == 0:
             time.sleep(1)
-        user_prompt = build_query_parser_prompt(
+        teacher_prompt = build_query_parser_prompt(
             question=q["question"],
             data_sources=data_sources,
             question_style=q["style"],
         )
         try:
-            response_text = _call_claude(D4BL_SYSTEM_PROMPT, user_prompt)
+            response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
         except Exception as exc:  # noqa: BLE001
             print(f"[warn] Claude call failed for pair {idx}: {exc}")
             continue
@@ -422,10 +445,11 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
         if validated is None:
             print(f"[warn] Invalid JSON response for pair {idx}, skipping.")
             continue
+        # Student sees only the raw question, not the distillation scaffold
         pairs.append(
             format_as_chatml(
-                system=D4BL_SYSTEM_PROMPT,
-                user=user_prompt,
+                system=_STUDENT_QUERY_PARSER_SYSTEM,
+                user=q["question"],
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
         )
@@ -455,9 +479,9 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
             time.sleep(1)
         row = seed_rows[idx % len(seed_rows)]
         register = registers_cycle[idx % len(registers_cycle)]
-        user_prompt = build_explainer_prompt(data=row, register=register)
+        teacher_prompt = build_explainer_prompt(data=row, register=register)
         try:
-            response_text = _call_claude(D4BL_SYSTEM_PROMPT, user_prompt)
+            response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
         except Exception as exc:  # noqa: BLE001
             print(f"[warn] Claude call failed for explainer pair {idx}: {exc}")
             continue
@@ -465,10 +489,12 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
         if validated is None:
             print(f"[warn] Invalid JSON response for explainer pair {idx}, skipping.")
             continue
+        # Student sees only the JSON data context + register, not the full distillation scaffold
+        student_user = json.dumps({"data": row, "register": register}, ensure_ascii=False)
         pairs.append(
             format_as_chatml(
-                system=D4BL_SYSTEM_PROMPT,
-                user=user_prompt,
+                system=_STUDENT_EXPLAINER_SYSTEM,
+                user=student_user,
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
         )
@@ -506,15 +532,15 @@ def generate_evaluator_pairs(
             # Use a placeholder model output for the evaluator task
             model_output = (
                 f"Based on the data, {row.get('state', 'this state')} shows elevated "
-                f"{row.get('metric_name', 'outcome')} rates that reflect structural inequities."
+                f"{row.get('metric_name', row.get('metric', 'outcome'))} rates that reflect structural inequities."
             )
-            user_prompt = build_evaluator_prompt(
+            teacher_prompt = build_evaluator_prompt(
                 task=task,
                 context=context,
                 model_output=model_output,
             )
             try:
-                response_text = _call_claude(D4BL_SYSTEM_PROMPT, user_prompt)
+                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
             except Exception as exc:  # noqa: BLE001
                 print(f"[warn] Claude call failed for evaluator {task} pair {idx}: {exc}")
                 call_count += 1
@@ -524,10 +550,12 @@ def generate_evaluator_pairs(
                 print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.")
                 call_count += 1
                 continue
+            # Student sees only raw context + output, not the full evaluation scaffold
+            student_user = f"Context:\n{context}\n\nModel output:\n{model_output}"
             all_pairs.append(
                 format_as_chatml(
-                    system=D4BL_SYSTEM_PROMPT,
-                    user=user_prompt,
+                    system=_STUDENT_EVALUATOR_SYSTEM,
+                    user=student_user,
                     assistant=json.dumps(validated, ensure_ascii=False),
                 )
             )

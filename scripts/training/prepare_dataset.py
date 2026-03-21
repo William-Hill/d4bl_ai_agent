@@ -22,12 +22,10 @@ from scripts.training.config import (
     FINAL_DIR,
     JACCARD_THRESHOLD,
     PAIRS_DIR,
-    TEST_RATIO,
     TRAIN_RATIO,
     VAL_RATIO,
     write_jsonl,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pure helper functions
@@ -59,22 +57,36 @@ def filter_invalid_json(pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     Removes pairs that:
     - Are missing the ``messages`` key
+    - Have a ``messages`` value that is not a list
     - Have an empty ``messages`` list
+    - Contain any message that is not a dict
+    - Have no user-role message with non-empty content
     - Have no assistant-role message
+    - Have an assistant content value that is not a string
     - Have an empty assistant content string
     - Have assistant content that is not valid JSON
     """
     valid = []
     for pair in pairs:
         messages = pair.get("messages")
-        if not messages:
+        if not isinstance(messages, list) or not messages:
+            continue
+        # All messages must be dicts
+        if any(not isinstance(msg, dict) for msg in messages):
+            continue
+        # Require at least one non-empty user message
+        has_user = any(
+            msg.get("role") == "user" and msg.get("content")
+            for msg in messages
+        )
+        if not has_user:
             continue
         assistant_content = None
         for msg in messages:
             if msg.get("role") == "assistant":
-                assistant_content = msg.get("content", "")
+                assistant_content = msg.get("content")
                 break
-        if not assistant_content:
+        if not isinstance(assistant_content, str) or not assistant_content:
             continue
         try:
             json.loads(assistant_content)

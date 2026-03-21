@@ -11,7 +11,12 @@ import psycopg2
 import psycopg2.extras
 
 from scripts.ingestion.helpers import get_db_connection
-from scripts.training.config import CORPUS_BATCH_SIZE, CORPUS_DIR, MAX_PASSAGES_PER_TABLE, write_jsonl
+from scripts.training.config import (
+    CORPUS_BATCH_SIZE,
+    CORPUS_DIR,
+    MAX_PASSAGES_PER_TABLE,
+    write_jsonl,
+)
 from scripts.training.templates import (
     render_bjs_passage,
     render_cdc_passage,

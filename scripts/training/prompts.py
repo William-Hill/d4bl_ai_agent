@@ -48,7 +48,11 @@ _QUERY_PARSER_SCHEMA = {
     "entities": ["list of geographic or demographic entities mentioned"],
     "search_queries": ["list of search query strings"],
     "data_sources": ["list of relevant data source keys"],
-    "community_framing": "restatement of the question centered on community impact",
+    "community_framing": {
+        "detected": "boolean",
+        "issue_domain": "normalized issue-domain slug or null",
+        "structural_frame": "normalized structural-framing slug or null",
+    },
 }
 
 _QUERY_PARSER_STYLE_NOTES: dict[str, str] = {

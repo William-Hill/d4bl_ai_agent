@@ -5,17 +5,12 @@ No file I/O or external dependencies are exercised in these tests.
 
 from __future__ import annotations
 
-import json
-
-import pytest
-
 from scripts.training.prepare_dataset import (
     deduplicate_by_jaccard,
     filter_invalid_json,
     jaccard_similarity,
     split_dataset,
 )
-
 
 # ---------------------------------------------------------------------------
 # jaccard_similarity
