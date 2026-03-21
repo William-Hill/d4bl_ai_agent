@@ -180,7 +180,7 @@ print(f"  evaluator_val         : {len(evaluator_val_dataset):>5} examples")
 # %%
 # Load Qwen2.5-3B-Instruct in 4-bit quantisation
 domain_model, domain_tokenizer = FastLanguageModel.from_pretrained(
-    model_name="Qwen/Qwen2.5-3B-Instruct",
+    model_name="unsloth/Qwen2.5-3B-Instruct",
     max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
     dtype=None,           # auto-detect (bfloat16 on Ampere+, float16 on T4)
     load_in_4bit=True,
@@ -336,6 +336,7 @@ parser_training_args = TrainingArguments(
     evaluation_strategy="steps",
     eval_steps=25,
     load_best_model_at_end=True,
+    metric_for_best_model="eval_loss",
     save_steps=25,
     save_total_limit=3,
     report_to="none",
@@ -435,6 +436,7 @@ explainer_training_args = TrainingArguments(
     evaluation_strategy="steps",
     eval_steps=20,
     load_best_model_at_end=True,
+    metric_for_best_model="eval_loss",
     save_steps=20,
     save_total_limit=3,
     report_to="none",
@@ -528,6 +530,7 @@ evaluator_training_args = TrainingArguments(
     evaluation_strategy="steps",
     eval_steps=25,
     load_best_model_at_end=True,
+    metric_for_best_model="eval_loss",
     save_steps=25,
     save_total_limit=3,
     report_to="none",
@@ -574,7 +577,6 @@ print("VRAM freed.")
 # (e.g., `d4bl-parser:q4_k_m`, `d4bl-explainer:q4_k_m`, `d4bl-evaluator:q4_k_m`).
 
 # %%
-from peft import PeftModel
 
 # Adapter registry: name → paths and sequence length used during export
 ADAPTERS = {
@@ -600,19 +602,15 @@ gguf_output_paths = {}
 for adapter_name, cfg in ADAPTERS.items():
     print(f"\n--- Exporting '{adapter_name}' to GGUF ---")
 
-    # Load domain-merged model in full precision for clean quantisation
+    # Load adapter directly via FastLanguageModel (preserves Unsloth GGUF export)
     export_model, export_tokenizer = FastLanguageModel.from_pretrained(
-        model_name=DOMAIN_MERGED_DIR,
+        model_name=cfg["adapter_dir"],
         max_seq_length=cfg["max_seq_length"],
         dtype=None,
         load_in_4bit=False,  # full precision required for GGUF export
     )
 
-    # Load task adapter weights
-    export_model = PeftModel.from_pretrained(export_model, cfg["adapter_dir"])
-    export_model = export_model.merge_and_unload()
-
-    # Export to GGUF (q4_k_m quantisation)
+    # Export to GGUF — Unsloth handles LoRA merge internally
     gguf_path = str(Path(GGUF_DIR) / cfg["output_name"])
     export_model.save_pretrained_gguf(
         gguf_path,

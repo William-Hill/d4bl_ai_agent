@@ -11,7 +11,6 @@ Runs a quick smoke test on each after registration.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
