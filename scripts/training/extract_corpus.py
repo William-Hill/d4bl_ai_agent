@@ -177,6 +177,14 @@ def main(tables: list[str] | None = None, max_per_table: int = MAX_PASSAGES_PER_
     logger.info("Combined corpus: %d passages → %s", total, combined_file)
 
 
+def _positive_int(value: str) -> int:
+    ivalue = int(value)
+    if ivalue <= 0:
+        msg = f"must be a positive integer, got {value}"
+        raise argparse.ArgumentTypeError(msg)
+    return ivalue
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -188,7 +196,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max-per-table",
-        type=int,
+        type=_positive_int,
         default=MAX_PASSAGES_PER_TABLE,
         help=f"Maximum rows per table (default: {MAX_PASSAGES_PER_TABLE}).",
     )

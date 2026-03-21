@@ -590,7 +590,8 @@ def main(task: str) -> None:
         dbname = os.environ.get("POSTGRES_DB", "d4bl")
         user = os.environ.get("POSTGRES_USER", "postgres")
         password = os.environ.get("POSTGRES_PASSWORD", "postgres")
-        db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+        from urllib.parse import quote_plus
+        db_url = f"postgresql://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{dbname}"
 
     conn = psycopg2.connect(db_url)
     try:
