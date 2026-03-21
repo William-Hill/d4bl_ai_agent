@@ -6,7 +6,7 @@ returns a plain-text string suitable for model pre-training.
 
 from __future__ import annotations
 
-from scripts.ingestion.helpers import STATE_ABBREV_TO_NAME, STATE_FIPS
+from scripts.ingestion.constants import STATE_ABBREV_TO_NAME, STATE_FIPS
 
 # ---------------------------------------------------------------------------
 # Lookup tables

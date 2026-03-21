@@ -7,10 +7,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import psycopg2
-import psycopg2.extras
-
-from scripts.ingestion.helpers import get_db_connection
 from scripts.training.config import (
     CORPUS_BATCH_SIZE,
     CORPUS_DIR,
@@ -115,6 +111,8 @@ def extract_table(conn: Any, table: str, max_rows: int) -> list[str]:
     query = extractor["query"]
     template = extractor["template"]
 
+    import psycopg2.extras  # lazy import — not available in CI test env
+
     passages: list[str] = []
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(query, {"limit": max_rows})
@@ -151,6 +149,8 @@ def main(tables: list[str] | None = None, max_per_table: int = MAX_PASSAGES_PER_
     skipped = [t for t in tables if t not in EXTRACTORS]
     for t in skipped:
         logger.warning("Unknown table %r — skipping.", t)
+
+    from scripts.ingestion.helpers import get_db_connection
 
     conn = get_db_connection()
     try:
