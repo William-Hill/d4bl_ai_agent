@@ -25,6 +25,7 @@ from scripts.training.config import (
     TEST_RATIO,
     TRAIN_RATIO,
     VAL_RATIO,
+    write_jsonl,
 )
 
 
@@ -40,11 +41,17 @@ def jaccard_similarity(a: str, b: str) -> float:
     """
     words_a = set(a.split())
     words_b = set(b.split())
-    if not words_a or not words_b:
+    return _jaccard_sets(words_a, words_b)
+
+
+def _jaccard_sets(a: set, b: set) -> float:
+    """Compute Jaccard similarity from pre-tokenized word sets.
+
+    Returns 0.0 if either set is empty.
+    """
+    if not a or not b:
         return 0.0
-    intersection = words_a & words_b
-    union = words_a | words_b
-    return len(intersection) / len(union)
+    return len(a & b) / len(a | b)
 
 
 def filter_invalid_json(pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -77,6 +84,14 @@ def filter_invalid_json(pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return valid
 
 
+def _get_user_text(pair: dict[str, Any]) -> str:
+    """Extract the user message content from a ChatML pair."""
+    for msg in pair.get("messages", []):
+        if msg.get("role") == "user":
+            return msg.get("content", "")
+    return ""
+
+
 def deduplicate_by_jaccard(
     pairs: list[dict[str, Any]],
     threshold: float = JACCARD_THRESHOLD,
@@ -84,7 +99,8 @@ def deduplicate_by_jaccard(
     """Remove near-duplicate pairs based on user-message Jaccard similarity.
 
     Iterates in order; the first occurrence of each unique (by threshold) user
-    message is kept and all subsequent near-duplicates are discarded.
+    message is kept and all subsequent near-duplicates are discarded.  Each
+    candidate is tokenized once and compared against pre-tokenized kept sets.
 
     Args:
         pairs: List of ChatML-formatted message dicts.
@@ -94,24 +110,21 @@ def deduplicate_by_jaccard(
     Returns:
         Deduplicated list preserving original order of first occurrences.
     """
-    kept: list[dict[str, Any]] = []
-    kept_texts: list[str] = []
+    if not pairs:
+        return pairs
 
-    for pair in pairs:
-        user_text = ""
-        messages = pair.get("messages", [])
-        for msg in messages:
-            if msg.get("role") == "user":
-                user_text = msg.get("content", "")
-                break
+    kept: list[dict[str, Any]] = [pairs[0]]
+    kept_word_sets: list[set] = [set(_get_user_text(pairs[0]).lower().split())]
 
+    for pair in pairs[1:]:
+        candidate_words = set(_get_user_text(pair).lower().split())
         is_duplicate = any(
-            jaccard_similarity(user_text, kept_text) > threshold
-            for kept_text in kept_texts
+            _jaccard_sets(candidate_words, kw) >= threshold
+            for kw in kept_word_sets
         )
         if not is_duplicate:
             kept.append(pair)
-            kept_texts.append(user_text)
+            kept_word_sets.append(candidate_words)
 
     return kept
 
@@ -172,11 +185,7 @@ def _load_pairs(path: Path) -> list[dict[str, Any]]:
 
 def _write_split(pairs: list[dict[str, Any]], path: Path) -> int:
     """Write *pairs* as newline-delimited JSON to *path*.  Returns count."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as fh:
-        for pair in pairs:
-            fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
-    return len(pairs)
+    return write_jsonl(pairs, path)
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +232,19 @@ def process_task(task: str) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
+_ALL_TASKS = ["query_parser", "explainer", "evaluator"]
+
+
 def main(task: str) -> None:
-    """Run the preparation pipeline for *task*."""
-    process_task(task)
+    """Run the preparation pipeline for *task*.
+
+    Pass ``"all"`` to process all three tasks in sequence.
+    """
+    if task == "all":
+        for t in _ALL_TASKS:
+            process_task(t)
+    else:
+        process_task(task)
 
 
 if __name__ == "__main__":
@@ -235,7 +254,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task",
         required=True,
-        help="Task name matching a file in PAIRS_DIR (e.g. query_parser).",
+        help=(
+            "Task name matching a file in PAIRS_DIR (e.g. query_parser), "
+            "or 'all' to process all tasks."
+        ),
     )
     args = parser.parse_args()
     main(args.task)

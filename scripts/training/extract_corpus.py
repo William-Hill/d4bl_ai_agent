@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -12,7 +11,7 @@ import psycopg2
 import psycopg2.extras
 
 from scripts.ingestion.helpers import get_db_connection
-from scripts.training.config import CORPUS_BATCH_SIZE, CORPUS_DIR, MAX_PASSAGES_PER_TABLE
+from scripts.training.config import CORPUS_BATCH_SIZE, CORPUS_DIR, MAX_PASSAGES_PER_TABLE, write_jsonl
 from scripts.training.templates import (
     render_bjs_passage,
     render_cdc_passage,
@@ -93,15 +92,12 @@ def write_passages_jsonl(passages: list[str], outfile: Path) -> int:
 
     Creates parent directories as needed. Returns the count of written lines.
     """
-    outfile.parent.mkdir(parents=True, exist_ok=True)
-    count = 0
-    with outfile.open("w", encoding="utf-8") as fh:
-        for passage in passages:
-            if not passage or not passage.strip():
-                continue
-            fh.write(json.dumps({"text": passage}, ensure_ascii=False) + "\n")
-            count += 1
-    return count
+    def _to_text_obj(p: str):
+        if not p or not p.strip():
+            return None
+        return {"text": p.strip()}
+
+    return write_jsonl(passages, outfile, transform=_to_text_obj)
 
 
 def extract_table(conn: Any, table: str, max_rows: int) -> list[str]:
@@ -146,25 +142,33 @@ def main(tables: list[str] | None = None, max_per_table: int = MAX_PASSAGES_PER_
         tables = list(EXTRACTORS.keys())
 
     CORPUS_DIR.mkdir(parents=True, exist_ok=True)
-    combined: list[str] = []
+    target_tables = [t for t in tables if t in EXTRACTORS]
+    skipped = [t for t in tables if t not in EXTRACTORS]
+    for t in skipped:
+        logger.warning("Unknown table %r — skipping.", t)
 
     conn = get_db_connection()
     try:
-        for table in tables:
-            if table not in EXTRACTORS:
-                logger.warning("Unknown table %r — skipping.", table)
-                continue
+        for table in target_tables:
             logger.info("Extracting %s (max %d rows)…", table, max_per_table)
             passages = extract_table(conn, table, max_per_table)
             outfile = CORPUS_DIR / f"{table}.jsonl"
             count = write_passages_jsonl(passages, outfile)
             logger.info("  Wrote %d passages → %s", count, outfile)
-            combined.extend(passages)
     finally:
         conn.close()
 
+    # Build combined corpus by streaming per-table files from disk
     combined_file = CORPUS_DIR / "corpus_pretrain.jsonl"
-    total = write_passages_jsonl(combined, combined_file)
+    total = 0
+    with combined_file.open("w", encoding="utf-8") as out:
+        for table in target_tables:
+            table_file = CORPUS_DIR / f"{table}.jsonl"
+            if table_file.exists():
+                with table_file.open(encoding="utf-8") as f:
+                    for line in f:
+                        out.write(line)
+                        total += 1
     logger.info("Combined corpus: %d passages → %s", total, combined_file)
 
 

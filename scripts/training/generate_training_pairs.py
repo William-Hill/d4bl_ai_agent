@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import random
@@ -30,6 +31,7 @@ from scripts.training.config import (
     EVALUATOR_PAIRS_PER_SUBTASK,
     PAIRS_DIR,
     PAIRS_PER_TASK,
+    write_jsonl,
 )
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
@@ -173,14 +175,10 @@ def write_pairs_jsonl(
         The number of pairs written.
     """
     if isinstance(outfile, (str, Path)):
-        path = Path(outfile)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as fh:
-            for pair in pairs:
-                fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
-    else:
-        for pair in pairs:
-            outfile.write(json.dumps(pair, ensure_ascii=False) + "\n")
+        return write_jsonl(pairs, Path(outfile))
+    # File-like object path: write directly
+    for pair in pairs:
+        outfile.write(json.dumps(pair, ensure_ascii=False) + "\n")
     return len(pairs)
 
 
@@ -264,6 +262,23 @@ def generate_query_parser_questions(
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=1)
+def _get_anthropic_client():
+    """Return a cached Anthropic client instance.
+
+    Raises:
+        EnvironmentError: If ANTHROPIC_API_KEY is not set.
+    """
+    import anthropic  # lazy import — only required at runtime
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise EnvironmentError(
+            "ANTHROPIC_API_KEY environment variable is required for Claude distillation."
+        )
+    return anthropic.Anthropic(api_key=api_key)
+
+
 def _call_claude(system: str, user: str, model: str = DISTILLATION_MODEL) -> str:
     """Call the Anthropic Claude API and return the response text.
 
@@ -281,15 +296,7 @@ def _call_claude(system: str, user: str, model: str = DISTILLATION_MODEL) -> str
         EnvironmentError: If ANTHROPIC_API_KEY is not set.
         anthropic.APIError: On API errors.
     """
-    import anthropic  # lazy import — only required at runtime
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise EnvironmentError(
-            "ANTHROPIC_API_KEY environment variable is required for Claude distillation."
-        )
-
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_anthropic_client()
     message = client.messages.create(
         model=model,
         max_tokens=2048,
@@ -336,6 +343,45 @@ def _fetch_seed_data(conn: Any, table: str, limit: int = 200) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Seed data loader
+# ---------------------------------------------------------------------------
+
+
+def _load_seed_rows(conn: Any, limit: int = 200) -> list[dict]:
+    """Fetch seed rows from the first available table.
+
+    Tries ``census_indicators``, ``cdc_health_outcomes``, and
+    ``census_demographics`` in order.  Falls back to a hardcoded sentinel row
+    if none of the tables are available.
+
+    Args:
+        conn: A live psycopg2 connection.
+        limit: Maximum number of rows to fetch.
+
+    Returns:
+        A list of row dicts (never empty).
+    """
+    for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
+        try:
+            rows = _fetch_seed_data(conn, table, limit=limit)
+            if rows:
+                return rows
+        except Exception:  # noqa: BLE001
+            continue
+    return [
+        {
+            "geography_name": "Mississippi",
+            "state_name": "Mississippi",
+            "state_fips": "28",
+            "metric": "median_household_income",
+            "race": "black",
+            "year": 2022,
+            "value": 35400.0,
+        }
+    ]
+
+
+# ---------------------------------------------------------------------------
 # High-level pair generators
 # ---------------------------------------------------------------------------
 
@@ -353,21 +399,7 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
     Returns:
         A list of ChatML pair dicts.
     """
-    # Try multiple seed tables in priority order; fall back gracefully
-    seed_rows: list[dict] = []
-    for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
-        try:
-            seed_rows = _fetch_seed_data(conn, table, limit=200)
-            if seed_rows:
-                break
-        except Exception:  # noqa: BLE001
-            continue
-
-    if not seed_rows:
-        seed_rows = [
-            {"state": "Mississippi", "metric_name": "infant_mortality_rate", "race": "Black", "year": 2021}
-        ]
-
+    seed_rows = _load_seed_rows(conn)
     questions = generate_query_parser_questions(seed_rows, count=count)
 
     data_sources = list(_ALLOWED_SEED_TABLES)
@@ -414,20 +446,7 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
     Returns:
         A list of ChatML pair dicts.
     """
-    seed_rows: list[dict] = []
-    for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
-        try:
-            seed_rows = _fetch_seed_data(conn, table, limit=200)
-            if seed_rows:
-                break
-        except Exception:  # noqa: BLE001
-            continue
-
-    if not seed_rows:
-        seed_rows = [
-            {"state": "Mississippi", "metric_name": "infant_mortality_rate", "value": 8.9, "year": 2021}
-        ]
-
+    seed_rows = _load_seed_rows(conn)
     registers_cycle = list(REGISTERS)
     pairs: list[dict] = []
 
@@ -474,20 +493,7 @@ def generate_evaluator_pairs(
         A shuffled list of ChatML pair dicts covering all 4 sub-tasks.
     """
     evaluator_tasks = ["hallucination", "relevance", "bias", "equity_framing"]
-    seed_rows: list[dict] = []
-    for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
-        try:
-            seed_rows = _fetch_seed_data(conn, table, limit=200)
-            if seed_rows:
-                break
-        except Exception:  # noqa: BLE001
-            continue
-
-    if not seed_rows:
-        seed_rows = [
-            {"state": "Mississippi", "metric_name": "infant_mortality_rate", "value": 8.9, "year": 2021}
-        ]
-
+    seed_rows = _load_seed_rows(conn)
     all_pairs: list[dict] = []
     call_count = 0
 
@@ -562,22 +568,34 @@ def main(task: str) -> None:
     try:
         PAIRS_DIR.mkdir(parents=True, exist_ok=True)
 
-        if task == "query_parser":
-            pairs = generate_query_parser_pairs(conn, count=PAIRS_PER_TASK)
-            outfile = PAIRS_DIR / "query_parser.jsonl"
-        elif task == "explainer":
-            pairs = generate_explainer_pairs(conn, count=PAIRS_PER_TASK)
-            outfile = PAIRS_DIR / "explainer.jsonl"
-        elif task == "evaluator":
-            pairs = generate_evaluator_pairs(conn, count_per_subtask=EVALUATOR_PAIRS_PER_SUBTASK)
-            outfile = PAIRS_DIR / "evaluator.jsonl"
+        _TASK_MAP = {
+            "query_parser": lambda: (
+                generate_query_parser_pairs(conn, count=PAIRS_PER_TASK),
+                PAIRS_DIR / "query_parser.jsonl",
+            ),
+            "explainer": lambda: (
+                generate_explainer_pairs(conn, count=PAIRS_PER_TASK),
+                PAIRS_DIR / "explainer.jsonl",
+            ),
+            "evaluator": lambda: (
+                generate_evaluator_pairs(conn, count_per_subtask=EVALUATOR_PAIRS_PER_SUBTASK),
+                PAIRS_DIR / "evaluator.jsonl",
+            ),
+        }
+
+        if task == "all":
+            tasks_to_run = list(_TASK_MAP.keys())
+        elif task in _TASK_MAP:
+            tasks_to_run = [task]
         else:
             raise ValueError(
-                f"Unknown task: {task!r}. Must be one of: query_parser, explainer, evaluator"
+                f"Unknown task: {task!r}. Must be one of: query_parser, explainer, evaluator, all"
             )
 
-        count = write_pairs_jsonl(pairs, outfile)
-        print(f"[done] Wrote {count} pairs to {outfile}")
+        for t in tasks_to_run:
+            pairs, outfile = _TASK_MAP[t]()
+            count = write_pairs_jsonl(pairs, outfile)
+            print(f"[done] Wrote {count} pairs to {outfile}")
     finally:
         conn.close()
 
@@ -588,9 +606,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--task",
-        choices=["query_parser", "explainer", "evaluator"],
+        choices=["query_parser", "explainer", "evaluator", "all"],
         required=True,
-        help="Which task to generate pairs for.",
+        help="Which task to generate pairs for (use 'all' to run all tasks).",
     )
     args = parser.parse_args()
     main(args.task)
