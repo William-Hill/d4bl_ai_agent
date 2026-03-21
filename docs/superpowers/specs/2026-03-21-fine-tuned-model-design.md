@@ -27,8 +27,7 @@ The model handles three tasks: query parsing (NL → structured intent), data ex
 6. [Evaluation Harness](#6-evaluation-harness)
 7. [Educational Page & Deliverables](#7-educational-page--deliverables)
 8. [D4BL Methodology Integration](#8-d4bl-methodology-integration)
-9. [Codebase Integration Checklist](#9-codebase-integration-checklist)
-10. [PRD Summary](#10-prd-summary)
+9. [PRD Summary](#9-prd-summary)
 
 ---
 
@@ -70,7 +69,7 @@ Load the base model once, swap LoRA adapters per task. In Ollama, this means sep
 | Model | Size | Target | Tasks |
 |-------|------|--------|-------|
 | Qwen2.5-3B Q4_K_M | 1.8GB | Cloud + Local | All 3 adapters (parser, explainer, evaluator) |
-| Qwen2.5-1.5B Q4_K_M | 0.9GB | Mobile | Query parser only (evaluator quality at 1.5B TBD — validate before shipping) |
+| Qwen2.5-1.5B Q4_K_M | 0.9GB | Mobile | Parser + evaluator (lightweight) |
 | mistral (existing) | 4.1GB | Cloud + Local | CrewAI agents (fallback) |
 | mxbai-embed-large | 0.7GB | Cloud + Local | Embeddings (unchanged) |
 
@@ -88,12 +87,9 @@ Three levels:
 
 | Level | What Changes | Analogy |
 |-------|-------------|---------|
-| Continued pre-training (full) | Updates all weights with raw text | Reading 100 books on equity before starting the job |
+| Continued pre-training | Updates all weights with raw text | Reading 100 books on equity before starting the job |
 | Full fine-tuning | Updates all weights with task examples | Intensive on-the-job training for every skill |
 | LoRA fine-tuning | Updates only small added layers | Learning a specific procedure while keeping all prior knowledge intact |
-| Domain-adaptive LoRA pre-training | Updates small added layers with raw text | Reading equity books through a focused lens — our approach in Phase 1 |
-
-> **Note:** In Phase 1, we use LoRA (not full weight updates) for domain adaptation because full continued pre-training requires significantly more compute and risks destabilizing the model. Domain-adaptive LoRA pre-training achieves ~80% of the vocabulary benefit at a fraction of the cost. The educational page should clearly distinguish this from true CPT.
 
 ### 2.2 What is LoRA?
 
@@ -503,17 +499,15 @@ Google Colab Notebook
     - Supabase credentials (pull training data)
 ```
 
-### 4.2 Phase 1: Domain-Adaptive LoRA Pre-Training (Domain Vocabulary)
+### 4.2 Phase 1: Continued Pre-Training (Domain Vocabulary)
 
 **Goal:** Teach the base model equity domain vocabulary before any task-specific training.
 
-> **Terminology note:** This phase uses LoRA adapters with unsupervised text (next-token prediction), not full continued pre-training (which would update all parameters). We call it "domain-adaptive LoRA pre-training" to distinguish it from true CPT. The trade-off: ~80% of CPT's vocabulary benefit at ~5% of the compute cost. If results are insufficient, true CPT on a rented A100 (~$2/hr for 2-3 hours) is a fallback option.
-
-**Before domain adaptation:**
+**Before continued pre-training:**
 - Model sees "FIPS 28" → meaningless tokens
 - Model sees "disparity ratio" → vague understanding
 
-**After domain adaptation:**
+**After continued pre-training:**
 - Model sees "FIPS 28" → Mississippi
 - Model sees "disparity ratio" → structural inequality metric
 
@@ -802,33 +796,15 @@ Each model registered via a Modelfile:
 ```dockerfile
 # Modelfile.query-parser
 FROM ./d4bl-query-parser-q4_k_m.gguf
+
 PARAMETER temperature 0.1
 PARAMETER num_ctx 2048
 PARAMETER stop "<|im_end|>"
+
 SYSTEM """You are a query parser for D4BL, a racial equity research platform.
 Parse user questions into structured search intents.
 Respond with ONLY valid JSON."""
-
-# Modelfile.explainer — note: num_ctx 4096 to match training seq_length
-FROM ./d4bl-explainer-q4_k_m.gguf
-PARAMETER temperature 0.3
-PARAMETER num_ctx 4096
-PARAMETER stop "<|im_end|>"
-SYSTEM """You are a racial equity data analyst for D4BL.
-Generate equity-framed narratives with structural context and policy connections.
-Respond with ONLY valid JSON."""
-
-# Modelfile.evaluator
-FROM ./d4bl-evaluator-q4_k_m.gguf
-PARAMETER temperature 0.1
-PARAMETER num_ctx 2048
-PARAMETER stop "<|im_end|>"
-SYSTEM """You are an evaluation model for D4BL.
-Score model outputs on correctness, relevance, bias, and D4BL methodology alignment.
-Respond with ONLY valid JSON."""
 ```
-
-> **Important:** The explainer Modelfile uses `num_ctx 4096` because the explainer adapter is trained with `max_seq_length=4096`. Using a smaller context window at inference would truncate or degrade outputs. The query parser and evaluator use `num_ctx 2048` matching their training configuration.
 
 ```bash
 ollama create d4bl-query-parser -f Modelfile.query-parser
@@ -897,30 +873,23 @@ OLLAMA_BASE_URL=https://your-runpod-id.runpod.ai
 
 ### 5.4 Fallback Strategy
 
-> **Note:** The code below is pseudocode illustrating the pattern. The actual implementation must use the existing `ollama_generate()` signature from `src/d4bl/llm/ollama_client.py` (which takes `base_url` and `timeout_seconds` parameters). The `validate_parsed_intent()` function will need to be implemented as part of the integration work (see Section 9: Codebase Integration Checklist).
-
 ```python
-# Pseudocode — actual implementation adapts to existing ollama_client.py API
 async def parse_query(query: str) -> ParsedIntent:
     try:
-        # Try fine-tuned model first (prompt baked into Modelfile)
         response = await ollama_generate(
             prompt=query,
             model="d4bl-query-parser",
-            base_url=settings.ollama_base_url,
-            timeout_seconds=10,
+            timeout=10,
         )
         result = json.loads(response)
-        validate_parsed_intent(result)  # New function — validates schema
+        validate_parsed_intent(result)
         return result
     except (json.JSONDecodeError, ValidationError, TimeoutError):
-        # Fallback to general model (needs full prompt)
         logger.warning("Fine-tuned parser failed, falling back to mistral")
         response = await ollama_generate(
             prompt=PARSER_PROMPT + query,
             model="mistral",
-            base_url=settings.ollama_base_url,
-            timeout_seconds=30,
+            timeout=30,
         )
         return json.loads(response)
 ```
@@ -1121,7 +1090,7 @@ Hold out 10% of training data — never trained on.
 |--------|-------------|--------|
 | json_valid_rate | % outputs that parse as valid JSON | >95% |
 | schema_valid_rate | % valid JSON matching expected schema | >90% |
-| entity_f1 | Harmonic mean of precision and recall on entities | >0.85 (aspirational); blocking minimum: 0.80 |
+| entity_f1 | Harmonic mean of precision and recall on entities | >0.85 |
 | data_source_accuracy | % correct structured vs. vector routing | >85% |
 | community_framing_f1 | Precision/recall on community voice detection | >0.70 |
 | p50_latency_ms | Median response time | <500ms |
@@ -1255,19 +1224,10 @@ class ModelEvalRun(Base):
 
 ### 6.7 D4BL Methodology Alignment Scoring
 
-The most novel evaluation dimension — scoring whether outputs follow D4BL principles.
-
-> **Bootstrapping note:** There is a circular dependency: the evaluator adapter scores D4BL alignment, but the evaluator itself needs alignment scoring during training validation. Resolution:
-> - **During training (Phase 2c):** Use Claude API as the scorer for evaluator validation. Claude serves as the ground-truth judge until the evaluator ships.
-> - **After evaluator ships:** Use `d4bl-evaluator` for production scoring of parser and explainer outputs. The evaluator does NOT score itself — Claude or manual review handles evaluator regression testing.
-> - **Fallback:** If the evaluator's alignment scores diverge from Claude's scores by >1.0 MAE on the test set, flag for manual review.
+The most novel evaluation dimension — scoring whether outputs follow D4BL principles:
 
 ```python
-async def score_d4bl_alignment(
-    output: dict,
-    context: dict,
-    use_claude_judge: bool = False,  # True during evaluator training/validation
-) -> D4BLAlignmentScore:
+async def score_d4bl_alignment(output: dict, context: dict) -> D4BLAlignmentScore:
     prompt = f"""Score this output on D4BL methodology alignment.
 
     Context: {json.dumps(context)}
@@ -1282,13 +1242,7 @@ async def score_d4bl_alignment(
 
     Respond with JSON."""
 
-    if use_claude_judge:
-        # Used during evaluator training/validation to avoid circularity
-        response = await claude_generate(prompt)
-    else:
-        # Production: use the trained evaluator
-        response = await ollama_generate(prompt, model="d4bl-evaluator")
-
+    response = await ollama_generate(prompt, model="d4bl-evaluator")
     return D4BLAlignmentScore(**json.loads(response))
 ```
 
@@ -1452,77 +1406,9 @@ A novel evaluation dimension that scores D4BL methodology alignment:
 
 This ensures the model doesn't just produce technically correct output, but output that serves D4BL's mission.
 
-### Intersectionality
-
-The training data must include queries spanning multiple identity dimensions — not just single-axis racial comparisons:
-
-- "Black women in rural Mississippi" — race + gender + geography
-- "Low-income Hispanic families near Superfund sites" — race + income + environmental justice
-- "Elderly Native American communities and healthcare access" — race + age + health
-
-Include 50-100 intersectional examples across the training sets. The model should recognize compound identity framings and route to multiple data sources simultaneously.
-
 ---
 
-## 9. Codebase Integration Checklist
-
-Changes required in the existing codebase to support the fine-tuned models:
-
-### Data Models
-
-| File | Change | Description |
-|------|--------|-------------|
-| `src/d4bl/query/parser.py` | Extend `ParsedQuery` dataclass | Add `community_framing: Optional[CommunityFraming]` field with `detected`, `issue_domain`, `structural_frame` |
-| `src/d4bl/infra/database.py` | Add `ModelEvalRun` model | New table for eval result tracking (Section 6.6) |
-| `src/d4bl/infra/database.py` | Add `TrainingDataLineage` model | Track provenance of training pairs: source table row → Claude prompt → training example → model version |
-
-### API Layer
-
-| File | Change | Description |
-|------|--------|-------------|
-| `src/d4bl/llm/ollama_client.py` | Add model routing | New function or parameter to select model by task type |
-| `src/d4bl/query/parser.py` | Update `_parse_with_llm()` | Change model from "mistral" to "d4bl-query-parser" with fallback |
-| `src/d4bl/query/fusion.py` | Update `synthesize()` | Change model for synthesis (optional — may keep mistral for now) |
-| `src/d4bl/app/explore_insights.py` | Update `explain_view()` | Change model to "d4bl-explainer" with fallback |
-| `src/d4bl/services/langfuse/*.py` | Update evaluators | Change model to "d4bl-evaluator" with fallback |
-
-### Configuration
-
-| File | Change | Description |
-|------|--------|-------------|
-| `src/d4bl/settings.py` | Add model name settings | `QUERY_PARSER_MODEL`, `EXPLAINER_MODEL`, `EVALUATOR_MODEL` with defaults |
-| `.env.example` | Document new vars | Add model name environment variables |
-
-### New Files
-
-| File | Purpose |
-|------|---------|
-| `scripts/extract_training_corpus.py` | Extract domain corpus from Supabase for pre-training |
-| `scripts/generate_training_pairs.py` | Claude distillation pipeline for training data |
-| `scripts/eval_fine_tuned_model.py` | Automated comparison eval pipeline |
-| `scripts/validate_parsed_intent.py` | Schema validation for parser outputs |
-| `models/Modelfile.query-parser` | Ollama Modelfile for query parser |
-| `models/Modelfile.explainer` | Ollama Modelfile for explainer |
-| `models/Modelfile.evaluator` | Ollama Modelfile for evaluator |
-
-### Frontend
-
-| File | Purpose |
-|------|---------|
-| `ui-nextjs/app/learn/page.tsx` | Educational page |
-| `ui-nextjs/components/learn/*.tsx` | Interactive concept components (7 files) |
-| `ui-nextjs/components/NavBar.tsx` | Add "Learn" link to navigation |
-
-### Data Tables Verified
-
-All 13 source tables referenced in Section 3.1 exist in `src/d4bl/infra/database.py`:
-census_indicators, cdc_health_outcomes, epa_environmental_justice, police_violence_incidents, bjs_incarceration, fbi_crime_stats, bls_labor_statistics, doe_civil_rights, census_demographics, policy_bills, eviction_data, traffic_stops, vera_incarceration.
-
-The `state_summary` pre-aggregated table also exists and is referenced by the explore page.
-
----
-
-## 10. PRD Summary
+## 9. PRD Summary
 
 ### Goals
 
@@ -1540,17 +1426,6 @@ The `state_summary` pre-aggregated table also exists and is referenced by the ex
 | Phase 3 | Mobile 1.5B model, /learn page, Gamma deck | 2 weeks |
 | Phase 4 | Live playground, community feedback loop | Future |
 
-### Cost Estimates (Full Picture)
-
-| Item | Cost | Frequency |
-|------|------|-----------|
-| Google Colab T4 (training) | Free | Per training run |
-| Google Colab Pro (backup if free tier throttled) | $10/month | Monthly |
-| Claude API (distillation — ~1200 pairs) | ~$15-30 | One-time per dataset version |
-| RunPod Serverless (production) | $5-25/month | Monthly |
-| Hugging Face Hub (model hosting) | Free (public) / $9 (private) | Monthly |
-| **Total MVP** | **~$20-55 one-time + $5-25/month** | |
-
 ### Risks & Mitigations
 
 | Risk | Mitigation |
@@ -1560,11 +1435,6 @@ The `state_summary` pre-aggregated table also exists and is referenced by the ex
 | 3B too small for narrative quality | Fallback to mistral; path to 7B if needed |
 | Cold start latency in production | RunPod dedicated pod if serverless too slow |
 | Mobile memory constraints | 1.5B sibling model at 0.9GB; hybrid cloud architecture |
-| Google Colab free tier unreliable | Total training pipeline (~135 min) may exceed session limits; Colab Pro ($10/mo) or local GPU as backup. Save checkpoints frequently. |
-| Claude distillation cost unclear | Budget ~$15-30 for initial dataset; regeneration costs same. Track token usage during distillation. |
-| Training data provenance untracked | Add `TrainingDataLineage` model linking source rows → distillation prompts → training pairs → model versions |
-| Evaluator circular dependency | Use Claude as judge during evaluator training; switch to self-evaluation only in production (see Section 6.7) |
-| RunPod serverless cost with bursty traffic | Cold start billing makes bursty usage 2-3x estimated; monitor and switch to dedicated if needed |
 
 ### Success Criteria
 
