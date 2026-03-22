@@ -56,7 +56,11 @@ class TestParserValidation:
 
 class TestExplainerValidation:
     def test_valid_output(self):
-        raw = '{"narrative": "Poverty rates in Alabama...", "structural_context": "Historical redlining...", "policy_connection": "HB-123..."}'
+        raw = (
+            '{"narrative": "Poverty rates in Alabama...",'
+            ' "methodology_note": "ACS 5-year estimates",'
+            ' "caveats": ["Small sample size"]}'
+        )
         result = validate_explainer_output(raw)
         assert result.valid
 

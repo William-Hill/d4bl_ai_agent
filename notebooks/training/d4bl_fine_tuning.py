@@ -72,6 +72,11 @@ from unsloth import FastLanguageModel
 
 # Authenticate with Hugging Face
 HF_TOKEN = userdata.get("HF_TOKEN")
+if not HF_TOKEN:
+    raise RuntimeError(
+        "Missing HF_TOKEN in Colab Secrets. "
+        "Add it under Secrets (key icon in sidebar) before running."
+    )
 login(token=HF_TOKEN)
 
 # %%
@@ -133,10 +138,18 @@ def load_jsonl(path: str) -> list[dict]:
     """Read a newline-delimited JSON file and return a list of records."""
     records = []
     with open(path, "r", encoding="utf-8") as fh:
-        for line in fh:
+        for line_no, line in enumerate(fh, start=1):
             line = line.strip()
-            if line:
-                records.append(json.loads(line))
+            if not line:
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                raise ValueError(f"{path}:{line_no}: expected JSON object")
+            if "text" not in record or not isinstance(record["text"], str):
+                raise ValueError(
+                    f"{path}:{line_no}: missing or invalid 'text' field"
+                )
+            records.append(record)
     return records
 
 
