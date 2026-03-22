@@ -23,6 +23,7 @@ from d4bl.app.schemas import (
 )
 from d4bl.infra.database import get_db
 from d4bl.infra.state_summary import StateSummary
+from d4bl.llm.ollama_client import model_for_task
 from d4bl.query.engine import QueryEngine
 from d4bl.settings import get_settings
 
@@ -239,7 +240,7 @@ async def explain_view(
     """Generate an LLM-powered narrative explanation for the current view."""
 
     settings = get_settings()
-    model = f"ollama/{settings.ollama_model}"
+    model = f"ollama/{model_for_task('explainer')}"
 
     try:
         response = await acompletion(
