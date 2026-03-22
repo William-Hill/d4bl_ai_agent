@@ -4,12 +4,17 @@ import logging
 import time
 from typing import Any
 
-from d4bl.llm import get_ollama_llm
+from d4bl.llm import get_llm_for_task, get_ollama_llm
 
 logger = logging.getLogger(__name__)
 
 # Alias — evaluators import this name; both reference the shared singleton.
 get_eval_llm = get_ollama_llm
+
+
+def get_eval_llm_for_task(task: str = "evaluator"):
+    """Get an LLM configured for a specific evaluation task."""
+    return get_llm_for_task(task)
 
 
 def call_llm_text(llm: Any, prompt: str, max_retries: int = 2, retry_delay: float = 2.0) -> str:
