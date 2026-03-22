@@ -78,12 +78,12 @@ def get_llm_for_task(task: str) -> LLM:
     lightweight wrappers and creating them is cheap. This avoids stale state
     if env vars change.
     """
-    from d4bl.llm.ollama_client import _TASK_MODEL_ATTRS, model_for_task
+    from d4bl.llm.ollama_client import TASK_MODEL_ATTRS, model_for_task
 
     settings = get_settings()
 
     # If no task-specific model is configured, return the shared default
-    attr = _TASK_MODEL_ATTRS.get(task)
+    attr = TASK_MODEL_ATTRS.get(task)
     task_setting = getattr(settings, attr, "") if attr else ""
     if not task_setting:
         return get_llm()
@@ -128,13 +128,10 @@ def get_available_models() -> list[dict]:
         }
     ]
 
+    from d4bl.llm.ollama_client import TASK_MODEL_ATTRS
+
     seen = {settings.llm_model}
-    task_attrs = {
-        "query_parser": "query_parser_model",
-        "explainer": "explainer_model",
-        "evaluator": "evaluator_model",
-    }
-    for task, attr in task_attrs.items():
+    for task, attr in TASK_MODEL_ATTRS.items():
         model_name = getattr(settings, attr, "")
         if model_name and model_name not in seen:
             seen.add(model_name)

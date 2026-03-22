@@ -5,10 +5,10 @@ import pytest
 
 
 class TestRunnerModelRouting:
-    @patch("d4bl.services.langfuse.runner.get_eval_llm_for_task")
+    @patch("d4bl.services.langfuse.runner.get_llm_for_task")
     @patch("d4bl.services.langfuse.runner.get_langfuse_eval_client")
-    def test_runner_calls_get_eval_llm_for_task(self, mock_langfuse, mock_get_task_llm):
-        """run_comprehensive_evaluation() should call get_eval_llm_for_task('evaluator')."""
+    def test_runner_calls_get_llm_for_task(self, mock_langfuse, mock_get_task_llm):
+        """run_comprehensive_evaluation() should call get_llm_for_task('evaluator')."""
         from d4bl.services.langfuse.runner import run_comprehensive_evaluation
 
         mock_langfuse.return_value = None  # Skip Langfuse (returns SKIPPED)

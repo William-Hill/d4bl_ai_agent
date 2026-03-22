@@ -10,7 +10,7 @@ from d4bl.settings import get_settings
 logger = logging.getLogger(__name__)
 
 # Task name → Settings attribute mapping
-_TASK_MODEL_ATTRS: dict[str, str] = {
+TASK_MODEL_ATTRS: dict[str, str] = {
     "query_parser": "query_parser_model",
     "explainer": "explainer_model",
     "evaluator": "evaluator_model",
@@ -24,7 +24,7 @@ def model_for_task(task: str) -> str:
     otherwise falls back to the general ``ollama_model`` setting.
     """
     settings = get_settings()
-    attr = _TASK_MODEL_ATTRS.get(task)
+    attr = TASK_MODEL_ATTRS.get(task)
     if attr:
         task_model = getattr(settings, attr, "")
         if task_model:
