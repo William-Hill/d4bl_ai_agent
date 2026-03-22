@@ -11,7 +11,7 @@ from d4bl.services.langfuse.bias import evaluate_bias_detection
 from d4bl.services.langfuse.client import get_langfuse_eval_client
 from d4bl.services.langfuse.content_relevance import evaluate_content_relevance
 from d4bl.services.langfuse.hallucination import evaluate_hallucination
-from d4bl.services.langfuse.llm_runner import get_eval_llm
+from d4bl.services.langfuse.llm_runner import get_eval_llm, get_eval_llm_for_task
 from d4bl.services.langfuse.quality import evaluate_research_quality
 from d4bl.services.langfuse.reference import evaluate_reference
 from d4bl.services.langfuse.report_relevance import evaluate_report_relevance
@@ -79,7 +79,7 @@ def run_comprehensive_evaluation(
     # --- Init shared resources once (findings 3.2 + 3.3) ---
     langfuse = get_langfuse_eval_client()
     try:
-        llm = get_eval_llm()
+        llm = get_eval_llm_for_task("evaluator")
     except Exception as llm_err:
         logger.error("Failed to initialise LLM for evaluations: %s", llm_err, exc_info=True)
         llm = None
