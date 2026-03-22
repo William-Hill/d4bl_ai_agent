@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass
 from string import Template
 
-from d4bl.llm.ollama_client import ollama_generate
+from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.structured import StructuredResult
 from d4bl.settings import get_settings
 
@@ -155,10 +155,10 @@ class ResultFusion:
     async def _generate_answer(
         self, query: str, sources: list[SourceReference]
     ) -> str:
-        """Use Ollama/Mistral to synthesize an answer."""
+        """Use the fine-tuned explainer model (or fallback) to synthesize an answer."""
         sources_text = "\n".join(
             f"[{i + 1}] ({s.source_type}) {s.title}\n{s.snippet}"
-            for i, s in enumerate(sources[:10])  # Limit context
+            for i, s in enumerate(sources[:10])
         )
         prompt = SYNTHESIS_PROMPT.substitute(
             query=query, sources_text=sources_text
@@ -167,6 +167,7 @@ class ResultFusion:
         return await ollama_generate(
             base_url=self.ollama_base_url,
             prompt=prompt,
+            model=model_for_task("explainer"),
             temperature=0.3,
             timeout_seconds=60,
         )
