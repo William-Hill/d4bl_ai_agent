@@ -110,16 +110,40 @@ def get_llm_for_task(task: str) -> LLM:
 
 
 def get_available_models() -> list[dict]:
-    """Return available models based on current configuration."""
+    """Return available models based on current configuration.
+
+    Includes the default model plus any configured task-specific models.
+    """
     settings = get_settings()
     current_model_string = build_llm_model_string(
         settings.llm_provider, settings.llm_model
     )
-    return [
+    models = [
         {
             "provider": settings.llm_provider,
             "model": settings.llm_model,
             "model_string": current_model_string,
             "is_default": True,
+            "task": "general",
         }
     ]
+
+    seen = {settings.llm_model}
+    task_attrs = {
+        "query_parser": "query_parser_model",
+        "explainer": "explainer_model",
+        "evaluator": "evaluator_model",
+    }
+    for task, attr in task_attrs.items():
+        model_name = getattr(settings, attr, "")
+        if model_name and model_name not in seen:
+            seen.add(model_name)
+            models.append({
+                "provider": settings.llm_provider,
+                "model": model_name,
+                "model_string": build_llm_model_string(settings.llm_provider, model_name),
+                "is_default": False,
+                "task": task,
+            })
+
+    return models
