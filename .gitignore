@@ -26,3 +26,10 @@ eval_results*.csv
 # Training data (large, generated)
 scripts/training_data/*
 !scripts/training_data/.gitkeep
+
+# Training notebooks outputs (large model files)
+notebooks/training/outputs/
+*.gguf
+
+# Model files (downloaded/generated, large)
+models/*.gguf
