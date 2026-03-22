@@ -348,7 +348,7 @@ parser_training_args = TrainingArguments(
     logging_steps=10,
     optim="adamw_8bit",
     seed=42,
-    evaluation_strategy="steps",
+    eval_strategy="steps",
     eval_steps=25,
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
@@ -448,7 +448,7 @@ explainer_training_args = TrainingArguments(
     logging_steps=10,
     optim="adamw_8bit",
     seed=42,
-    evaluation_strategy="steps",
+    eval_strategy="steps",
     eval_steps=20,
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
@@ -542,7 +542,7 @@ evaluator_training_args = TrainingArguments(
     logging_steps=10,
     optim="adamw_8bit",
     seed=42,
-    evaluation_strategy="steps",
+    eval_strategy="steps",
     eval_steps=25,
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
@@ -644,8 +644,6 @@ print("\nAll GGUF files exported.")
 
 # %%
 # List GGUF output files with sizes
-import os
-
 print(f"{'File':<55} {'Size (MB)':>10}")
 print("-" * 67)
 for adapter_name, base_path in gguf_output_paths.items():
