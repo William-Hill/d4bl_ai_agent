@@ -56,6 +56,11 @@ class Settings:
     llm_model: str = field(init=False)
     llm_api_key: str | None = field(init=False)
 
+    # -- Fine-tuned task models (empty = use llm_model / ollama_model) --
+    query_parser_model: str = field(init=False)
+    explainer_model: str = field(init=False)
+    evaluator_model: str = field(init=False)
+
     # -- Supabase Auth --
     supabase_url: str | None = field(init=False)
     supabase_jwt_secret: str | None = field(init=False)
@@ -144,6 +149,11 @@ class Settings:
         _set("llm_provider", os.getenv("LLM_PROVIDER", "ollama").lower())
         _set("llm_model", os.getenv("LLM_MODEL", "mistral"))
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
+
+        # Fine-tuned task models
+        _set("query_parser_model", os.getenv("QUERY_PARSER_MODEL", ""))
+        _set("explainer_model", os.getenv("EXPLAINER_MODEL", ""))
+        _set("evaluator_model", os.getenv("EVALUATOR_MODEL", ""))
 
         # Supabase Auth
         _set("supabase_url", os.getenv("SUPABASE_URL"))
