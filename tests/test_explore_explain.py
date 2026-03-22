@@ -83,6 +83,33 @@ class TestExplainEndpoint:
         assert data["caveats"] == []
 
     @pytest.mark.asyncio
+    async def test_explain_uses_task_specific_model(self, override_auth):
+        """Explain endpoint should use the explainer model via model_for_task."""
+        app = override_auth
+
+        llm_json = '{"narrative": "test", "methodology_note": "note", "caveats": []}'
+
+        with patch(
+            "d4bl.app.explore_insights.model_for_task",
+            return_value="d4bl-explainer",
+        ), patch(
+            "d4bl.app.explore_insights.acompletion",
+            new_callable=AsyncMock,
+            return_value=_mock_llm_response(llm_json),
+        ) as mock_acompletion:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/api/explore/explain", json=EXPLAIN_PAYLOAD
+                )
+
+        assert resp.status_code == 200
+        call_kwargs = mock_acompletion.call_args[1]
+        assert call_kwargs["model"] == "ollama/d4bl-explainer"
+
+    @pytest.mark.asyncio
     async def test_explain_503_when_llm_down(self, override_auth):
         app = override_auth
 

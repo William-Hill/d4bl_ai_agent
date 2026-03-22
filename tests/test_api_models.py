@@ -46,6 +46,25 @@ def test_research_request_model_defaults_none():
     assert req.model is None
 
 
+@patch("d4bl.llm.provider.get_settings")
+def test_available_models_includes_task_models(mock_settings):
+    """When task models are configured, /api/models should list them."""
+    from d4bl.llm.provider import get_available_models
+    mock_settings.return_value.llm_provider = "ollama"
+    mock_settings.return_value.llm_model = "mistral"
+    mock_settings.return_value.query_parser_model = "d4bl-query-parser"
+    mock_settings.return_value.explainer_model = "d4bl-explainer"
+    mock_settings.return_value.evaluator_model = ""  # not configured
+
+    models = get_available_models()
+    model_names = [m["model"] for m in models]
+    assert "mistral" in model_names
+    assert "d4bl-query-parser" in model_names
+    assert "d4bl-explainer" in model_names
+    # evaluator not configured, should not appear as separate entry
+    assert len(models) == 3
+
+
 def test_cloud_provider_requires_api_key():
     """get_llm should raise ValueError for cloud providers without API key."""
     from d4bl.llm.provider import reset_llm

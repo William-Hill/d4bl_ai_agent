@@ -79,3 +79,38 @@ class TestGetAvailableModels:
         default_model = next(m for m in models if m["is_default"])
         assert default_model["provider"] == "gemini"
         assert default_model["model"] == "gemini-2.0-flash"
+
+
+class TestGetLlmForTask:
+    """get_llm_for_task() creates a task-specific LLM when configured."""
+
+    @patch("d4bl.llm.ollama_client.get_settings")
+    @patch("d4bl.llm.provider.get_settings")
+    @patch("d4bl.llm.provider.LLM")
+    def test_returns_task_specific_llm(self, mock_llm_cls, mock_get_settings, mock_oc_settings):
+        from d4bl.llm.provider import get_llm_for_task
+        mock_get_settings.return_value.evaluator_model = "d4bl-evaluator"
+        mock_get_settings.return_value.llm_provider = "ollama"
+        mock_get_settings.return_value.llm_model = "mistral"
+        mock_get_settings.return_value.ollama_base_url = "http://localhost:11434"
+        mock_get_settings.return_value.llm_api_key = None
+        # model_for_task() calls get_settings from ollama_client module
+        mock_oc_settings.return_value.evaluator_model = "d4bl-evaluator"
+        mock_oc_settings.return_value.ollama_model = "mistral"
+
+        result = get_llm_for_task("evaluator")
+        mock_llm_cls.assert_called()
+        call_kwargs = mock_llm_cls.call_args[1]
+        assert call_kwargs["model"] == "ollama/d4bl-evaluator"
+
+    @patch("d4bl.llm.provider.get_settings")
+    @patch("d4bl.llm.provider.get_llm")
+    def test_falls_back_to_default_llm(self, mock_get_llm, mock_get_settings):
+        from d4bl.llm.provider import get_llm_for_task
+        mock_get_settings.return_value.evaluator_model = ""
+        mock_get_settings.return_value.llm_provider = "ollama"
+        sentinel = object()
+        mock_get_llm.return_value = sentinel
+
+        result = get_llm_for_task("evaluator")
+        assert result is sentinel
