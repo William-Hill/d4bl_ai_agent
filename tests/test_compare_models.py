@@ -1,11 +1,8 @@
 """Tests for the model comparison evaluation script."""
 from __future__ import annotations
 
-import pytest
-
 from scripts.training.compare_models import (
     ComparisonResult,
-    compare_single,
     format_report,
 )
 

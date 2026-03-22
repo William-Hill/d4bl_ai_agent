@@ -1,5 +1,11 @@
 from d4bl.llm.ollama_client import ollama_generate
-from d4bl.llm.provider import build_llm_model_string, get_available_models, get_llm, get_llm_for_task, reset_llm
+from d4bl.llm.provider import (
+    build_llm_model_string,
+    get_available_models,
+    get_llm,
+    get_llm_for_task,
+    reset_llm,
+)
 
 # Backward compatibility aliases
 get_ollama_llm = get_llm

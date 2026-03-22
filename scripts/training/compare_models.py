@@ -12,7 +12,7 @@ import asyncio
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from scripts.training.validate_model_output import (
     validate_evaluator_output,

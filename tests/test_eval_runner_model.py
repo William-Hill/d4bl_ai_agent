@@ -1,8 +1,6 @@
 """Test that the evaluation runner uses the task-specific evaluator model."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestRunnerModelRouting:
     @patch("d4bl.services.langfuse.runner.get_llm_for_task")

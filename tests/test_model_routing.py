@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from d4bl.llm.ollama_client import model_for_task
 
 
