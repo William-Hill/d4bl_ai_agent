@@ -9,6 +9,28 @@ from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Task name → Settings attribute mapping
+_TASK_MODEL_ATTRS: dict[str, str] = {
+    "query_parser": "query_parser_model",
+    "explainer": "explainer_model",
+    "evaluator": "evaluator_model",
+}
+
+
+def model_for_task(task: str) -> str:
+    """Resolve the Ollama model name for a given task.
+
+    Returns the task-specific model if configured (non-empty env var),
+    otherwise falls back to the general ``ollama_model`` setting.
+    """
+    settings = get_settings()
+    attr = _TASK_MODEL_ATTRS.get(task)
+    if attr:
+        task_model = getattr(settings, attr, "")
+        if task_model:
+            return task_model
+    return settings.ollama_model
+
 
 async def ollama_generate(
     *,
