@@ -11,11 +11,11 @@ for the Data for Black Lives (D4BL) AI agent:
 
   Phase 2 — Task-Specific LoRA Adapters (three adapters trained sequentially):
     Adapter A — Query Parser:  lightweight attention-only LoRA (r=8) trained on
-                               ~300 structured query examples for 3 epochs.
+                               ~700+ structured query examples for 7 epochs.
     Adapter B — Data Explainer: larger LoRA (r=32, attention+FFN) trained on
                                 long-form explanation data at 4096-token context.
     Adapter C — Evaluator:     medium attention-only LoRA (r=16) trained on
-                               ~600 evaluation examples for 3 epochs.
+                               ~700+ evaluation examples for 7 epochs.
 
   Phase 3 — GGUF Export:
     Each task adapter is loaded over the domain-adapted base, then exported to
@@ -37,9 +37,9 @@ Colab's userdata store. Training data files are uploaded at runtime.
 # | Phase | What it does | LoRA rank | Epochs |
 # |-------|--------------|-----------|--------|
 # | 1 — Domain Adaptation | Teach the model D4BL vocabulary and equity framing | r=16 (all layers) | 1 |
-# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 3 |
-# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 3 |
-# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 3 |
+# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 7 |
+# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 7 |
+# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 7 |
 # | 3 — GGUF Export | Quantise each adapter to q4_k_m for Ollama deployment | — | — |
 #
 # **Prerequisites**
@@ -408,7 +408,7 @@ parser_trainer = SFTTrainer(
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         warmup_steps=20,
-        num_train_epochs=3,
+        num_train_epochs=7,
         learning_rate=1e-4,
         fp16=True,
         logging_steps=5,
@@ -487,7 +487,7 @@ explainer_trainer = SFTTrainer(
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         warmup_steps=30,
-        num_train_epochs=3,
+        num_train_epochs=7,
         learning_rate=1e-4,
         fp16=True,
         logging_steps=5,
@@ -563,7 +563,7 @@ evaluator_trainer = SFTTrainer(
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         warmup_steps=20,
-        num_train_epochs=3,
+        num_train_epochs=7,
         learning_rate=1e-4,
         fp16=True,
         logging_steps=5,
@@ -802,7 +802,7 @@ print("  python -m scripts.training.register_models")
 # ### Model Produces Narrative Instead of JSON
 # - This means more training data is needed (current ~115 examples per task
 #   is minimal for structured output learning)
-# - Increase to 1000+ examples per task and 5-10 epochs
+# - Increase to 1000+ examples per task and 7+ epochs (done in Sprint 2.5)
 # - Ensure training data has proper ChatML formatting
 #
 # ### Resuming from Checkpoint
