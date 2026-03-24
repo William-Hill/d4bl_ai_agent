@@ -637,7 +637,8 @@ print("Backed up to Drive.")
 
 # %%
 # Restart runtime before next export
-import os; os.kill(os.getpid(), 9)
+import os
+os.kill(os.getpid(), 9)
 
 # %%
 # --- Export Explainer to GGUF ---
@@ -683,7 +684,8 @@ print("Backed up to Drive.")
 
 # %%
 # Restart runtime before next export
-import os; os.kill(os.getpid(), 9)
+import os
+os.kill(os.getpid(), 9)
 
 # %%
 # --- Export Evaluator to GGUF ---
@@ -718,6 +720,10 @@ model.save_pretrained_gguf(
     tokenizer,
     quantization_method="q4_k_m",
 )
+del model, tokenizer
+import gc, torch
+gc.collect()
+torch.cuda.empty_cache()
 print("Evaluator GGUF exported.")
 
 !cp -r /content/d4bl_training/gguf {DRIVE_DIR}/

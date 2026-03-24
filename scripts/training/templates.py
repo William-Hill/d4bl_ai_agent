@@ -166,11 +166,11 @@ def render_police_violence_passage(row: dict) -> str:
     Expected keys: state (2-letter abbrev), city, race, age, gender,
                    armed_status, cause_of_death, year, agency.
     """
-    city = row.get("city", "Unknown")
-    state_abbrev = row.get("state", "")
+    city = row.get("city") or "Unknown"
+    state_abbrev = row.get("state") or ""
     state_name = STATE_ABBREV_TO_NAME.get(state_abbrev, state_abbrev)
-    race = row.get("race", "Unknown")
-    armed_status = row.get("armed_status", "unknown")
+    race = row.get("race") or "Unknown"
+    armed_status = row.get("armed_status") or "unknown"
     year = row.get("year", "")
 
     passage = (

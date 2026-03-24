@@ -68,6 +68,30 @@ skip_no_ollama = pytest.mark.skipif(
 )
 
 
+class TestModelLoaded:
+    """Unit tests for _model_loaded — runs regardless of Ollama."""
+
+    def test_none_models_returns_false(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", None)
+        assert not _model_loaded("foo")
+
+    def test_bare_name_match(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"foo"})
+        assert _model_loaded("foo")
+
+    def test_latest_suffix_match(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"foo:latest"})
+        assert _model_loaded("foo")
+
+    def test_no_match(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"bar:latest"})
+        assert not _model_loaded("foo")
+
+
 @skip_no_ollama
 class TestQueryParserIntegration:
     MODEL = "d4bl-query-parser"
