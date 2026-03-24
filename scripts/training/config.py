@@ -27,7 +27,7 @@ VAL_RATIO = 0.10
 TEST_RATIO = 0.10
 
 # Deduplication
-JACCARD_THRESHOLD = 0.8
+JACCARD_THRESHOLD = 1.0  # Effectively disabled — only exact duplicates removed
 
 
 def write_jsonl(
