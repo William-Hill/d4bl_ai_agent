@@ -217,7 +217,7 @@ def load_dataset_from_jsonl(path: str, require_text: bool = False) -> Dataset:
     return Dataset.from_list(records)
 
 
-def format_and_tokenize(dataset, tokenizer, max_length):
+def format_and_tokenize(dataset):
     """Convert messages-format dataset to plain text for SFTTrainer.
 
     Task pair datasets use {"messages": [{role, content}, ...]} format.
@@ -384,8 +384,8 @@ parser_model.print_trainable_parameters()
 
 # %%
 # Convert messages format to plain text
-parser_train_text = format_and_tokenize(parser_train_dataset, parser_tokenizer, MAX_SEQ_LENGTH_TASK)
-parser_val_text = format_and_tokenize(parser_val_dataset, parser_tokenizer, MAX_SEQ_LENGTH_TASK)
+parser_train_text = format_and_tokenize(parser_train_dataset)
+parser_val_text = format_and_tokenize(parser_val_dataset)
 print(f"Formatted: {len(parser_train_text)} train, {len(parser_val_text)} val")
 
 parser_trainer = SFTTrainer(
@@ -463,8 +463,8 @@ explainer_model = FastLanguageModel.get_peft_model(
 explainer_model.print_trainable_parameters()
 
 # %%
-explainer_train_text = format_and_tokenize(explainer_train_dataset, explainer_tokenizer, MAX_SEQ_LENGTH_EXPLAINER)
-explainer_val_text = format_and_tokenize(explainer_val_dataset, explainer_tokenizer, MAX_SEQ_LENGTH_EXPLAINER)
+explainer_train_text = format_and_tokenize(explainer_train_dataset)
+explainer_val_text = format_and_tokenize(explainer_val_dataset)
 print(f"Formatted: {len(explainer_train_text)} train, {len(explainer_val_text)} val")
 
 explainer_trainer = SFTTrainer(
@@ -539,8 +539,8 @@ evaluator_model = FastLanguageModel.get_peft_model(
 evaluator_model.print_trainable_parameters()
 
 # %%
-evaluator_train_text = format_and_tokenize(evaluator_train_dataset, evaluator_tokenizer, MAX_SEQ_LENGTH_TASK)
-evaluator_val_text = format_and_tokenize(evaluator_val_dataset, evaluator_tokenizer, MAX_SEQ_LENGTH_TASK)
+evaluator_train_text = format_and_tokenize(evaluator_train_dataset)
+evaluator_val_text = format_and_tokenize(evaluator_val_dataset)
 print(f"Formatted: {len(evaluator_train_text)} train, {len(evaluator_val_text)} val")
 
 evaluator_trainer = SFTTrainer(

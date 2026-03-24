@@ -6,7 +6,7 @@ returns a plain-text string suitable for model pre-training.
 
 from __future__ import annotations
 
-from scripts.ingestion.constants import STATE_ABBREV_TO_NAME, STATE_FIPS
+from scripts.ingestion.constants import STATE_ABBREV_TO_NAME
 
 # ---------------------------------------------------------------------------
 # Lookup tables
@@ -121,15 +121,17 @@ def render_cdc_passage(row: dict) -> str:
     geo = row["geography_name"]
     measure = row["measure"].replace("_", " ").lower()
     value = row["data_value"]
-    ci_low = row["low_confidence_limit"]
-    ci_high = row["high_confidence_limit"]
+    ci_low = row.get("low_confidence_limit")
+    ci_high = row.get("high_confidence_limit")
     year = row.get("year", "")
 
     passage = (
         f"In {year}, {geo} had a {row.get('data_value_type', 'crude prevalence')} "
-        f"of {value:.1f}% for {measure} "
-        f"(95% confidence interval: {ci_low:.1f}%–{ci_high:.1f}%)."
+        f"of {value:.1f}% for {measure}"
     )
+    if ci_low is not None and ci_high is not None:
+        passage += f" (95% confidence interval: {ci_low:.1f}%–{ci_high:.1f}%)"
+    passage += "."
     return passage
 
 
