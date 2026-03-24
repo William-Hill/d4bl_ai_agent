@@ -54,6 +54,12 @@ class TestModelfileStructure:
         name, content = modelfile
         assert "JSON" in content, f"{name}: SYSTEM must request JSON output"
 
+    def test_has_num_predict(self, modelfile):
+        name, content = modelfile
+        assert "PARAMETER num_predict" in content, (
+            f"{name}: must set num_predict to constrain output length"
+        )
+
 
 class TestModelfileSpecifics:
     """Task-specific parameter validation."""

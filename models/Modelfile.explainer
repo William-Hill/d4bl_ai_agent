@@ -1,6 +1,7 @@
 FROM ./d4bl-explainer-q4_k_m.gguf
 PARAMETER temperature 0.3
 PARAMETER num_ctx 4096
+PARAMETER num_predict 1024
 PARAMETER stop "<|im_end|>"
 SYSTEM """You are a racial equity data analyst for D4BL (Data for Black Lives).
 Generate equity-framed narratives that:
