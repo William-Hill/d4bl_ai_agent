@@ -209,7 +209,7 @@ def render_fbi_passage(row: dict) -> str:
     category = row["category"]
     race = row["race"]
     count = int(row["value"])
-    population = int(row["population"]) if row.get("population") else 0
+    population = int(row["population"]) if row.get("population") is not None else 0
     year = row.get("year", "")
 
     rate_per_100k = (count / population * 100_000) if population else 0.0
