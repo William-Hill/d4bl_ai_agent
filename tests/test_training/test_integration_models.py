@@ -45,7 +45,9 @@ def _ollama_available() -> bool:
 
 
 def _model_loaded(model_name: str) -> bool:
-    return _OLLAMA_MODELS is not None and model_name in _OLLAMA_MODELS
+    if _OLLAMA_MODELS is None:
+        return False
+    return model_name in _OLLAMA_MODELS or f"{model_name}:latest" in _OLLAMA_MODELS
 
 
 def _run_model(model_name: str, prompt: str, timeout: int = 120) -> str:
