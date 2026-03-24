@@ -33,6 +33,45 @@ from scripts.training.config import (
     PAIRS_PER_TASK,
     write_jsonl,
 )
+
+# ---------------------------------------------------------------------------
+# Cost tracking
+# ---------------------------------------------------------------------------
+
+# Claude Sonnet 4 pricing (per million tokens)
+_COST_PER_M_INPUT = 3.00
+_COST_PER_M_OUTPUT = 15.00
+
+_total_input_tokens = 0
+_total_output_tokens = 0
+_total_calls = 0
+
+
+def _track_cost(input_tokens: int, output_tokens: int) -> None:
+    """Accumulate token usage and print running cost summary."""
+    global _total_input_tokens, _total_output_tokens, _total_calls
+    _total_input_tokens += input_tokens
+    _total_output_tokens += output_tokens
+    _total_calls += 1
+
+
+def _cost_so_far() -> float:
+    """Return estimated cost in USD based on accumulated token usage."""
+    return (
+        _total_input_tokens / 1_000_000 * _COST_PER_M_INPUT
+        + _total_output_tokens / 1_000_000 * _COST_PER_M_OUTPUT
+    )
+
+
+def _print_cost_summary() -> None:
+    """Print a human-readable cost summary to stdout."""
+    cost = _cost_so_far()
+    print(
+        f"[cost] {_total_calls} API calls | "
+        f"{_total_input_tokens:,} in + {_total_output_tokens:,} out tokens | "
+        f"${cost:.2f} spent so far",
+        flush=True,
+    )
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
     REGISTERS,
@@ -327,7 +366,10 @@ def _call_claude(system: str, user: str, model: str = DISTILLATION_MODEL) -> str
         messages=[{"role": "user", "content": user}],
     )
     usage = message.usage
+    _track_cost(usage.input_tokens, usage.output_tokens)
     print(f"[api] ✓ {usage.input_tokens}in/{usage.output_tokens}out tokens", flush=True)
+    if _total_calls % 10 == 0:
+        _print_cost_summary()
     return message.content[0].text
 
 
@@ -590,7 +632,17 @@ def main(task: str) -> None:
     """
     import psycopg2  # type: ignore[import-untyped]
 
-    db_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    db_url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("POSTGRES_URL")
+        or os.environ.get("DAGSTER_POSTGRES_URL")
+    )
     if not db_url:
         # Build from individual env vars
         host = os.environ.get("POSTGRES_HOST", "localhost")
@@ -633,6 +685,13 @@ def main(task: str) -> None:
             pairs, outfile = _TASK_MAP[t]()
             count = write_pairs_jsonl(pairs, outfile)
             print(f"[done] Wrote {count} pairs to {outfile}")
+            _print_cost_summary()
+
+        print("\n" + "=" * 60)
+        print("FINAL COST SUMMARY")
+        print("=" * 60)
+        _print_cost_summary()
+        print("=" * 60)
     finally:
         conn.close()
 
