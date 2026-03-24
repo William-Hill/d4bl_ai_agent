@@ -45,7 +45,9 @@ def _ollama_available() -> bool:
 
 
 def _model_loaded(model_name: str) -> bool:
-    return _OLLAMA_MODELS is not None and model_name in _OLLAMA_MODELS
+    if _OLLAMA_MODELS is None:
+        return False
+    return model_name in _OLLAMA_MODELS or f"{model_name}:latest" in _OLLAMA_MODELS
 
 
 def _run_model(model_name: str, prompt: str, timeout: int = 120) -> str:
@@ -64,6 +66,30 @@ def _run_model(model_name: str, prompt: str, timeout: int = 120) -> str:
 skip_no_ollama = pytest.mark.skipif(
     not _ollama_available(), reason="Ollama not running"
 )
+
+
+class TestModelLoaded:
+    """Unit tests for _model_loaded — runs regardless of Ollama."""
+
+    def test_none_models_returns_false(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", None)
+        assert not _model_loaded("foo")
+
+    def test_bare_name_match(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"foo"})
+        assert _model_loaded("foo")
+
+    def test_latest_suffix_match(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"foo:latest"})
+        assert _model_loaded("foo")
+
+    def test_no_match(self, monkeypatch):
+        import tests.test_training.test_integration_models as mod
+        monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"bar:latest"})
+        assert not _model_loaded("foo")
 
 
 @skip_no_ollama
