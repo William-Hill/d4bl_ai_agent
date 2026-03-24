@@ -318,12 +318,16 @@ def _call_claude(system: str, user: str, model: str = DISTILLATION_MODEL) -> str
         anthropic.APIError: On API errors.
     """
     client = _get_anthropic_client()
+    preview = user[:200].replace("\n", " ")
+    print(f"[api] Calling {model} | {preview}...", flush=True)
     message = client.messages.create(
         model=model,
         max_tokens=2048,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
+    usage = message.usage
+    print(f"[api] ✓ {usage.input_tokens}in/{usage.output_tokens}out tokens", flush=True)
     return message.content[0].text
 
 
@@ -439,11 +443,11 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
         try:
             response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
         except Exception as exc:  # noqa: BLE001
-            print(f"[warn] Claude call failed for pair {idx}: {exc}")
+            print(f"[warn] Claude call failed for pair {idx}: {exc}", flush=True)
             continue
         validated = _validate_json(response_text)
         if validated is None:
-            print(f"[warn] Invalid JSON response for pair {idx}, skipping.")
+            print(f"[warn] Invalid JSON response for pair {idx}, skipping.", flush=True)
             continue
         # Student sees only the raw question, not the distillation scaffold
         pairs.append(
@@ -453,6 +457,7 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
         )
+        print(f"[query_parser] {len(pairs)}/{count} pairs generated", flush=True)
 
     return pairs
 
@@ -483,14 +488,14 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
         try:
             response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
         except Exception as exc:  # noqa: BLE001
-            print(f"[warn] Claude call failed for explainer pair {idx}: {exc}")
+            print(f"[warn] Claude call failed for explainer pair {idx}: {exc}", flush=True)
             continue
         validated = _validate_json(response_text)
         if validated is None:
-            print(f"[warn] Invalid JSON response for explainer pair {idx}, skipping.")
+            print(f"[warn] Invalid JSON response for explainer pair {idx}, skipping.", flush=True)
             continue
         # Student sees only the JSON data context + register, not the full distillation scaffold
-        student_user = json.dumps({"data": row, "register": register}, ensure_ascii=False)
+        student_user = json.dumps({"data": row, "register": register}, ensure_ascii=False, default=str)
         pairs.append(
             format_as_chatml(
                 system=_STUDENT_EXPLAINER_SYSTEM,
@@ -498,6 +503,7 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
         )
+        print(f"[explainer] {len(pairs)}/{count} pairs generated", flush=True)
 
     return pairs
 
@@ -528,7 +534,7 @@ def generate_evaluator_pairs(
             if call_count > 0 and call_count % 25 == 0:
                 time.sleep(1)
             row = seed_rows[idx % len(seed_rows)]
-            context = json.dumps(row, ensure_ascii=False)
+            context = json.dumps(row, ensure_ascii=False, default=str)
             # Use a placeholder model output for the evaluator task
             model_output = (
                 f"Based on the data, {row.get('state', 'this state')} shows elevated "
@@ -542,12 +548,12 @@ def generate_evaluator_pairs(
             try:
                 response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
             except Exception as exc:  # noqa: BLE001
-                print(f"[warn] Claude call failed for evaluator {task} pair {idx}: {exc}")
+                print(f"[warn] Claude call failed for evaluator {task} pair {idx}: {exc}", flush=True)
                 call_count += 1
                 continue
             validated = _validate_json(response_text)
             if validated is None:
-                print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.")
+                print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.", flush=True)
                 call_count += 1
                 continue
             # Student sees only raw context + output, not the full evaluation scaffold
@@ -559,6 +565,8 @@ def generate_evaluator_pairs(
                     assistant=json.dumps(validated, ensure_ascii=False),
                 )
             )
+            total = count_per_subtask * len(evaluator_tasks)
+            print(f"[evaluator/{task}] {len(all_pairs)}/{total} pairs generated", flush=True)
             call_count += 1
 
     random.shuffle(all_pairs)

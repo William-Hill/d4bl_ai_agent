@@ -53,10 +53,16 @@ Colab's userdata store. Training data files are uploaded at runtime.
 # unsloth provides optimised LoRA training; install before other packages
 # so it can patch transformers/peft correctly at import time.
 import subprocess, sys  # noqa: E401
+# Unsloth must be installed first — it pins compatible versions of
+# transformers, peft, trl, etc.  Then we install trl/peft with --no-deps
+# to avoid overriding Unsloth's pinned transformers.
 subprocess.run([sys.executable, "-m", "pip", "install", "unsloth"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps",
                 "trl", "peft", "accelerate", "bitsandbytes"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
+# Restart the runtime so patched imports take effect
+import os
+os.kill(os.getpid(), 9)
 
 # %%
 import json
@@ -134,7 +140,7 @@ for name in uploaded:
     print(f"  {name:40s} {size_kb:.1f} KB")
 
 # %%
-def load_jsonl(path: str) -> list[dict]:
+def load_jsonl(path: str, require_text: bool = False) -> list[dict]:
     """Read a newline-delimited JSON file and return a list of records."""
     records = []
     with open(path, "r", encoding="utf-8") as fh:
@@ -145,7 +151,7 @@ def load_jsonl(path: str) -> list[dict]:
             record = json.loads(line)
             if not isinstance(record, dict):
                 raise ValueError(f"{path}:{line_no}: expected JSON object")
-            if "text" not in record or not isinstance(record["text"], str):
+            if require_text and ("text" not in record or not isinstance(record["text"], str)):
                 raise ValueError(
                     f"{path}:{line_no}: missing or invalid 'text' field"
                 )
@@ -160,7 +166,7 @@ def load_dataset_from_jsonl(path: str) -> Dataset:
 
 
 # Load all datasets
-corpus_dataset = load_dataset_from_jsonl("corpus_pretrain.jsonl")
+corpus_dataset = load_dataset_from_jsonl("corpus_pretrain.jsonl", require_text=True)
 
 parser_train_dataset = load_dataset_from_jsonl("query_parser_train.jsonl")
 parser_val_dataset = load_dataset_from_jsonl("query_parser_val.jsonl")

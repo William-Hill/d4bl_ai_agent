@@ -144,7 +144,7 @@ def build_explainer_prompt(data: dict, register: str) -> str:
     """
     tone = _REGISTER_TONE.get(register, "")
     schema_str = json.dumps(_EXPLAINER_SCHEMA, indent=2)
-    data_str = json.dumps(data, indent=2)
+    data_str = json.dumps(data, indent=2, default=str)
 
     state = data.get("state") or data.get("geography_name") or data.get("state_name") or ""
 
