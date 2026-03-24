@@ -217,20 +217,26 @@ def load_dataset_from_jsonl(path: str, require_text: bool = False) -> Dataset:
     return Dataset.from_list(records)
 
 
-def format_and_tokenize(dataset):
-    """Convert messages-format dataset to plain text for SFTTrainer.
+def format_and_tokenize(dataset, tokenizer):
+    """Convert messages-format dataset to text using the model's native chat template.
 
-    Task pair datasets use {"messages": [{role, content}, ...]} format.
-    SFTTrainer with Unsloth works best with a plain {"text": "..."} dataset.
-    This function converts messages to ChatML format strings.
+    Uses tokenizer.apply_chat_template() to produce the exact token format
+    the model was pre-trained with, preserving instruction-following structure.
+    Falls back to manual ChatML if the tokenizer lacks a chat template.
     """
     formatted = []
     for i in range(len(dataset)):
         msgs = dataset[i]["messages"]
-        parts = []
-        for msg in msgs:
-            parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
-        text = "\n".join(parts)
+        try:
+            text = tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+        except Exception:
+            # Fallback: manual ChatML (should not happen with Qwen2.5)
+            parts = []
+            for msg in msgs:
+                parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
+            text = "\n".join(parts)
         formatted.append({"text": text})
     return Dataset.from_list(formatted)
 
@@ -384,8 +390,8 @@ parser_model.print_trainable_parameters()
 
 # %%
 # Convert messages format to plain text
-parser_train_text = format_and_tokenize(parser_train_dataset)
-parser_val_text = format_and_tokenize(parser_val_dataset)
+parser_train_text = format_and_tokenize(parser_train_dataset, parser_tokenizer)
+parser_val_text = format_and_tokenize(parser_val_dataset, parser_tokenizer)
 print(f"Formatted: {len(parser_train_text)} train, {len(parser_val_text)} val")
 
 parser_trainer = SFTTrainer(
@@ -463,8 +469,8 @@ explainer_model = FastLanguageModel.get_peft_model(
 explainer_model.print_trainable_parameters()
 
 # %%
-explainer_train_text = format_and_tokenize(explainer_train_dataset)
-explainer_val_text = format_and_tokenize(explainer_val_dataset)
+explainer_train_text = format_and_tokenize(explainer_train_dataset, explainer_tokenizer)
+explainer_val_text = format_and_tokenize(explainer_val_dataset, explainer_tokenizer)
 print(f"Formatted: {len(explainer_train_text)} train, {len(explainer_val_text)} val")
 
 explainer_trainer = SFTTrainer(
@@ -539,8 +545,8 @@ evaluator_model = FastLanguageModel.get_peft_model(
 evaluator_model.print_trainable_parameters()
 
 # %%
-evaluator_train_text = format_and_tokenize(evaluator_train_dataset)
-evaluator_val_text = format_and_tokenize(evaluator_val_dataset)
+evaluator_train_text = format_and_tokenize(evaluator_train_dataset, evaluator_tokenizer)
+evaluator_val_text = format_and_tokenize(evaluator_val_dataset, evaluator_tokenizer)
 print(f"Formatted: {len(evaluator_train_text)} train, {len(evaluator_val_text)} val")
 
 evaluator_trainer = SFTTrainer(
