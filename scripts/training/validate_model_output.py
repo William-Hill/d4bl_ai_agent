@@ -57,7 +57,7 @@ def validate_parser_output(raw: str) -> ValidationResult:
     errors = []
     # Accept either schema: Modelfile (intent) or training data (entities)
     has_modelfile_schema = "intent" in parsed
-    has_training_schema = "entities" in parsed or "search_queries" in parsed
+    has_training_schema = False
 
     if has_modelfile_schema:
         if not isinstance(parsed["intent"], str):
@@ -66,8 +66,23 @@ def validate_parser_output(raw: str) -> ValidationResult:
             errors.append(
                 f"Invalid intent '{parsed['intent']}', must be one of: {_VALID_INTENTS}"
             )
-    elif not has_training_schema:
-        errors.append("Missing required fields: need 'intent' or 'entities'/'search_queries'")
+    else:
+        if "entities" in parsed:
+            if not isinstance(parsed["entities"], list):
+                errors.append(f"entities must be a list, got {type(parsed['entities']).__name__}")
+            else:
+                has_training_schema = True
+        if "search_queries" in parsed:
+            if not isinstance(parsed["search_queries"], list):
+                errors.append(f"search_queries must be a list, got {type(parsed['search_queries']).__name__}")
+            else:
+                has_training_schema = True
+        if "data_sources" in parsed and not isinstance(parsed["data_sources"], list):
+            errors.append(f"data_sources must be a list, got {type(parsed['data_sources']).__name__}")
+        if "community_framing" in parsed and not isinstance(parsed["community_framing"], dict):
+            errors.append(f"community_framing must be an object, got {type(parsed['community_framing']).__name__}")
+        if not has_training_schema:
+            errors.append("Missing required fields: need 'intent' or 'entities'/'search_queries' (as lists)")
 
     return ValidationResult(valid=len(errors) == 0, parsed=parsed, errors=errors)
 
@@ -105,9 +120,20 @@ def validate_evaluator_output(raw: str) -> ValidationResult:
             errors.append(f"score must be a number, got {type(parsed['score']).__name__}")
         elif not (1 <= parsed["score"] <= 5):
             errors.append(f"Invalid score {parsed['score']}: must be 1-5")
-    elif not parsed:
+    if "bias" in parsed and not isinstance(parsed["bias"], (bool, dict)):
+        errors.append(f"bias must be a boolean or object, got {type(parsed['bias']).__name__}")
+    if "relevance" in parsed and not isinstance(parsed["relevance"], (bool, dict)):
+        errors.append(f"relevance must be a boolean or object, got {type(parsed['relevance']).__name__}")
+    if "equity_framing" in parsed and not isinstance(parsed["equity_framing"], (dict, str)):
+        errors.append(f"equity_framing must be an object or string, got {type(parsed['equity_framing']).__name__}")
+    if "explanation" in parsed and not isinstance(parsed["explanation"], str):
+        errors.append(f"explanation must be a string, got {type(parsed['explanation']).__name__}")
+    if "issues" in parsed and not isinstance(parsed["issues"], list):
+        errors.append(f"issues must be a list, got {type(parsed['issues']).__name__}")
+
+    if not errors and not parsed:
         errors.append("Empty JSON object")
-    elif not any(k in _KNOWN_EVAL_FIELDS for k in parsed):
+    elif not errors and not any(k in _KNOWN_EVAL_FIELDS for k in parsed):
         errors.append(f"No recognized evaluation fields in: {list(parsed.keys())}")
 
     return ValidationResult(valid=len(errors) == 0, parsed=parsed, errors=errors)
