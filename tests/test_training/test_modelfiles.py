@@ -14,7 +14,7 @@ MODELFILES = {
 
 
 class TestModelfileStructure:
-    """All Modelfiles must have FROM, PARAMETER, and SYSTEM directives."""
+    """All Modelfiles must have FROM, PARAMETER, and SYSTEM/TEMPLATE directives."""
 
     @pytest.fixture(params=list(MODELFILES.keys()))
     def modelfile(self, request):

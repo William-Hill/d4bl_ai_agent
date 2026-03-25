@@ -5,7 +5,7 @@
 # Usage: bash scripts/run_sprint25_generation.sh
 
 set -euo pipefail
-cd /Users/william-meroxa/Development/d4bl_ai_agent
+cd "$(dirname "$0")/.."
 
 # Activate venv
 source .venv/bin/activate

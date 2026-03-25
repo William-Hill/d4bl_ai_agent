@@ -72,6 +72,7 @@ def _print_cost_summary() -> None:
         f"${cost:.2f} spent so far",
         flush=True,
     )
+
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
     REGISTERS,
@@ -478,7 +479,6 @@ def generate_query_parser_pairs(
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    # Open file in append mode for incremental writes
     fh = None
     if outfile is not None:
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -605,12 +605,14 @@ def generate_evaluator_pairs(
     seed_rows = _load_seed_rows(conn)
     all_pairs: list[dict] = []
     call_count = 0
+    total = count_per_subtask * len(evaluator_tasks)
 
     try:
         for task in evaluator_tasks:
             for idx in range(count_per_subtask):
                 if call_count > 0 and call_count % 25 == 0:
                     time.sleep(1)
+                call_count += 1
                 row = seed_rows[idx % len(seed_rows)]
                 context = json.dumps(row, ensure_ascii=False, default=str)
                 model_output = (
@@ -626,12 +628,10 @@ def generate_evaluator_pairs(
                     response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
                 except Exception as exc:  # noqa: BLE001
                     print(f"[warn] Claude call failed for evaluator {task} pair {idx}: {exc}", flush=True)
-                    call_count += 1
                     continue
                 validated = _validate_json(response_text)
                 if validated is None:
                     print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.", flush=True)
-                    call_count += 1
                     continue
                 student_user = f"Context:\n{context}\n\nModel output:\n{model_output}"
                 all_pairs.append(
@@ -641,11 +641,8 @@ def generate_evaluator_pairs(
                         assistant=json.dumps(validated, ensure_ascii=False),
                     )
                 )
-                total = count_per_subtask * len(evaluator_tasks)
                 print(f"[evaluator/{task}] {len(all_pairs)}/{total} pairs generated", flush=True)
-                call_count += 1
     finally:
-        # Always write whatever we have — even on interruption
         if outfile is not None and all_pairs:
             random.shuffle(all_pairs)
             write_jsonl(all_pairs, outfile)
