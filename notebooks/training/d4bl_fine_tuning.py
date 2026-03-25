@@ -138,6 +138,11 @@ MAX_SEQ_LENGTH_DOMAIN = 2048
 MAX_SEQ_LENGTH_TASK = 2048
 MAX_SEQ_LENGTH_EXPLAINER = 4096
 
+# Auto-detect precision: A100/H100 support bf16, T4/L4 need fp16
+USE_BF16 = torch.cuda.is_bf16_supported()
+USE_FP16 = not USE_BF16
+print(f"Precision: {'bf16' if USE_BF16 else 'fp16'}")
+
 OUTPUT_DIR = Path("/content/d4bl_training")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -316,7 +321,8 @@ domain_trainer = SFTTrainer(
         warmup_steps=50,
         num_train_epochs=1,
         learning_rate=2e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=10,
         optim="adamw_8bit",
         seed=42,
@@ -408,7 +414,8 @@ parser_trainer = SFTTrainer(
         warmup_steps=20,
         num_train_epochs=7,
         learning_rate=1e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=5,
         optim="adamw_8bit",
         seed=42,
@@ -486,7 +493,8 @@ explainer_trainer = SFTTrainer(
         warmup_steps=30,
         num_train_epochs=7,
         learning_rate=1e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=5,
         optim="adamw_8bit",
         seed=42,
@@ -561,7 +569,8 @@ evaluator_trainer = SFTTrainer(
         warmup_steps=20,
         num_train_epochs=7,
         learning_rate=1e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=5,
         optim="adamw_8bit",
         seed=42,
