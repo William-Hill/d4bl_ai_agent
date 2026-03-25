@@ -207,6 +207,9 @@ class TestEvaluatorIntegration:
         )
         result = validate_evaluator_output(response)
         assert result.valid, f"Invalid output: {result.errors}\nRaw: {response}"
+        assert "score" in result.parsed or "equity_framing" in result.parsed, (
+            f"Expected 'score' or 'equity_framing', got: {list(result.parsed.keys())}"
+        )
         if "score" in result.parsed:
             assert result.parsed["score"] >= 3
 
@@ -217,6 +220,9 @@ class TestEvaluatorIntegration:
         )
         result = validate_evaluator_output(response)
         assert result.valid, f"Invalid output: {result.errors}\nRaw: {response}"
+        assert "score" in result.parsed or "relevance" in result.parsed, (
+            f"Expected 'score' or 'relevance', got: {list(result.parsed.keys())}"
+        )
         if "score" in result.parsed:
             assert 1 <= result.parsed["score"] <= 5
 

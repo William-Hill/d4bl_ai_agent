@@ -241,7 +241,7 @@ def format_and_tokenize(dataset, tokenizer):
             parts = []
             for msg in msgs:
                 parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
-            text = "\n".join(parts)
+            text = "\n".join(parts) + "\n"
         formatted.append({"text": text})
     return Dataset.from_list(formatted)
 

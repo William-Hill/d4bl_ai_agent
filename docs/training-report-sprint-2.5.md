@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This report documents the training, evaluation, and deployment of three domain-specialized small language models for the Data for Black Lives (D4BL) research platform. Built on Qwen2.5-3B-Instruct with LoRA adapters, these models embed D4BL's methodology of centering community voice, naming structural causes of racial disparities, and connecting data to policy action. Sprint 2.5 addressed critical quality issues from the initial training run (Sprint 2), improving integration test pass rates from 3/11 to 15/15 by fixing training data volume, chat template formatting, epoch count, and Ollama template configuration.
+This report documents the training, evaluation, and deployment of three domain-specialized small language models for the Data for Black Lives (D4BL) research platform. Built on Qwen2.5-3B-Instruct with LoRA adapters, these models embed D4BL's methodology of centering community voice, naming structural causes of racial disparities, and connecting data to policy action. Sprint 2.5 addressed critical quality issues from the initial training run (Sprint 2), improving the Ollama-dependent integration test pass rate from 3/11 to 11/11 (full suite from 7/15 to 15/15) by fixing training data volume, chat template formatting, epoch count, and Ollama template configuration.
 
 ---
 

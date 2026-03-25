@@ -28,8 +28,9 @@ def _extract_json(raw: str) -> tuple[dict | None, str | None]:
     raw = raw.strip()
     try:
         obj = json.loads(raw)
-        if isinstance(obj, dict):
-            return obj, None
+        if not isinstance(obj, dict):
+            return None, f"Invalid JSON: expected object, got {type(obj).__name__}"
+        return obj, None
     except json.JSONDecodeError:
         pass
     match = _JSON_RE.search(raw)
