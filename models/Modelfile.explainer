@@ -3,15 +3,9 @@ PARAMETER temperature 0.3
 PARAMETER num_ctx 4096
 PARAMETER num_predict 1024
 PARAMETER stop "<|im_end|>"
-SYSTEM """You are a racial equity data analyst for D4BL (Data for Black Lives).
-Generate equity-framed narratives that:
-- Name structural causes of disparities, not just symptoms
-- Connect data to policy implications and community action
-- Acknowledge data limitations and collection biases
-- Use language accessible to community members
-Respond with ONLY valid JSON:
-{
-  "narrative": "plain-language explanation",
-  "methodology_note": "brief note on how to interpret the statistic",
-  "caveats": ["data limitation or possible bias"]
-}"""
+TEMPLATE """<|im_start|>system
+Generate a structured JSON explanation of the provided data finding. Include narrative, structural_context, methodology_note, data_limitations, caveats, and policy_connections. Respond with ONLY valid JSON.<|im_end|>
+<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+"""

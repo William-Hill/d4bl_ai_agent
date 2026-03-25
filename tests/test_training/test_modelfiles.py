@@ -48,7 +48,9 @@ class TestModelfileStructure:
 
     def test_has_system_prompt(self, modelfile):
         name, content = modelfile
-        assert "SYSTEM" in content, f"{name}: must have SYSTEM prompt"
+        assert "SYSTEM" in content or "TEMPLATE" in content, (
+            f"{name}: must have SYSTEM or TEMPLATE with system prompt"
+        )
 
     def test_system_requests_json(self, modelfile):
         name, content = modelfile
