@@ -90,15 +90,19 @@ def validate_evaluator_output(raw: str) -> ValidationResult:
     if err:
         return ValidationResult(valid=False, parsed=None, errors=[err])
 
+    _KNOWN_EVAL_FIELDS = {"score", "bias", "relevance", "equity_framing", "hallucination",
+                          "explanation", "issues", "category", "context", "evaluation",
+                          "supporting_evidence"}
+
     errors = []
     if "score" in parsed:
         if isinstance(parsed["score"], bool) or not isinstance(parsed["score"], (int, float)):
             errors.append(f"score must be a number, got {type(parsed['score']).__name__}")
         elif not (1 <= parsed["score"] <= 5):
             errors.append(f"Invalid score {parsed['score']}: must be 1-5")
-    # Accept training data schema: any non-empty JSON object is valid
-    # (the model learned varied evaluation output structures)
     elif not parsed:
         errors.append("Empty JSON object")
+    elif not any(k in _KNOWN_EVAL_FIELDS for k in parsed):
+        errors.append(f"No recognized evaluation fields in: {list(parsed.keys())}")
 
     return ValidationResult(valid=len(errors) == 0, parsed=parsed, errors=errors)

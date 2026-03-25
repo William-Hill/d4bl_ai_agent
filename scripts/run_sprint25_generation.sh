@@ -8,9 +8,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Activate venv
+if [ ! -f ".venv/bin/activate" ]; then
+    echo "Error: Virtual environment not found at .venv — run: python -m venv .venv" >&2
+    exit 1
+fi
 source .venv/bin/activate
 
 # Load .env
+if [ ! -f ".env" ]; then
+    echo "Error: .env file not found — copy .env.example and fill in values" >&2
+    exit 1
+fi
 set -a
 source .env
 set +a
@@ -89,13 +97,13 @@ echo "FINAL SUMMARY"
 echo "============================================================"
 echo ""
 echo "Raw pairs:"
-wc -l scripts/training_data/pairs/*.jsonl
+wc -l scripts/training_data/pairs/*.jsonl 2>/dev/null || echo "  (none)"
 echo ""
 echo "Final splits:"
-wc -l scripts/training_data/final/*/*.jsonl
+wc -l scripts/training_data/final/*/*.jsonl 2>/dev/null || echo "  (none)"
 echo ""
 echo "Flat files for Colab:"
-ls -la scripts/training_data/final/*_train.jsonl scripts/training_data/final/*_val.jsonl 2>/dev/null
+ls -la scripts/training_data/final/*_train.jsonl scripts/training_data/final/*_val.jsonl 2>/dev/null || echo "  (none)"
 echo ""
 echo "Backup location: $BACKUP_DIR"
 echo "Finished: $(date '+%H:%M:%S')"

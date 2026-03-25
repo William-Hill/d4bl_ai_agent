@@ -229,14 +229,14 @@ def format_and_tokenize(dataset, tokenizer):
     Falls back to manual ChatML if the tokenizer lacks a chat template.
     """
     formatted = []
-    for i in range(len(dataset)):
-        msgs = dataset[i]["messages"]
+    for record in dataset:
+        msgs = record["messages"]
         try:
             text = tokenizer.apply_chat_template(
                 msgs, tokenize=False, add_generation_prompt=False
             )
-        except Exception:
-            # Fallback: manual ChatML (should not happen with Qwen2.5)
+        except (AttributeError, TypeError, KeyError, ValueError) as exc:
+            print(f"Warning: apply_chat_template failed ({exc}), using manual ChatML")
             parts = []
             for msg in msgs:
                 parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")

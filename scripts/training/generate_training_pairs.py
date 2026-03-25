@@ -33,6 +33,13 @@ from scripts.training.config import (
     PAIRS_PER_TASK,
     write_jsonl,
 )
+from scripts.training.prompts import (
+    D4BL_SYSTEM_PROMPT,
+    REGISTERS,
+    build_evaluator_prompt,
+    build_explainer_prompt,
+    build_query_parser_prompt,
+)
 
 # ---------------------------------------------------------------------------
 # Cost tracking
@@ -72,14 +79,6 @@ def _print_cost_summary() -> None:
         f"${cost:.2f} spent so far",
         flush=True,
     )
-
-from scripts.training.prompts import (
-    D4BL_SYSTEM_PROMPT,
-    REGISTERS,
-    build_evaluator_prompt,
-    build_explainer_prompt,
-    build_query_parser_prompt,
-)
 
 # ---------------------------------------------------------------------------
 # Student-model system prompts (short, task-specific)
@@ -595,8 +594,8 @@ def generate_evaluator_pairs(
     Args:
         conn: A live psycopg2 connection.
         count_per_subtask: Number of pairs per sub-task.
-        outfile: If provided, pairs are written incrementally so partial
-            progress survives interruption. Final file is shuffled.
+        outfile: If provided, pairs are buffered in memory and written
+            (shuffled) on completion or interruption.
 
     Returns:
         A shuffled list of ChatML pair dicts covering all 4 sub-tasks.
@@ -643,8 +642,9 @@ def generate_evaluator_pairs(
                 )
                 print(f"[evaluator/{task}] {len(all_pairs)}/{total} pairs generated", flush=True)
     finally:
-        if outfile is not None and all_pairs:
-            random.shuffle(all_pairs)
+        if outfile is not None:
+            if all_pairs:
+                random.shuffle(all_pairs)
             write_jsonl(all_pairs, outfile)
             print(f"[evaluator] Saved {len(all_pairs)} pairs to {outfile}", flush=True)
 

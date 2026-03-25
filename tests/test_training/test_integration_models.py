@@ -188,7 +188,9 @@ class TestEvaluatorIntegration:
         )
         result = validate_evaluator_output(response)
         assert result.valid, f"Invalid output: {result.errors}\nRaw: {response}"
-        # Model may return score (Modelfile schema) or bias field (training schema)
+        assert "score" in result.parsed or "bias" in result.parsed, (
+            f"Expected 'score' or 'bias' field, got: {list(result.parsed.keys())}"
+        )
         if "score" in result.parsed:
             assert result.parsed["score"] <= 3, "Biased content should score low"
         elif "bias" in result.parsed:
