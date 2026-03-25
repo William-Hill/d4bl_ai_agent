@@ -14,7 +14,7 @@ MODELFILES = {
 
 
 class TestModelfileStructure:
-    """All Modelfiles must have FROM, PARAMETER, and SYSTEM directives."""
+    """All Modelfiles must have FROM, PARAMETER, and SYSTEM/TEMPLATE directives."""
 
     @pytest.fixture(params=list(MODELFILES.keys()))
     def modelfile(self, request):
@@ -48,11 +48,19 @@ class TestModelfileStructure:
 
     def test_has_system_prompt(self, modelfile):
         name, content = modelfile
-        assert "SYSTEM" in content, f"{name}: must have SYSTEM prompt"
+        assert "SYSTEM" in content or "TEMPLATE" in content, (
+            f"{name}: must have SYSTEM or TEMPLATE with system prompt"
+        )
 
     def test_system_requests_json(self, modelfile):
         name, content = modelfile
         assert "JSON" in content, f"{name}: SYSTEM must request JSON output"
+
+    def test_has_num_predict(self, modelfile):
+        name, content = modelfile
+        assert "PARAMETER num_predict" in content, (
+            f"{name}: must set num_predict to constrain output length"
+        )
 
 
 class TestModelfileSpecifics:

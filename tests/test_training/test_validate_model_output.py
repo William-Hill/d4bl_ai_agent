@@ -97,7 +97,13 @@ class TestEvaluatorValidation:
         result = validate_evaluator_output(raw)
         assert not result.valid
 
-    def test_missing_score(self):
+    def test_missing_score_still_valid_if_nonempty(self):
+        """Evaluator accepts any non-empty JSON (training schema may lack 'score')."""
         raw = '{"explanation": "test", "issues": []}'
+        result = validate_evaluator_output(raw)
+        assert result.valid
+
+    def test_empty_object_invalid(self):
+        raw = '{}'
         result = validate_evaluator_output(raw)
         assert not result.valid

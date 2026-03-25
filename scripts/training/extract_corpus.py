@@ -40,7 +40,9 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
     },
     "cdc_health_outcomes": {
         "query": (
-            "SELECT geography_name, measure, value, ci_low, ci_high, year "
+            "SELECT geography_name, fips_code, measure, category, "
+            "data_value, data_value_type, low_confidence_limit, "
+            "high_confidence_limit, total_population, year "
             "FROM cdc_health_outcomes "
             "ORDER BY random() LIMIT %(limit)s"
         ),
@@ -48,8 +50,9 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
     },
     "epa_environmental_justice": {
         "query": (
-            "SELECT state_fips, indicator, raw_value, percentile, "
-            "state_percentile, minority_pct, year "
+            "SELECT state_name, tract_fips, indicator, raw_value, "
+            "percentile_state, percentile_national, population, "
+            "minority_pct, low_income_pct, year "
             "FROM epa_environmental_justice "
             "ORDER BY random() LIMIT %(limit)s"
         ),
@@ -57,7 +60,8 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
     },
     "police_violence_incidents": {
         "query": (
-            "SELECT city, state, victim_race, armed_status, year "
+            "SELECT state, city, race, age, gender, "
+            "armed_status, cause_of_death, year, agency "
             "FROM police_violence_incidents "
             "ORDER BY random() LIMIT %(limit)s"
         ),
@@ -65,7 +69,8 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
     },
     "bjs_incarceration": {
         "query": (
-            "SELECT state_fips, race, value, facility_type, year "
+            "SELECT state_name, state_abbrev, facility_type, "
+            "metric, race, gender, value, year "
             "FROM bjs_incarceration "
             "ORDER BY random() LIMIT %(limit)s"
         ),
@@ -73,9 +78,10 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
     },
     "fbi_crime_stats": {
         "query": (
-            "SELECT state_fips, offense, category, race, count, population, year "
+            "SELECT state_name, offense, category, "
+            "COALESCE(race, bias_motivation, 'unknown') AS race, "
+            "value, COALESCE(population, 0) AS population, year "
             "FROM fbi_crime_stats "
-            "WHERE race IS NOT NULL "
             "ORDER BY random() LIMIT %(limit)s"
         ),
         "template": render_fbi_passage,

@@ -6,7 +6,7 @@ returns a plain-text string suitable for model pre-training.
 
 from __future__ import annotations
 
-from scripts.ingestion.constants import STATE_ABBREV_TO_NAME, STATE_FIPS
+from scripts.ingestion.constants import STATE_ABBREV_TO_NAME
 
 # ---------------------------------------------------------------------------
 # Lookup tables
@@ -114,42 +114,49 @@ def render_census_passage(row: dict) -> str:
 def render_cdc_passage(row: dict) -> str:
     """Render a CDC PLACES health outcome row as a natural-language passage.
 
-    Expected keys: geography_name, measure, value, ci_low, ci_high, year.
+    Expected keys: geography_name, fips_code, measure, category,
+                   data_value, data_value_type, low_confidence_limit,
+                   high_confidence_limit, total_population, year.
     """
     geo = row["geography_name"]
-    measure = row["measure"]
-    value = row["value"]
-    ci_low = row["ci_low"]
-    ci_high = row["ci_high"]
+    measure = row["measure"].replace("_", " ").lower()
+    value = row["data_value"]
+    ci_low = row.get("low_confidence_limit")
+    ci_high = row.get("high_confidence_limit")
     year = row.get("year", "")
 
     passage = (
-        f"In {year}, {geo} had a prevalence of {value:.1f}% for {measure} "
-        f"(95% confidence interval: {ci_low:.1f}%–{ci_high:.1f}%)."
+        f"In {year}, {geo} had a {row.get('data_value_type', 'crude prevalence')} "
+        f"of {value:.1f}% for {measure}"
     )
+    if ci_low is not None and ci_high is not None:
+        passage += f" (95% confidence interval: {ci_low:.1f}%–{ci_high:.1f}%)"
+    passage += "."
     return passage
 
 
 def render_epa_passage(row: dict) -> str:
     """Render an EPA EJScreen indicator row as a natural-language passage.
 
-    Expected keys: state_fips, indicator, raw_value, percentile,
-                   state_percentile, minority_pct, year.
+    Expected keys: state_name, tract_fips, indicator, raw_value,
+                   percentile_state, percentile_national, population,
+                   minority_pct, low_income_pct, year.
     """
-    state_fips = str(row["state_fips"]).zfill(2)
-    state_name = STATE_FIPS.get(state_fips, state_fips)
+    state_name = row["state_name"]
     indicator_code = row["indicator"]
     display_name = _EPA_INDICATORS.get(indicator_code, indicator_code)
     raw_value = row["raw_value"]
-    percentile = row["percentile"]
-    state_percentile = row["state_percentile"]
+    pct_national = row["percentile_national"]
+    pct_state = row["percentile_state"]
     minority_pct = row["minority_pct"]
     year = row.get("year", "")
 
+    if pct_national is None or pct_state is None:
+        return ""
     passage = (
         f"In {year}, a census tract in {state_name} recorded a {display_name} "
-        f"value of {raw_value} (national percentile: {int(percentile)}, "
-        f"state percentile: {int(state_percentile)}). "
+        f"value of {raw_value} (national percentile: {int(pct_national)}, "
+        f"state percentile: {int(pct_state)}). "
         f"The tract had a minority population of {minority_pct:.1f}%."
     )
     return passage
@@ -158,14 +165,14 @@ def render_epa_passage(row: dict) -> str:
 def render_police_violence_passage(row: dict) -> str:
     """Render a police violence incident row as a natural-language passage.
 
-    Expected keys: city, state (2-letter abbrev), victim_race,
-                   armed_status, year.
+    Expected keys: state (2-letter abbrev), city, race, age, gender,
+                   armed_status, cause_of_death, year, agency.
     """
-    city = row["city"]
-    state_abbrev = row["state"]
+    city = row.get("city") or "Unknown"
+    state_abbrev = row.get("state") or ""
     state_name = STATE_ABBREV_TO_NAME.get(state_abbrev, state_abbrev)
-    race = row["victim_race"]
-    armed_status = row["armed_status"]
+    race = row.get("race") or "Unknown"
+    armed_status = row.get("armed_status") or "unknown"
     year = row.get("year", "")
 
     passage = (
@@ -178,12 +185,15 @@ def render_police_violence_passage(row: dict) -> str:
 def render_bjs_passage(row: dict) -> str:
     """Render a BJS incarceration row as a natural-language passage.
 
-    Expected keys: state_fips, race, value, facility_type, year.
+    Expected keys: state_name, state_abbrev, facility_type, metric,
+                   race, gender, value, year.
     """
-    state_fips = str(row["state_fips"]).zfill(2)
-    state_name = STATE_FIPS.get(state_fips, state_fips)
+    state_name = row["state_name"]
     race = row["race"]
-    value = int(row["value"])
+    raw_value = row.get("value")
+    if raw_value is None:
+        return ""
+    value = int(raw_value)
     facility_type = row["facility_type"]
     year = row.get("year", "")
 
@@ -197,15 +207,14 @@ def render_bjs_passage(row: dict) -> str:
 def render_fbi_passage(row: dict) -> str:
     """Render an FBI crime statistics row as a natural-language passage.
 
-    Expected keys: state_fips, offense, category, race, count, population, year.
+    Expected keys: state_name, offense, category, race, value, population, year.
     """
-    state_fips = str(row["state_fips"]).zfill(2)
-    state_name = STATE_FIPS.get(state_fips, state_fips)
+    state_name = row["state_name"]
     offense = row["offense"]
     category = row["category"]
     race = row["race"]
-    count = int(row["count"])
-    population = int(row["population"])
+    count = int(row["value"])
+    population = int(row["population"]) if row.get("population") is not None else 0
     year = row.get("year", "")
 
     rate_per_100k = (count / population * 100_000) if population else 0.0

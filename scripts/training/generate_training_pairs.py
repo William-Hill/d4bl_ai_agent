@@ -42,6 +42,45 @@ from scripts.training.prompts import (
 )
 
 # ---------------------------------------------------------------------------
+# Cost tracking
+# ---------------------------------------------------------------------------
+
+# Claude Sonnet 4 pricing (per million tokens)
+_COST_PER_M_INPUT = 3.00
+_COST_PER_M_OUTPUT = 15.00
+
+_total_input_tokens = 0
+_total_output_tokens = 0
+_total_calls = 0
+
+
+def _track_cost(input_tokens: int, output_tokens: int) -> None:
+    """Accumulate token usage and print running cost summary."""
+    global _total_input_tokens, _total_output_tokens, _total_calls
+    _total_input_tokens += input_tokens
+    _total_output_tokens += output_tokens
+    _total_calls += 1
+
+
+def _cost_so_far() -> float:
+    """Return estimated cost in USD based on accumulated token usage."""
+    return (
+        _total_input_tokens / 1_000_000 * _COST_PER_M_INPUT
+        + _total_output_tokens / 1_000_000 * _COST_PER_M_OUTPUT
+    )
+
+
+def _print_cost_summary() -> None:
+    """Print a human-readable cost summary to stdout."""
+    cost = _cost_so_far()
+    print(
+        f"[cost] {_total_calls} API calls | "
+        f"{_total_input_tokens:,} in + {_total_output_tokens:,} out tokens | "
+        f"${cost:.2f} spent so far",
+        flush=True,
+    )
+
+# ---------------------------------------------------------------------------
 # Student-model system prompts (short, task-specific)
 # ---------------------------------------------------------------------------
 
@@ -318,12 +357,19 @@ def _call_claude(system: str, user: str, model: str = DISTILLATION_MODEL) -> str
         anthropic.APIError: On API errors.
     """
     client = _get_anthropic_client()
+    preview = user[:200].replace("\n", " ")
+    print(f"[api] Calling {model} | {preview}...", flush=True)
     message = client.messages.create(
         model=model,
         max_tokens=2048,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
+    usage = message.usage
+    _track_cost(usage.input_tokens, usage.output_tokens)
+    print(f"[api] ✓ {usage.input_tokens}in/{usage.output_tokens}out tokens", flush=True)
+    if _total_calls % 10 == 0:
+        _print_cost_summary()
     return message.content[0].text
 
 
@@ -409,7 +455,9 @@ def _load_seed_rows(conn: Any, limit: int = 200) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dict]:
+def generate_query_parser_pairs(
+    conn: Any, count: int = PAIRS_PER_TASK, outfile: Path | None = None,
+) -> list[dict]:
     """Generate query parser training pairs via Claude distillation.
 
     Pipeline: fetch seed rows → generate questions → call Claude for each →
@@ -418,6 +466,8 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
     Args:
         conn: A live psycopg2 connection.
         count: Number of training pairs to generate.
+        outfile: If provided, pairs are appended incrementally so partial
+            progress survives interruption.
 
     Returns:
         A list of ChatML pair dicts.
@@ -428,36 +478,51 @@ def generate_query_parser_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    for idx, q in enumerate(questions):
-        if idx > 0 and idx % 25 == 0:
-            time.sleep(1)
-        teacher_prompt = build_query_parser_prompt(
-            question=q["question"],
-            data_sources=data_sources,
-            question_style=q["style"],
-        )
-        try:
-            response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[warn] Claude call failed for pair {idx}: {exc}")
-            continue
-        validated = _validate_json(response_text)
-        if validated is None:
-            print(f"[warn] Invalid JSON response for pair {idx}, skipping.")
-            continue
-        # Student sees only the raw question, not the distillation scaffold
-        pairs.append(
-            format_as_chatml(
+    fh = None
+    if outfile is not None:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        fh = outfile.open("w", encoding="utf-8")
+
+    try:
+        for idx, q in enumerate(questions):
+            if idx > 0 and idx % 25 == 0:
+                time.sleep(1)
+            teacher_prompt = build_query_parser_prompt(
+                question=q["question"],
+                data_sources=data_sources,
+                question_style=q["style"],
+            )
+            try:
+                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[warn] Claude call failed for pair {idx}: {exc}", flush=True)
+                continue
+            validated = _validate_json(response_text)
+            if validated is None:
+                print(f"[warn] Invalid JSON response for pair {idx}, skipping.", flush=True)
+                continue
+            # Student sees only the raw question, not the distillation scaffold
+            pair = format_as_chatml(
                 system=_STUDENT_QUERY_PARSER_SYSTEM,
                 user=q["question"],
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
-        )
+            pairs.append(pair)
+            if fh is not None:
+                fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+                fh.flush()
+            print(f"[query_parser] {len(pairs)}/{count} pairs generated", flush=True)
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[query_parser] Saved {len(pairs)} pairs to {outfile}", flush=True)
 
     return pairs
 
 
-def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dict]:
+def generate_explainer_pairs(
+    conn: Any, count: int = PAIRS_PER_TASK, outfile: Path | None = None,
+) -> list[dict]:
     """Generate explainer training pairs via Claude distillation.
 
     Fetches census/health data grouped by state and metric, then calls Claude
@@ -466,6 +531,8 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
     Args:
         conn: A live psycopg2 connection.
         count: Number of training pairs to generate.
+        outfile: If provided, pairs are appended incrementally so partial
+            progress survives interruption.
 
     Returns:
         A list of ChatML pair dicts.
@@ -474,30 +541,42 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
     registers_cycle = list(REGISTERS)
     pairs: list[dict] = []
 
-    for idx in range(count):
-        if idx > 0 and idx % 25 == 0:
-            time.sleep(1)
-        row = seed_rows[idx % len(seed_rows)]
-        register = registers_cycle[idx % len(registers_cycle)]
-        teacher_prompt = build_explainer_prompt(data=row, register=register)
-        try:
-            response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[warn] Claude call failed for explainer pair {idx}: {exc}")
-            continue
-        validated = _validate_json(response_text)
-        if validated is None:
-            print(f"[warn] Invalid JSON response for explainer pair {idx}, skipping.")
-            continue
-        # Student sees only the JSON data context + register, not the full distillation scaffold
-        student_user = json.dumps({"data": row, "register": register}, ensure_ascii=False)
-        pairs.append(
-            format_as_chatml(
+    fh = None
+    if outfile is not None:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        fh = outfile.open("w", encoding="utf-8")
+
+    try:
+        for idx in range(count):
+            if idx > 0 and idx % 25 == 0:
+                time.sleep(1)
+            row = seed_rows[idx % len(seed_rows)]
+            register = registers_cycle[idx % len(registers_cycle)]
+            teacher_prompt = build_explainer_prompt(data=row, register=register)
+            try:
+                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[warn] Claude call failed for explainer pair {idx}: {exc}", flush=True)
+                continue
+            validated = _validate_json(response_text)
+            if validated is None:
+                print(f"[warn] Invalid JSON response for explainer pair {idx}, skipping.", flush=True)
+                continue
+            student_user = json.dumps({"data": row, "register": register}, ensure_ascii=False, default=str)
+            pair = format_as_chatml(
                 system=_STUDENT_EXPLAINER_SYSTEM,
                 user=student_user,
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
-        )
+            pairs.append(pair)
+            if fh is not None:
+                fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+                fh.flush()
+            print(f"[explainer] {len(pairs)}/{count} pairs generated", flush=True)
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[explainer] Saved {len(pairs)} pairs to {outfile}", flush=True)
 
     return pairs
 
@@ -505,6 +584,7 @@ def generate_explainer_pairs(conn: Any, count: int = PAIRS_PER_TASK) -> list[dic
 def generate_evaluator_pairs(
     conn: Any,
     count_per_subtask: int = EVALUATOR_PAIRS_PER_SUBTASK,
+    outfile: Path | None = None,
 ) -> list[dict]:
     """Generate evaluator training pairs for all 4 sub-tasks.
 
@@ -514,6 +594,8 @@ def generate_evaluator_pairs(
     Args:
         conn: A live psycopg2 connection.
         count_per_subtask: Number of pairs per sub-task.
+        outfile: If provided, pairs are buffered in memory and written
+            (shuffled) on completion or interruption.
 
     Returns:
         A shuffled list of ChatML pair dicts covering all 4 sub-tasks.
@@ -522,44 +604,49 @@ def generate_evaluator_pairs(
     seed_rows = _load_seed_rows(conn)
     all_pairs: list[dict] = []
     call_count = 0
+    total = count_per_subtask * len(evaluator_tasks)
 
-    for task in evaluator_tasks:
-        for idx in range(count_per_subtask):
-            if call_count > 0 and call_count % 25 == 0:
-                time.sleep(1)
-            row = seed_rows[idx % len(seed_rows)]
-            context = json.dumps(row, ensure_ascii=False)
-            # Use a placeholder model output for the evaluator task
-            model_output = (
-                f"Based on the data, {row.get('state', 'this state')} shows elevated "
-                f"{row.get('metric_name', row.get('metric', 'outcome'))} rates that reflect structural inequities."
-            )
-            teacher_prompt = build_evaluator_prompt(
-                task=task,
-                context=context,
-                model_output=model_output,
-            )
-            try:
-                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[warn] Claude call failed for evaluator {task} pair {idx}: {exc}")
+    try:
+        for task in evaluator_tasks:
+            for idx in range(count_per_subtask):
+                if call_count > 0 and call_count % 25 == 0:
+                    time.sleep(1)
                 call_count += 1
-                continue
-            validated = _validate_json(response_text)
-            if validated is None:
-                print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.")
-                call_count += 1
-                continue
-            # Student sees only raw context + output, not the full evaluation scaffold
-            student_user = f"Context:\n{context}\n\nModel output:\n{model_output}"
-            all_pairs.append(
-                format_as_chatml(
-                    system=_STUDENT_EVALUATOR_SYSTEM,
-                    user=student_user,
-                    assistant=json.dumps(validated, ensure_ascii=False),
+                row = seed_rows[idx % len(seed_rows)]
+                context = json.dumps(row, ensure_ascii=False, default=str)
+                model_output = (
+                    f"Based on the data, {row.get('state', 'this state')} shows elevated "
+                    f"{row.get('metric_name', row.get('metric', 'outcome'))} rates that reflect structural inequities."
                 )
-            )
-            call_count += 1
+                teacher_prompt = build_evaluator_prompt(
+                    task=task,
+                    context=context,
+                    model_output=model_output,
+                )
+                try:
+                    response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[warn] Claude call failed for evaluator {task} pair {idx}: {exc}", flush=True)
+                    continue
+                validated = _validate_json(response_text)
+                if validated is None:
+                    print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.", flush=True)
+                    continue
+                student_user = f"Context:\n{context}\n\nModel output:\n{model_output}"
+                all_pairs.append(
+                    format_as_chatml(
+                        system=_STUDENT_EVALUATOR_SYSTEM,
+                        user=student_user,
+                        assistant=json.dumps(validated, ensure_ascii=False),
+                    )
+                )
+                print(f"[evaluator/{task}] {len(all_pairs)}/{total} pairs generated", flush=True)
+    finally:
+        if outfile is not None:
+            if all_pairs:
+                random.shuffle(all_pairs)
+            write_jsonl(all_pairs, outfile)
+            print(f"[evaluator] Saved {len(all_pairs)} pairs to {outfile}", flush=True)
 
     random.shuffle(all_pairs)
     return all_pairs
@@ -582,7 +669,17 @@ def main(task: str) -> None:
     """
     import psycopg2  # type: ignore[import-untyped]
 
-    db_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    db_url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("POSTGRES_URL")
+        or os.environ.get("DAGSTER_POSTGRES_URL")
+    )
     if not db_url:
         # Build from individual env vars
         host = os.environ.get("POSTGRES_HOST", "localhost")
@@ -598,17 +695,15 @@ def main(task: str) -> None:
         PAIRS_DIR.mkdir(parents=True, exist_ok=True)
 
         _TASK_MAP = {
-            "query_parser": lambda: (
-                generate_query_parser_pairs(conn, count=PAIRS_PER_TASK),
-                PAIRS_DIR / "query_parser.jsonl",
+            "query_parser": lambda: generate_query_parser_pairs(
+                conn, count=PAIRS_PER_TASK, outfile=PAIRS_DIR / "query_parser.jsonl",
             ),
-            "explainer": lambda: (
-                generate_explainer_pairs(conn, count=PAIRS_PER_TASK),
-                PAIRS_DIR / "explainer.jsonl",
+            "explainer": lambda: generate_explainer_pairs(
+                conn, count=PAIRS_PER_TASK, outfile=PAIRS_DIR / "explainer.jsonl",
             ),
-            "evaluator": lambda: (
-                generate_evaluator_pairs(conn, count_per_subtask=EVALUATOR_PAIRS_PER_SUBTASK),
-                PAIRS_DIR / "evaluator.jsonl",
+            "evaluator": lambda: generate_evaluator_pairs(
+                conn, count_per_subtask=EVALUATOR_PAIRS_PER_SUBTASK,
+                outfile=PAIRS_DIR / "evaluator.jsonl",
             ),
         }
 
@@ -622,9 +717,15 @@ def main(task: str) -> None:
             )
 
         for t in tasks_to_run:
-            pairs, outfile = _TASK_MAP[t]()
-            count = write_pairs_jsonl(pairs, outfile)
-            print(f"[done] Wrote {count} pairs to {outfile}")
+            pairs = _TASK_MAP[t]()
+            print(f"[done] {t}: {len(pairs)} pairs")
+            _print_cost_summary()
+
+        print("\n" + "=" * 60)
+        print("FINAL COST SUMMARY")
+        print("=" * 60)
+        _print_cost_summary()
+        print("=" * 60)
     finally:
         conn.close()
 

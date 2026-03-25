@@ -11,15 +11,17 @@ for the Data for Black Lives (D4BL) AI agent:
 
   Phase 2 — Task-Specific LoRA Adapters (three adapters trained sequentially):
     Adapter A — Query Parser:  lightweight attention-only LoRA (r=8) trained on
-                               ~300 structured query examples for 3 epochs.
+                               ~700+ structured query examples for 7 epochs.
     Adapter B — Data Explainer: larger LoRA (r=32, attention+FFN) trained on
                                 long-form explanation data at 4096-token context.
     Adapter C — Evaluator:     medium attention-only LoRA (r=16) trained on
-                               ~600 evaluation examples for 3 epochs.
+                               ~700+ evaluation examples for 7 epochs.
 
   Phase 3 — GGUF Export:
     Each task adapter is loaded over the domain-adapted base, then exported to
     GGUF format (q4_k_m quantization) for local Ollama deployment.
+    NOTE: Each export must be done in a separate cell with a runtime restart
+    between them to avoid VRAM exhaustion on T4.
 
 Run in Google Colab with a T4 or A100 GPU. All secrets (HF token) are read from
 Colab's userdata store. Training data files are uploaded at runtime.
@@ -35,9 +37,9 @@ Colab's userdata store. Training data files are uploaded at runtime.
 # | Phase | What it does | LoRA rank | Epochs |
 # |-------|--------------|-----------|--------|
 # | 1 — Domain Adaptation | Teach the model D4BL vocabulary and equity framing | r=16 (all layers) | 1 |
-# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 3 |
-# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 3 |
-# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 3 |
+# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 7 |
+# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 7 |
+# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 7 |
 # | 3 — GGUF Export | Quantise each adapter to q4_k_m for Ollama deployment | — | — |
 #
 # **Prerequisites**
@@ -46,28 +48,77 @@ Colab's userdata store. Training data files are uploaded at runtime.
 # - Training data files (see Section 1 for the full list)
 
 # %% [markdown]
-# ## 0. Environment Setup
+# ## 0a. Restore from Google Drive (run first on every session)
+#
+# Mounts Google Drive and restores any previously backed-up training data
+# and model outputs. If this is a fresh session, nothing will be restored
+# and you'll need to upload files in Section 1.
 
 # %%
-# Install dependencies
-# unsloth provides optimised LoRA training; install before other packages
-# so it can patch transformers/peft correctly at import time.
+from google.colab import drive
+drive.mount('/content/drive')
+
+import os, shutil
+from pathlib import Path
+
+DRIVE_DIR = "/content/drive/MyDrive/d4bl_training"
+os.makedirs(f"{DRIVE_DIR}/outputs", exist_ok=True)
+
+# Restore JSONL files from Drive if present
+restored = 0
+if os.path.exists(DRIVE_DIR):
+    for f in os.listdir(DRIVE_DIR):
+        if f.endswith(".jsonl"):
+            shutil.copy(f"{DRIVE_DIR}/{f}", f)
+            restored += 1
+
+# Restore model outputs from Drive if present
+OUTPUT_DIR = Path("/content/d4bl_training")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+if os.path.exists(f"{DRIVE_DIR}/domain_merged"):
+    for item in os.listdir(DRIVE_DIR):
+        src = f"{DRIVE_DIR}/{item}"
+        dst = str(OUTPUT_DIR / item)
+        if os.path.isdir(src) and not os.path.exists(dst):
+            shutil.copytree(src, dst)
+            print(f"  Restored {item} from Drive")
+
+if restored:
+    print(f"Restored {restored} JSONL files from Drive — skip the upload cell")
+else:
+    print("No files on Drive yet — run the upload cell next")
+
+# %% [markdown]
+# ## 0b. Environment Setup
+
+# %%
+# Install dependencies — Unsloth first, then pin trl to a compatible version.
+# This cell restarts the runtime automatically. After restart, skip this cell
+# and continue from the imports cell.
 import subprocess, sys  # noqa: E401
 subprocess.run([sys.executable, "-m", "pip", "install", "unsloth"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps",
-                "trl", "peft", "accelerate", "bitsandbytes"], check=True)
+                "trl==0.21.0", "peft==0.17.0", "accelerate==1.10.0",
+                "bitsandbytes==0.47.0"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
+# Pinned versions tested with Unsloth on Colab (2026-03-25).
+# trl >=0.16 uses SFTConfig instead of TrainingArguments.
+# Restart runtime so patched imports take effect
+import os
+os.kill(os.getpid(), 9)
 
 # %%
+# Imports — run this cell after the runtime restart above
+import gc
 import json
 import os
+import torch
 from pathlib import Path
 
 from datasets import Dataset
 from google.colab import userdata
 from huggingface_hub import login
-from transformers import TrainingArguments
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel
 
 # Authenticate with Hugging Face
@@ -84,12 +135,15 @@ login(token=HF_TOKEN)
 # Configuration constants
 # ---------------------------------------------------------------------------
 
-# Sequence length caps for each phase / adapter
-MAX_SEQ_LENGTH_DOMAIN = 2048      # Phase 1 — domain pre-training
-MAX_SEQ_LENGTH_TASK = 2048        # Phase 2 task adapters (parser, evaluator)
-MAX_SEQ_LENGTH_EXPLAINER = 4096   # Phase 2b — explainer needs longer context
+MAX_SEQ_LENGTH_DOMAIN = 2048
+MAX_SEQ_LENGTH_TASK = 2048
+MAX_SEQ_LENGTH_EXPLAINER = 4096
 
-# Base directory for all saved checkpoints and merged models
+# Auto-detect precision: A100/H100 support bf16, T4/L4 need fp16
+USE_BF16 = torch.cuda.is_bf16_supported()
+USE_FP16 = not USE_BF16
+print(f"Precision: {'bf16' if USE_BF16 else 'fp16'}")
+
 OUTPUT_DIR = Path("/content/d4bl_training")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -101,14 +155,16 @@ GGUF_DIR = str(OUTPUT_DIR / "gguf")
 
 Path(GGUF_DIR).mkdir(parents=True, exist_ok=True)
 
+DRIVE_DIR = "/content/drive/MyDrive/d4bl_training"
+
 print("Output directory:", OUTPUT_DIR)
 print("Configuration loaded.")
 
 # %% [markdown]
 # ## 1. Upload Training Data
 #
-# Use the file picker below to upload **all** training data files before
-# proceeding. Expected files:
+# Use the file picker below to upload **all** training data files.
+# **Skip this cell** if the restore cell above found files on Drive.
 #
 # | File | Used in |
 # |------|---------|
@@ -119,9 +175,6 @@ print("Configuration loaded.")
 # | `explainer_val.jsonl` | Phase 2b — explainer validation split |
 # | `evaluator_train.jsonl` | Phase 2c — evaluator training split |
 # | `evaluator_val.jsonl` | Phase 2c — evaluator validation split |
-#
-# Each file must be newline-delimited JSON with at minimum a `"text"` key per
-# record (the formatted prompt+completion string).
 
 # %%
 from google.colab import files as colab_files
@@ -133,8 +186,18 @@ for name in uploaded:
     size_kb = len(uploaded[name]) / 1024
     print(f"  {name:40s} {size_kb:.1f} KB")
 
+# Back up to Drive so we don't have to re-upload next time
+import shutil
+for name in uploaded:
+    shutil.copy(name, f"{DRIVE_DIR}/{name}")
+print("Training data backed up to Drive.")
+
 # %%
-def load_jsonl(path: str) -> list[dict]:
+# ---------------------------------------------------------------------------
+# Data loading helpers
+# ---------------------------------------------------------------------------
+
+def load_jsonl(path: str, require_text: bool = False) -> list[dict]:
     """Read a newline-delimited JSON file and return a list of records."""
     records = []
     with open(path, "r", encoding="utf-8") as fh:
@@ -145,7 +208,7 @@ def load_jsonl(path: str) -> list[dict]:
             record = json.loads(line)
             if not isinstance(record, dict):
                 raise ValueError(f"{path}:{line_no}: expected JSON object")
-            if "text" not in record or not isinstance(record["text"], str):
+            if require_text and ("text" not in record or not isinstance(record["text"], str)):
                 raise ValueError(
                     f"{path}:{line_no}: missing or invalid 'text' field"
                 )
@@ -153,14 +216,38 @@ def load_jsonl(path: str) -> list[dict]:
     return records
 
 
-def load_dataset_from_jsonl(path: str) -> Dataset:
+def load_dataset_from_jsonl(path: str, require_text: bool = False) -> Dataset:
     """Load a JSONL file as a HuggingFace Dataset."""
-    records = load_jsonl(path)
+    records = load_jsonl(path, require_text=require_text)
     return Dataset.from_list(records)
 
 
+def format_and_tokenize(dataset, tokenizer):
+    """Convert messages-format dataset to text using the model's native chat template.
+
+    Uses tokenizer.apply_chat_template() to produce the exact token format
+    the model was pre-trained with, preserving instruction-following structure.
+    Falls back to manual ChatML if the tokenizer lacks a chat template.
+    """
+    formatted = []
+    for record in dataset:
+        msgs = record["messages"]
+        try:
+            text = tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+        except (AttributeError, TypeError, KeyError, ValueError) as exc:
+            print(f"Warning: apply_chat_template failed ({exc}), using manual ChatML")
+            parts = []
+            for msg in msgs:
+                parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
+            text = "\n".join(parts) + "\n"
+        formatted.append({"text": text})
+    return Dataset.from_list(formatted)
+
+
 # Load all datasets
-corpus_dataset = load_dataset_from_jsonl("corpus_pretrain.jsonl")
+corpus_dataset = load_dataset_from_jsonl("corpus_pretrain.jsonl", require_text=True)
 
 parser_train_dataset = load_dataset_from_jsonl("query_parser_train.jsonl")
 parser_val_dataset = load_dataset_from_jsonl("query_parser_val.jsonl")
@@ -171,14 +258,13 @@ explainer_val_dataset = load_dataset_from_jsonl("explainer_val.jsonl")
 evaluator_train_dataset = load_dataset_from_jsonl("evaluator_train.jsonl")
 evaluator_val_dataset = load_dataset_from_jsonl("evaluator_val.jsonl")
 
-print("Datasets loaded:")
 print(f"  corpus_pretrain       : {len(corpus_dataset):>5} examples")
-print(f"  query_parser_train    : {len(parser_train_dataset):>5} examples")
-print(f"  query_parser_val      : {len(parser_val_dataset):>5} examples")
-print(f"  explainer_train       : {len(explainer_train_dataset):>5} examples")
-print(f"  explainer_val         : {len(explainer_val_dataset):>5} examples")
-print(f"  evaluator_train       : {len(evaluator_train_dataset):>5} examples")
-print(f"  evaluator_val         : {len(evaluator_val_dataset):>5} examples")
+print(f"  query_parser (train)  : {len(parser_train_dataset):>5} examples")
+print(f"  query_parser (val)    : {len(parser_val_dataset):>5} examples")
+print(f"  explainer (train)     : {len(explainer_train_dataset):>5} examples")
+print(f"  explainer (val)       : {len(explainer_val_dataset):>5} examples")
+print(f"  evaluator (train)     : {len(evaluator_train_dataset):>5} examples")
+print(f"  evaluator (val)       : {len(evaluator_val_dataset):>5} examples")
 
 # %% [markdown]
 # ## 2. Phase 1: Domain-Adaptive LoRA Pre-Training
@@ -197,11 +283,10 @@ print(f"  evaluator_val         : {len(evaluator_val_dataset):>5} examples")
 domain_model, domain_tokenizer = FastLanguageModel.from_pretrained(
     model_name="unsloth/Qwen2.5-3B-Instruct",
     max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
-    dtype=None,           # auto-detect (bfloat16 on Ampere+, float16 on T4)
+    dtype=None,
     load_in_4bit=True,
 )
 print("Base model loaded.")
-print(f"  Parameters : {domain_model.num_parameters():,}")
 
 # %%
 # Attach domain-adaptation LoRA adapters
@@ -209,15 +294,9 @@ domain_model = FastLanguageModel.get_peft_model(
     domain_model,
     r=16,
     target_modules=[
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "gate_proj",
-        "up_proj",
-        "down_proj",
-        "embed_tokens",
-        "lm_head",
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+        "embed_tokens", "lm_head",
     ],
     lora_alpha=32,
     lora_dropout=0,
@@ -230,29 +309,28 @@ domain_model.print_trainable_parameters()
 
 # %%
 # Train Phase 1 — domain adaptation
-domain_training_args = TrainingArguments(
-    output_dir=str(OUTPUT_DIR / "phase1_checkpoints"),
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=4,
-    warmup_steps=50,
-    num_train_epochs=1,
-    learning_rate=2e-4,
-    fp16=True,
-    logging_steps=10,
-    optim="adamw_8bit",
-    seed=42,
-    save_steps=500,
-    save_total_limit=2,
-    report_to="none",
-)
-
 domain_trainer = SFTTrainer(
     model=domain_model,
-    tokenizer=domain_tokenizer,
+    processing_class=domain_tokenizer,
     train_dataset=corpus_dataset,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
-    args=domain_training_args,
+    args=SFTConfig(
+        output_dir=str(OUTPUT_DIR / "phase1_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_DOMAIN,
+        dataset_text_field="text",
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
+        warmup_steps=50,
+        num_train_epochs=1,
+        learning_rate=2e-4,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
+        logging_steps=10,
+        optim="adamw_8bit",
+        seed=42,
+        save_steps=500,
+        save_total_limit=2,
+        report_to="none",
+    ),
 )
 
 print("Starting Phase 1 training...")
@@ -270,15 +348,16 @@ domain_model.save_pretrained_merged(
 )
 print(f"Domain-merged model saved to: {DOMAIN_MERGED_DIR}")
 
-# Free VRAM before loading the next model
-import gc
-import torch
-
-del domain_model
-del domain_trainer
+del domain_model, domain_trainer
 gc.collect()
 torch.cuda.empty_cache()
 print("VRAM freed.")
+
+# %%
+# Back up Phase 1 outputs to Drive
+!cp -r /content/d4bl_training/domain_merged {DRIVE_DIR}/
+!cp -r /content/d4bl_training/phase1_checkpoints {DRIVE_DIR}/
+print("Phase 1 backed up to Drive.")
 
 # %% [markdown]
 # ## 3. Phase 2: Task-Specific LoRA Adapters
@@ -287,84 +366,68 @@ print("VRAM freed.")
 # Phase 1. We load that checkpoint fresh for each adapter, attach a smaller
 # LoRA sized for the task, train, save only the adapter weights, then free
 # VRAM before moving to the next adapter.
+#
+# **Important:** Task pair datasets use `messages` format (list of role/content
+# dicts). We convert them to plain ChatML text using `format_and_tokenize`
+# before passing to SFTTrainer, which avoids Unsloth's dataset filtering issues.
 
 # %% [markdown]
 # ### 3a. Adapter A: Query Parser
-#
-# **Goal:** Structured intent extraction — map a natural-language query to a
-# typed JSON payload (metric, geography, filters, comparison).
-#
-# | Hyperparameter | Value |
-# |----------------|-------|
-# | LoRA rank | r=8 (attention-only) |
-# | Target modules | q_proj, k_proj, v_proj, o_proj |
-# | lora_alpha | 16 |
-# | Training examples | ~300 |
-# | Epochs | 3 |
-# | Learning rate | 1e-4 |
-#
-# Attention-only adapters are sufficient for short, highly-structured outputs
-# and keep the parameter count low.
 
 # %%
-# Load domain-adapted model for parser adapter training
 parser_model, parser_tokenizer = FastLanguageModel.from_pretrained(
     model_name=DOMAIN_MERGED_DIR,
     max_seq_length=MAX_SEQ_LENGTH_TASK,
     dtype=None,
     load_in_4bit=True,
 )
-print("Domain-merged model loaded for parser adapter.")
 
-# Attach parser LoRA — attention-only, r=8
 parser_model = FastLanguageModel.get_peft_model(
     parser_model,
     r=8,
-    target_modules=[
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-    ],
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_alpha=16,
     lora_dropout=0,
     bias="none",
     use_gradient_checkpointing="unsloth",
     random_state=42,
 )
-print("Parser LoRA adapters attached.")
 parser_model.print_trainable_parameters()
 
 # %%
-# Train Adapter A — Query Parser
-parser_training_args = TrainingArguments(
-    output_dir=str(OUTPUT_DIR / "parser_checkpoints"),
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=2,
-    warmup_steps=20,
-    num_train_epochs=3,
-    learning_rate=1e-4,
-    fp16=True,
-    logging_steps=10,
-    optim="adamw_8bit",
-    seed=42,
-    eval_strategy="steps",
-    eval_steps=25,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    save_steps=25,
-    save_total_limit=3,
-    report_to="none",
-)
+# Convert messages format to plain text
+parser_train_text = format_and_tokenize(parser_train_dataset, parser_tokenizer)
+parser_val_text = format_and_tokenize(parser_val_dataset, parser_tokenizer)
+print(f"Formatted: {len(parser_train_text)} train, {len(parser_val_text)} val")
 
 parser_trainer = SFTTrainer(
     model=parser_model,
-    tokenizer=parser_tokenizer,
-    train_dataset=parser_train_dataset,
-    eval_dataset=parser_val_dataset,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_TASK,
-    args=parser_training_args,
+    processing_class=parser_tokenizer,
+    train_dataset=parser_train_text,
+    eval_dataset=parser_val_text,
+    args=SFTConfig(
+        output_dir=str(OUTPUT_DIR / "parser_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_TASK,
+        dataset_text_field="text",
+        packing=False,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=2,
+        warmup_steps=20,
+        num_train_epochs=7,
+        learning_rate=1e-4,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
+        logging_steps=5,
+        optim="adamw_8bit",
+        seed=42,
+        eval_strategy="steps",
+        eval_steps=25,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        save_steps=25,
+        save_total_limit=3,
+        report_to="none",
+    ),
 )
 
 print("Starting Adapter A (Query Parser) training...")
@@ -372,59 +435,36 @@ parser_stats = parser_trainer.train()
 print("Parser adapter training complete.")
 print(f"  Training loss : {parser_stats.training_loss:.4f}")
 
-# Save only the adapter weights
 parser_model.save_pretrained(ADAPTER_PARSER_DIR)
 parser_tokenizer.save_pretrained(ADAPTER_PARSER_DIR)
 print(f"Parser adapter saved to: {ADAPTER_PARSER_DIR}")
 
-# Free VRAM
-del parser_model
-del parser_trainer
+del parser_model, parser_trainer
 gc.collect()
 torch.cuda.empty_cache()
 print("VRAM freed.")
 
+# %%
+!cp -r /content/d4bl_training/adapter_parser {DRIVE_DIR}/
+print("Parser adapter backed up to Drive.")
+
 # %% [markdown]
 # ### 3b. Adapter B: Data Explainer
-#
-# **Goal:** Generate plain-language, equity-framed explanations of statistical
-# data for a general audience — e.g., "What does a Gini coefficient of 0.49
-# mean for Black households in Cook County?"
-#
-# | Hyperparameter | Value |
-# |----------------|-------|
-# | LoRA rank | r=32 (attention + FFN) |
-# | Target modules | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj |
-# | lora_alpha | 64 |
-# | Max sequence length | 4096 |
-# | Epochs | 3 |
-# | Learning rate | 1e-4 |
-#
-# The larger rank and FFN coverage are needed for long-form generation quality.
-# The 4096-token context handles data tables embedded in prompts.
 
 # %%
-# Load domain-adapted model for explainer adapter training
 explainer_model, explainer_tokenizer = FastLanguageModel.from_pretrained(
     model_name=DOMAIN_MERGED_DIR,
     max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
     dtype=None,
     load_in_4bit=True,
 )
-print("Domain-merged model loaded for explainer adapter.")
 
-# Attach explainer LoRA — attention + FFN, r=32
 explainer_model = FastLanguageModel.get_peft_model(
     explainer_model,
     r=32,
     target_modules=[
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "gate_proj",
-        "up_proj",
-        "down_proj",
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
     ],
     lora_alpha=64,
     lora_dropout=0,
@@ -432,39 +472,41 @@ explainer_model = FastLanguageModel.get_peft_model(
     use_gradient_checkpointing="unsloth",
     random_state=42,
 )
-print("Explainer LoRA adapters attached.")
 explainer_model.print_trainable_parameters()
 
 # %%
-# Train Adapter B — Data Explainer
-explainer_training_args = TrainingArguments(
-    output_dir=str(OUTPUT_DIR / "explainer_checkpoints"),
-    per_device_train_batch_size=2,
-    gradient_accumulation_steps=4,
-    warmup_steps=30,
-    num_train_epochs=3,
-    learning_rate=1e-4,
-    fp16=True,
-    logging_steps=10,
-    optim="adamw_8bit",
-    seed=42,
-    eval_strategy="steps",
-    eval_steps=20,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    save_steps=20,
-    save_total_limit=3,
-    report_to="none",
-)
+explainer_train_text = format_and_tokenize(explainer_train_dataset, explainer_tokenizer)
+explainer_val_text = format_and_tokenize(explainer_val_dataset, explainer_tokenizer)
+print(f"Formatted: {len(explainer_train_text)} train, {len(explainer_val_text)} val")
 
 explainer_trainer = SFTTrainer(
     model=explainer_model,
-    tokenizer=explainer_tokenizer,
-    train_dataset=explainer_train_dataset,
-    eval_dataset=explainer_val_dataset,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
-    args=explainer_training_args,
+    processing_class=explainer_tokenizer,
+    train_dataset=explainer_train_text,
+    eval_dataset=explainer_val_text,
+    args=SFTConfig(
+        output_dir=str(OUTPUT_DIR / "explainer_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_EXPLAINER,
+        dataset_text_field="text",
+        packing=False,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        warmup_steps=30,
+        num_train_epochs=7,
+        learning_rate=1e-4,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
+        logging_steps=5,
+        optim="adamw_8bit",
+        seed=42,
+        eval_strategy="steps",
+        eval_steps=20,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        save_steps=20,
+        save_total_limit=3,
+        report_to="none",
+    ),
 )
 
 print("Starting Adapter B (Data Explainer) training...")
@@ -472,93 +514,75 @@ explainer_stats = explainer_trainer.train()
 print("Explainer adapter training complete.")
 print(f"  Training loss : {explainer_stats.training_loss:.4f}")
 
-# Save only the adapter weights
 explainer_model.save_pretrained(ADAPTER_EXPLAINER_DIR)
 explainer_tokenizer.save_pretrained(ADAPTER_EXPLAINER_DIR)
 print(f"Explainer adapter saved to: {ADAPTER_EXPLAINER_DIR}")
 
-# Free VRAM
-del explainer_model
-del explainer_trainer
+del explainer_model, explainer_trainer
 gc.collect()
 torch.cuda.empty_cache()
 print("VRAM freed.")
 
+# %%
+!cp -r /content/d4bl_training/adapter_explainer {DRIVE_DIR}/
+print("Explainer adapter backed up to Drive.")
+
 # %% [markdown]
 # ### 3c. Adapter C: Evaluator
-#
-# **Goal:** Score and critique D4BL research outputs on four dimensions:
-# factual accuracy, equity framing, source quality, and actionability.
-# Returns a structured JSON rubric with scores and a brief rationale.
-#
-# | Hyperparameter | Value |
-# |----------------|-------|
-# | LoRA rank | r=16 (attention-only) |
-# | Target modules | q_proj, k_proj, v_proj, o_proj |
-# | lora_alpha | 32 |
-# | Training examples | ~600 |
-# | Epochs | 3 |
-# | Learning rate | 1e-4 |
 
 # %%
-# Load domain-adapted model for evaluator adapter training
 evaluator_model, evaluator_tokenizer = FastLanguageModel.from_pretrained(
     model_name=DOMAIN_MERGED_DIR,
     max_seq_length=MAX_SEQ_LENGTH_TASK,
     dtype=None,
     load_in_4bit=True,
 )
-print("Domain-merged model loaded for evaluator adapter.")
 
-# Attach evaluator LoRA — attention-only, r=16
 evaluator_model = FastLanguageModel.get_peft_model(
     evaluator_model,
     r=16,
-    target_modules=[
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-    ],
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_alpha=32,
     lora_dropout=0,
     bias="none",
     use_gradient_checkpointing="unsloth",
     random_state=42,
 )
-print("Evaluator LoRA adapters attached.")
 evaluator_model.print_trainable_parameters()
 
 # %%
-# Train Adapter C — Evaluator
-evaluator_training_args = TrainingArguments(
-    output_dir=str(OUTPUT_DIR / "evaluator_checkpoints"),
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=2,
-    warmup_steps=20,
-    num_train_epochs=3,
-    learning_rate=1e-4,
-    fp16=True,
-    logging_steps=10,
-    optim="adamw_8bit",
-    seed=42,
-    eval_strategy="steps",
-    eval_steps=25,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    save_steps=25,
-    save_total_limit=3,
-    report_to="none",
-)
+evaluator_train_text = format_and_tokenize(evaluator_train_dataset, evaluator_tokenizer)
+evaluator_val_text = format_and_tokenize(evaluator_val_dataset, evaluator_tokenizer)
+print(f"Formatted: {len(evaluator_train_text)} train, {len(evaluator_val_text)} val")
 
 evaluator_trainer = SFTTrainer(
     model=evaluator_model,
-    tokenizer=evaluator_tokenizer,
-    train_dataset=evaluator_train_dataset,
-    eval_dataset=evaluator_val_dataset,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_TASK,
-    args=evaluator_training_args,
+    processing_class=evaluator_tokenizer,
+    train_dataset=evaluator_train_text,
+    eval_dataset=evaluator_val_text,
+    args=SFTConfig(
+        output_dir=str(OUTPUT_DIR / "evaluator_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_TASK,
+        dataset_text_field="text",
+        packing=False,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=2,
+        warmup_steps=20,
+        num_train_epochs=7,
+        learning_rate=1e-4,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
+        logging_steps=5,
+        optim="adamw_8bit",
+        seed=42,
+        eval_strategy="steps",
+        eval_steps=25,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        save_steps=25,
+        save_total_limit=3,
+        report_to="none",
+    ),
 )
 
 print("Starting Adapter C (Evaluator) training...")
@@ -566,139 +590,200 @@ evaluator_stats = evaluator_trainer.train()
 print("Evaluator adapter training complete.")
 print(f"  Training loss : {evaluator_stats.training_loss:.4f}")
 
-# Save only the adapter weights
 evaluator_model.save_pretrained(ADAPTER_EVALUATOR_DIR)
 evaluator_tokenizer.save_pretrained(ADAPTER_EVALUATOR_DIR)
 print(f"Evaluator adapter saved to: {ADAPTER_EVALUATOR_DIR}")
 
-# Free VRAM
-del evaluator_model
-del evaluator_trainer
+del evaluator_model, evaluator_trainer
 gc.collect()
 torch.cuda.empty_cache()
 print("VRAM freed.")
 
+# %%
+!cp -r /content/d4bl_training/adapter_evaluator {DRIVE_DIR}/
+print("Evaluator adapter backed up to Drive.")
+
 # %% [markdown]
 # ## 4. Phase 3: GGUF Export
 #
-# For each task adapter we:
-# 1. Load the domain-merged base model in **full precision** (load_in_4bit=False)
-#    so that unsloth can merge + quantise without precision loss.
-# 2. Load the task adapter weights on top.
-# 3. Export to GGUF with `q4_k_m` quantisation — a good balance of size (~1.7 GB
-#    per model) and quality for CPU inference via Ollama.
+# Each adapter is exported to GGUF format with q4_k_m quantization (~1.8GB each).
 #
-# The three output files can be registered as separate Ollama model families
-# (e.g., `d4bl-parser:q4_k_m`, `d4bl-explainer:q4_k_m`, `d4bl-evaluator:q4_k_m`).
+# **IMPORTANT:** Each export requires a runtime restart to free VRAM.
+# Run each export cell, then the restart cell, then the next export.
+# The sequence is:
+# 1. Run parser export cell
+# 2. Run restart cell → Reconnect
+# 3. Run explainer export cell
+# 4. Run restart cell → Reconnect
+# 5. Run evaluator export cell
 
 # %%
+# --- Export Parser to GGUF ---
+# (Run the restore cell at the top first if runtime was restarted)
+from pathlib import Path
+from unsloth import FastLanguageModel
 
-# Adapter registry: name → paths and sequence length used during export
-ADAPTERS = {
-    "parser": {
-        "adapter_dir": ADAPTER_PARSER_DIR,
-        "output_name": "d4bl-query-parser-q4_k_m",
-        "max_seq_length": MAX_SEQ_LENGTH_TASK,
-    },
-    "explainer": {
-        "adapter_dir": ADAPTER_EXPLAINER_DIR,
-        "output_name": "d4bl-explainer-q4_k_m",
-        "max_seq_length": MAX_SEQ_LENGTH_EXPLAINER,
-    },
-    "evaluator": {
-        "adapter_dir": ADAPTER_EVALUATOR_DIR,
-        "output_name": "d4bl-evaluator-q4_k_m",
-        "max_seq_length": MAX_SEQ_LENGTH_TASK,
-    },
-}
+OUTPUT_DIR = Path("/content/d4bl_training")
+GGUF_DIR = OUTPUT_DIR / "gguf"
+DRIVE_DIR = "/content/drive/MyDrive/d4bl_training"
 
-gguf_output_paths = {}
+print("--- Exporting parser to GGUF ---")
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name=str(OUTPUT_DIR / "adapter_parser"),
+    max_seq_length=2048,
+    load_in_4bit=True,
+)
+model.save_pretrained_gguf(
+    str(GGUF_DIR / "d4bl-query-parser-q4_k_m"),
+    tokenizer,
+    quantization_method="q4_k_m",
+)
+del model, tokenizer
+import gc, torch
+gc.collect()
+torch.cuda.empty_cache()
+print("Parser GGUF exported.")
 
-for adapter_name, cfg in ADAPTERS.items():
-    print(f"\n--- Exporting '{adapter_name}' to GGUF ---")
-
-    # Load adapter directly via FastLanguageModel (preserves Unsloth GGUF export)
-    export_model, export_tokenizer = FastLanguageModel.from_pretrained(
-        model_name=cfg["adapter_dir"],
-        max_seq_length=cfg["max_seq_length"],
-        dtype=None,
-        load_in_4bit=False,  # full precision required for GGUF export
-    )
-
-    # Export to GGUF — Unsloth handles LoRA merge internally
-    gguf_path = str(Path(GGUF_DIR) / cfg["output_name"])
-    export_model.save_pretrained_gguf(
-        gguf_path,
-        export_tokenizer,
-        quantization_method="q4_k_m",
-    )
-    gguf_output_paths[adapter_name] = gguf_path
-    print(f"  Saved: {gguf_path}")
-
-    # Free VRAM before next adapter
-    del export_model
-    gc.collect()
-    torch.cuda.empty_cache()
-
-print("\nAll GGUF files exported.")
+!cp -r /content/d4bl_training/gguf {DRIVE_DIR}/
+print("Backed up to Drive.")
 
 # %%
-# List GGUF output files with sizes
-print(f"{'File':<55} {'Size (MB)':>10}")
-print("-" * 67)
-for adapter_name, base_path in gguf_output_paths.items():
-    # unsloth appends the quant suffix to the filename
-    for fname in sorted(os.listdir(GGUF_DIR)):
-        if fname.startswith(Path(base_path).name) and fname.endswith(".gguf"):
-            fpath = os.path.join(GGUF_DIR, fname)
-            size_mb = os.path.getsize(fpath) / (1024 ** 2)
-            print(f"{fname:<55} {size_mb:>10.1f}")
+# Restart runtime before next export
+import os
+os.kill(os.getpid(), 9)
+
+# %%
+# --- Export Explainer to GGUF ---
+from google.colab import drive
+drive.mount('/content/drive')
+
+from pathlib import Path
+from unsloth import FastLanguageModel
+
+OUTPUT_DIR = Path("/content/d4bl_training")
+GGUF_DIR = OUTPUT_DIR / "gguf"
+DRIVE_DIR = "/content/drive/MyDrive/d4bl_training"
+
+# Restore adapters from Drive if needed
+import os, shutil
+if not os.path.exists(str(OUTPUT_DIR / "adapter_explainer")):
+    for item in os.listdir(DRIVE_DIR):
+        src = f"{DRIVE_DIR}/{item}"
+        dst = str(OUTPUT_DIR / item)
+        if os.path.isdir(src) and not os.path.exists(dst):
+            shutil.copytree(src, dst)
+    print("Restored from Drive")
+
+print("--- Exporting explainer to GGUF ---")
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name=str(OUTPUT_DIR / "adapter_explainer"),
+    max_seq_length=4096,
+    load_in_4bit=True,
+)
+model.save_pretrained_gguf(
+    str(GGUF_DIR / "d4bl-explainer-q4_k_m"),
+    tokenizer,
+    quantization_method="q4_k_m",
+)
+del model, tokenizer
+import gc, torch
+gc.collect()
+torch.cuda.empty_cache()
+print("Explainer GGUF exported.")
+
+!cp -r /content/d4bl_training/gguf {DRIVE_DIR}/
+print("Backed up to Drive.")
+
+# %%
+# Restart runtime before next export
+import os
+os.kill(os.getpid(), 9)
+
+# %%
+# --- Export Evaluator to GGUF ---
+from google.colab import drive
+drive.mount('/content/drive')
+
+from pathlib import Path
+from unsloth import FastLanguageModel
+
+OUTPUT_DIR = Path("/content/d4bl_training")
+GGUF_DIR = OUTPUT_DIR / "gguf"
+DRIVE_DIR = "/content/drive/MyDrive/d4bl_training"
+
+# Restore adapters from Drive if needed
+import os, shutil
+if not os.path.exists(str(OUTPUT_DIR / "adapter_evaluator")):
+    for item in os.listdir(DRIVE_DIR):
+        src = f"{DRIVE_DIR}/{item}"
+        dst = str(OUTPUT_DIR / item)
+        if os.path.isdir(src) and not os.path.exists(dst):
+            shutil.copytree(src, dst)
+    print("Restored from Drive")
+
+print("--- Exporting evaluator to GGUF ---")
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name=str(OUTPUT_DIR / "adapter_evaluator"),
+    max_seq_length=2048,
+    load_in_4bit=True,
+)
+model.save_pretrained_gguf(
+    str(GGUF_DIR / "d4bl-evaluator-q4_k_m"),
+    tokenizer,
+    quantization_method="q4_k_m",
+)
+del model, tokenizer
+import gc, torch
+gc.collect()
+torch.cuda.empty_cache()
+print("Evaluator GGUF exported.")
+
+!cp -r /content/d4bl_training/gguf {DRIVE_DIR}/
+print("All GGUFs backed up to Drive.")
 
 # %% [markdown]
-# ## 5. Download GGUF Files
-#
-# Run the cell below to download all three GGUF files to your local machine.
-# Each file is approximately 1.7 GB with q4_k_m quantisation.
+# ## 5. List and Download GGUF Files
 
 # %%
+import os
+from pathlib import Path
+
+GGUF_DIR = Path("/content/d4bl_training/gguf")
+
+print(f"{'File':<55} {'Size (MB)':>10}")
+print("-" * 67)
+for root, dirs, files in os.walk(str(GGUF_DIR)):
+    for f in sorted(files):
+        if f.endswith(".gguf"):
+            path = os.path.join(root, f)
+            size = os.path.getsize(path) / (1024 * 1024)
+            print(f"{path:<55} {size:>10.0f}")
+
+# %%
+# Download from Colab (alternative: download directly from Google Drive)
 from google.colab import files as colab_files
 
 print("Downloading GGUF files...")
-for fname in sorted(os.listdir(GGUF_DIR)):
-    if fname.endswith(".gguf"):
-        fpath = os.path.join(GGUF_DIR, fname)
-        size_mb = os.path.getsize(fpath) / (1024 ** 2)
-        print(f"  Downloading {fname} ({size_mb:.1f} MB)...")
-        colab_files.download(fpath)
+for root, dirs, files in os.walk(str(GGUF_DIR)):
+    for fname in sorted(files):
+        if fname.endswith(".gguf"):
+            fpath = os.path.join(root, fname)
+            size_mb = os.path.getsize(fpath) / (1024 ** 2)
+            print(f"  Downloading {fname} ({size_mb:.1f} MB)...")
+            colab_files.download(fpath)
 
 print("All downloads initiated.")
 
 # %% [markdown]
 # ## 6. Training Summary
-#
-# Final training losses for all phases and adapters.
 
 # %%
-# Print a consolidated training summary
 print("=" * 60)
 print("D4BL Fine-Tuning — Training Summary")
 print("=" * 60)
-
-summary_rows = [
-    ("Phase 1 — Domain Adaptation", domain_stats),
-    ("Phase 2a — Query Parser",     parser_stats),
-    ("Phase 2b — Data Explainer",   explainer_stats),
-    ("Phase 2c — Evaluator",        evaluator_stats),
-]
-
-for label, stats in summary_rows:
-    loss = stats.training_loss
-    print(f"  {label:<35} training loss: {loss:.4f}")
-
-print("=" * 60)
 print("\nAll GGUF models are ready for Ollama deployment.")
-print("Register each model with:")
-print("  python scripts/training/register_models.py")
+print("Place the .gguf files in the repo's models/ directory, then run:")
+print("  python -m scripts.training.register_models")
 
 # %% [markdown]
 # ## Troubleshooting
@@ -711,27 +796,26 @@ print("  python scripts/training/register_models.py")
 # ### Colab Session Timeout
 # - Phase 1 + Phase 2 + Phase 3 total ~2.5 hours
 # - Free tier sessions may disconnect after 90 minutes of inactivity
-# - **Mitigation:** Save checkpoints frequently (`save_steps`) and resume from last checkpoint
-# - If disconnected mid-Phase-2, skip Phase 1 (merged model is saved) and retrain only the current adapter
+# - **Mitigation:** Back up to Drive after each phase (cells included above)
+# - If disconnected, run the restore cell at top to recover from Drive
 #
-# ### GGUF Export Fails
-# - Ensure sufficient disk space: `!df -h`
-# - Each GGUF is ~1.8GB, need ~6GB free for all three
-# - If Colab storage is full, download Phase 1-2 outputs and clear before Phase 3
+# ### GGUF Export OOM
+# - Each export must be in its own cell with runtime restart between them
+# - Use `load_in_4bit=True` (not False) during export
+# - The GGUF export loop from the original plan does NOT work on T4 — use
+#   the separate cells with restarts instead
 #
-# ### Model Produces Invalid JSON
-# - Check val loss — if it diverged from train loss, the model overfit
-# - Increase training data or reduce epochs
-# - Check that training data JSONL has correct chat template formatting
+# ### Model Produces Narrative Instead of JSON
+# - This means more training data is needed (current ~115 examples per task
+#   is minimal for structured output learning)
+# - Increase to 1000+ examples per task and 7+ epochs (done in Sprint 2.5)
+# - Ensure training data has proper ChatML formatting
 #
 # ### Resuming from Checkpoint
-# To resume an interrupted adapter training:
 # ```python
-# # Find the latest checkpoint
 # import glob
 # checkpoints = sorted(glob.glob("outputs/query_parser/checkpoint-*"))
 # latest = checkpoints[-1] if checkpoints else None
 # print(f"Resuming from: {latest}")
-# # Pass resume_from_checkpoint to trainer.train()
 # trainer.train(resume_from_checkpoint=latest)
 # ```

@@ -18,8 +18,8 @@ MAX_PASSAGES_PER_TABLE = 10_000
 
 # Distillation
 DISTILLATION_MODEL = "claude-sonnet-4-20250514"
-PAIRS_PER_TASK = 300
-EVALUATOR_PAIRS_PER_SUBTASK = 150
+PAIRS_PER_TASK = 1000
+EVALUATOR_PAIRS_PER_SUBTASK = 250
 
 # Dataset split ratios
 TRAIN_RATIO = 0.80
@@ -27,7 +27,7 @@ VAL_RATIO = 0.10
 TEST_RATIO = 0.10
 
 # Deduplication
-JACCARD_THRESHOLD = 0.8
+JACCARD_THRESHOLD = 1.0  # Effectively disabled — only exact duplicates removed
 
 
 def write_jsonl(
