@@ -98,10 +98,11 @@ else:
 import subprocess, sys  # noqa: E401
 subprocess.run([sys.executable, "-m", "pip", "install", "unsloth"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps",
-                "trl", "peft", "accelerate", "bitsandbytes"], check=True)
+                "trl==0.21.0", "peft==0.17.0", "accelerate==1.10.0",
+                "bitsandbytes==0.47.0"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
-# Note: trl >=0.16 uses SFTConfig instead of TrainingArguments, and
-# processing_class instead of tokenizer. No need to pin version.
+# Pinned versions tested with Unsloth on Colab (2026-03-25).
+# trl >=0.16 uses SFTConfig instead of TrainingArguments.
 # Restart runtime so patched imports take effect
 import os
 os.kill(os.getpid(), 9)

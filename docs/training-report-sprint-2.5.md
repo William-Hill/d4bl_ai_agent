@@ -216,7 +216,9 @@ Train and val loss tracked closely — no overfitting. Best checkpoint at step 1
 | Evaluator: score in range | FAIL | **PASS** |
 | Latency: parser < 10s | PASS | **PASS** |
 | Latency: explainer < 30s | PASS | **PASS** |
-| **Total** | **3/11** | **15/15** |
+| **Ollama-dependent total** | **3/11** | **11/11** |
+| Unit tests (model-loaded helpers) | 4/4 | 4/4 |
+| **Full suite total** | **7/15** | **15/15** |
 
 ### 5.2 Qualitative Output Examples
 

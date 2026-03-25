@@ -193,7 +193,7 @@ class TestEvaluatorIntegration:
         )
         if "score" in result.parsed:
             assert result.parsed["score"] <= 3, "Biased content should score low"
-        elif "bias" in result.parsed:
+        if "bias" in result.parsed:
             assert result.parsed["bias"] is True, "Should detect bias"
 
     def test_good_content_evaluation(self):

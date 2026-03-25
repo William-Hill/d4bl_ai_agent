@@ -24,16 +24,20 @@ _JSON_RE = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.DOTALL)
 
 
 def _extract_json(raw: str) -> tuple[dict | None, str | None]:
-    """Try to parse JSON from raw text, including extracting from wrapper text."""
+    """Try to parse a JSON object from raw text, including extracting from wrapper text."""
     raw = raw.strip()
     try:
-        return json.loads(raw), None
+        obj = json.loads(raw)
+        if isinstance(obj, dict):
+            return obj, None
     except json.JSONDecodeError:
         pass
     match = _JSON_RE.search(raw)
     if match:
         try:
-            return json.loads(match.group()), None
+            obj = json.loads(match.group())
+            if isinstance(obj, dict):
+                return obj, None
         except json.JSONDecodeError:
             pass
     return None, "Invalid JSON: could not parse response"
