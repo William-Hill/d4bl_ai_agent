@@ -100,8 +100,8 @@ subprocess.run([sys.executable, "-m", "pip", "install", "unsloth"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps",
                 "trl", "peft", "accelerate", "bitsandbytes"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
-# Pin trl to 0.15.2 for Unsloth compatibility (newer versions have breaking API changes)
-subprocess.run([sys.executable, "-m", "pip", "install", "trl==0.15.2", "--no-deps"], check=True)
+# Note: trl >=0.16 uses SFTConfig instead of TrainingArguments, and
+# processing_class instead of tokenizer. No need to pin version.
 # Restart runtime so patched imports take effect
 import os
 os.kill(os.getpid(), 9)
@@ -117,8 +117,7 @@ from pathlib import Path
 from datasets import Dataset
 from google.colab import userdata
 from huggingface_hub import login
-from transformers import TrainingArguments
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel
 
 # Authenticate with Hugging Face
@@ -306,12 +305,12 @@ domain_model.print_trainable_parameters()
 # Train Phase 1 — domain adaptation
 domain_trainer = SFTTrainer(
     model=domain_model,
-    tokenizer=domain_tokenizer,
+    processing_class=domain_tokenizer,
     train_dataset=corpus_dataset,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "phase1_checkpoints"),
+        max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
+        dataset_text_field="text",
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         warmup_steps=50,
@@ -396,15 +395,14 @@ print(f"Formatted: {len(parser_train_text)} train, {len(parser_val_text)} val")
 
 parser_trainer = SFTTrainer(
     model=parser_model,
-    tokenizer=parser_tokenizer,
+    processing_class=parser_tokenizer,
     train_dataset=parser_train_text,
     eval_dataset=parser_val_text,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_TASK,
-    packing=False,
-    dataset_num_proc=1,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "parser_checkpoints"),
+        max_seq_length=MAX_SEQ_LENGTH_TASK,
+        dataset_text_field="text",
+        packing=False,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         warmup_steps=20,
@@ -475,15 +473,14 @@ print(f"Formatted: {len(explainer_train_text)} train, {len(explainer_val_text)} 
 
 explainer_trainer = SFTTrainer(
     model=explainer_model,
-    tokenizer=explainer_tokenizer,
+    processing_class=explainer_tokenizer,
     train_dataset=explainer_train_text,
     eval_dataset=explainer_val_text,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
-    packing=False,
-    dataset_num_proc=1,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "explainer_checkpoints"),
+        max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
+        dataset_text_field="text",
+        packing=False,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         warmup_steps=30,
@@ -551,15 +548,14 @@ print(f"Formatted: {len(evaluator_train_text)} train, {len(evaluator_val_text)} 
 
 evaluator_trainer = SFTTrainer(
     model=evaluator_model,
-    tokenizer=evaluator_tokenizer,
+    processing_class=evaluator_tokenizer,
     train_dataset=evaluator_train_text,
     eval_dataset=evaluator_val_text,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_TASK,
-    packing=False,
-    dataset_num_proc=1,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "evaluator_checkpoints"),
+        max_seq_length=MAX_SEQ_LENGTH_TASK,
+        dataset_text_field="text",
+        packing=False,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         warmup_steps=20,
