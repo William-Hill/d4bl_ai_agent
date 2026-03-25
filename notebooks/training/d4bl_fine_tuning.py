@@ -11,11 +11,11 @@ for the Data for Black Lives (D4BL) AI agent:
 
   Phase 2 — Task-Specific LoRA Adapters (three adapters trained sequentially):
     Adapter A — Query Parser:  lightweight attention-only LoRA (r=8) trained on
-                               ~300 structured query examples for 3 epochs.
+                               ~700+ structured query examples for 7 epochs.
     Adapter B — Data Explainer: larger LoRA (r=32, attention+FFN) trained on
                                 long-form explanation data at 4096-token context.
     Adapter C — Evaluator:     medium attention-only LoRA (r=16) trained on
-                               ~600 evaluation examples for 3 epochs.
+                               ~700+ evaluation examples for 7 epochs.
 
   Phase 3 — GGUF Export:
     Each task adapter is loaded over the domain-adapted base, then exported to
@@ -37,9 +37,9 @@ Colab's userdata store. Training data files are uploaded at runtime.
 # | Phase | What it does | LoRA rank | Epochs |
 # |-------|--------------|-----------|--------|
 # | 1 — Domain Adaptation | Teach the model D4BL vocabulary and equity framing | r=16 (all layers) | 1 |
-# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 3 |
-# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 3 |
-# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 3 |
+# | 2a — Query Parser | Structured intent extraction from natural-language queries | r=8 (attention) | 7 |
+# | 2b — Data Explainer | Long-form plain-language explanation of statistical data | r=32 (attention+FFN) | 7 |
+# | 2c — Evaluator | Score and critique research outputs for bias and accuracy | r=16 (attention) | 7 |
 # | 3 — GGUF Export | Quantise each adapter to q4_k_m for Ollama deployment | — | — |
 #
 # **Prerequisites**
@@ -98,10 +98,11 @@ else:
 import subprocess, sys  # noqa: E401
 subprocess.run([sys.executable, "-m", "pip", "install", "unsloth"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps",
-                "trl", "peft", "accelerate", "bitsandbytes"], check=True)
+                "trl==0.21.0", "peft==0.17.0", "accelerate==1.10.0",
+                "bitsandbytes==0.47.0"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
-# Pin trl to 0.15.2 for Unsloth compatibility (newer versions have breaking API changes)
-subprocess.run([sys.executable, "-m", "pip", "install", "trl==0.15.2", "--no-deps"], check=True)
+# Pinned versions tested with Unsloth on Colab (2026-03-25).
+# trl >=0.16 uses SFTConfig instead of TrainingArguments.
 # Restart runtime so patched imports take effect
 import os
 os.kill(os.getpid(), 9)
@@ -117,8 +118,7 @@ from pathlib import Path
 from datasets import Dataset
 from google.colab import userdata
 from huggingface_hub import login
-from transformers import TrainingArguments
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel
 
 # Authenticate with Hugging Face
@@ -138,6 +138,11 @@ login(token=HF_TOKEN)
 MAX_SEQ_LENGTH_DOMAIN = 2048
 MAX_SEQ_LENGTH_TASK = 2048
 MAX_SEQ_LENGTH_EXPLAINER = 4096
+
+# Auto-detect precision: A100/H100 support bf16, T4/L4 need fp16
+USE_BF16 = torch.cuda.is_bf16_supported()
+USE_FP16 = not USE_BF16
+print(f"Precision: {'bf16' if USE_BF16 else 'fp16'}")
 
 OUTPUT_DIR = Path("/content/d4bl_training")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -217,20 +222,26 @@ def load_dataset_from_jsonl(path: str, require_text: bool = False) -> Dataset:
     return Dataset.from_list(records)
 
 
-def format_and_tokenize(dataset):
-    """Convert messages-format dataset to plain text for SFTTrainer.
+def format_and_tokenize(dataset, tokenizer):
+    """Convert messages-format dataset to text using the model's native chat template.
 
-    Task pair datasets use {"messages": [{role, content}, ...]} format.
-    SFTTrainer with Unsloth works best with a plain {"text": "..."} dataset.
-    This function converts messages to ChatML format strings.
+    Uses tokenizer.apply_chat_template() to produce the exact token format
+    the model was pre-trained with, preserving instruction-following structure.
+    Falls back to manual ChatML if the tokenizer lacks a chat template.
     """
     formatted = []
-    for i in range(len(dataset)):
-        msgs = dataset[i]["messages"]
-        parts = []
-        for msg in msgs:
-            parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
-        text = "\n".join(parts)
+    for record in dataset:
+        msgs = record["messages"]
+        try:
+            text = tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+        except (AttributeError, TypeError, KeyError, ValueError) as exc:
+            print(f"Warning: apply_chat_template failed ({exc}), using manual ChatML")
+            parts = []
+            for msg in msgs:
+                parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
+            text = "\n".join(parts) + "\n"
         formatted.append({"text": text})
     return Dataset.from_list(formatted)
 
@@ -300,18 +311,19 @@ domain_model.print_trainable_parameters()
 # Train Phase 1 — domain adaptation
 domain_trainer = SFTTrainer(
     model=domain_model,
-    tokenizer=domain_tokenizer,
+    processing_class=domain_tokenizer,
     train_dataset=corpus_dataset,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_DOMAIN,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "phase1_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_DOMAIN,
+        dataset_text_field="text",
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         warmup_steps=50,
         num_train_epochs=1,
         learning_rate=2e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=10,
         optim="adamw_8bit",
         seed=42,
@@ -384,27 +396,27 @@ parser_model.print_trainable_parameters()
 
 # %%
 # Convert messages format to plain text
-parser_train_text = format_and_tokenize(parser_train_dataset)
-parser_val_text = format_and_tokenize(parser_val_dataset)
+parser_train_text = format_and_tokenize(parser_train_dataset, parser_tokenizer)
+parser_val_text = format_and_tokenize(parser_val_dataset, parser_tokenizer)
 print(f"Formatted: {len(parser_train_text)} train, {len(parser_val_text)} val")
 
 parser_trainer = SFTTrainer(
     model=parser_model,
-    tokenizer=parser_tokenizer,
+    processing_class=parser_tokenizer,
     train_dataset=parser_train_text,
     eval_dataset=parser_val_text,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_TASK,
-    packing=False,
-    dataset_num_proc=1,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "parser_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_TASK,
+        dataset_text_field="text",
+        packing=False,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         warmup_steps=20,
-        num_train_epochs=3,
+        num_train_epochs=7,
         learning_rate=1e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=5,
         optim="adamw_8bit",
         seed=42,
@@ -463,27 +475,27 @@ explainer_model = FastLanguageModel.get_peft_model(
 explainer_model.print_trainable_parameters()
 
 # %%
-explainer_train_text = format_and_tokenize(explainer_train_dataset)
-explainer_val_text = format_and_tokenize(explainer_val_dataset)
+explainer_train_text = format_and_tokenize(explainer_train_dataset, explainer_tokenizer)
+explainer_val_text = format_and_tokenize(explainer_val_dataset, explainer_tokenizer)
 print(f"Formatted: {len(explainer_train_text)} train, {len(explainer_val_text)} val")
 
 explainer_trainer = SFTTrainer(
     model=explainer_model,
-    tokenizer=explainer_tokenizer,
+    processing_class=explainer_tokenizer,
     train_dataset=explainer_train_text,
     eval_dataset=explainer_val_text,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_EXPLAINER,
-    packing=False,
-    dataset_num_proc=1,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "explainer_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_EXPLAINER,
+        dataset_text_field="text",
+        packing=False,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         warmup_steps=30,
-        num_train_epochs=3,
+        num_train_epochs=7,
         learning_rate=1e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=5,
         optim="adamw_8bit",
         seed=42,
@@ -539,27 +551,27 @@ evaluator_model = FastLanguageModel.get_peft_model(
 evaluator_model.print_trainable_parameters()
 
 # %%
-evaluator_train_text = format_and_tokenize(evaluator_train_dataset)
-evaluator_val_text = format_and_tokenize(evaluator_val_dataset)
+evaluator_train_text = format_and_tokenize(evaluator_train_dataset, evaluator_tokenizer)
+evaluator_val_text = format_and_tokenize(evaluator_val_dataset, evaluator_tokenizer)
 print(f"Formatted: {len(evaluator_train_text)} train, {len(evaluator_val_text)} val")
 
 evaluator_trainer = SFTTrainer(
     model=evaluator_model,
-    tokenizer=evaluator_tokenizer,
+    processing_class=evaluator_tokenizer,
     train_dataset=evaluator_train_text,
     eval_dataset=evaluator_val_text,
-    dataset_text_field="text",
-    max_seq_length=MAX_SEQ_LENGTH_TASK,
-    packing=False,
-    dataset_num_proc=1,
-    args=TrainingArguments(
+    args=SFTConfig(
         output_dir=str(OUTPUT_DIR / "evaluator_checkpoints"),
+        max_length=MAX_SEQ_LENGTH_TASK,
+        dataset_text_field="text",
+        packing=False,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         warmup_steps=20,
-        num_train_epochs=3,
+        num_train_epochs=7,
         learning_rate=1e-4,
-        fp16=True,
+        fp16=USE_FP16,
+        bf16=USE_BF16,
         logging_steps=5,
         optim="adamw_8bit",
         seed=42,
@@ -796,7 +808,7 @@ print("  python -m scripts.training.register_models")
 # ### Model Produces Narrative Instead of JSON
 # - This means more training data is needed (current ~115 examples per task
 #   is minimal for structured output learning)
-# - Increase to 1000+ examples per task and 5-10 epochs
+# - Increase to 1000+ examples per task and 7+ epochs (done in Sprint 2.5)
 # - Ensure training data has proper ChatML formatting
 #
 # ### Resuming from Checkpoint

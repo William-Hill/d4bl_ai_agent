@@ -151,6 +151,8 @@ def render_epa_passage(row: dict) -> str:
     minority_pct = row["minority_pct"]
     year = row.get("year", "")
 
+    if pct_national is None or pct_state is None:
+        return ""
     passage = (
         f"In {year}, a census tract in {state_name} recorded a {display_name} "
         f"value of {raw_value} (national percentile: {int(pct_national)}, "
@@ -188,7 +190,10 @@ def render_bjs_passage(row: dict) -> str:
     """
     state_name = row["state_name"]
     race = row["race"]
-    value = int(row["value"])
+    raw_value = row.get("value")
+    if raw_value is None:
+        return ""
+    value = int(raw_value)
     facility_type = row["facility_type"]
     year = row.get("year", "")
 
