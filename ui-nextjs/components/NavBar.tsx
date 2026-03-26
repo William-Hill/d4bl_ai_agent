@@ -15,6 +15,9 @@ export default function NavBar() {
       <Link href="/explore" className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors">
         Explore Data
       </Link>
+      <Link href="/learn" className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors">
+        Learn
+      </Link>
       {isAdmin && (
         <Link href="/data" className="text-sm text-gray-300 hover:text-[#00ff32] transition-colors">
           Data
