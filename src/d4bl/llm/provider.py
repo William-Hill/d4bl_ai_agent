@@ -104,6 +104,11 @@ def get_llm_for_task(task: str) -> LLM:
         kwargs["base_url"] = settings.ollama_base_url
     elif settings.llm_api_key:
         kwargs["api_key"] = settings.llm_api_key
+    else:
+        logger.warning(
+            "No LLM_API_KEY set for provider '%s' (task=%s) — calls may fail",
+            provider, task,
+        )
 
     logger.info("Creating task-specific LLM (task=%s, model=%s)", task, task_model)
     return LLM(**kwargs)

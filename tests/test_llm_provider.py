@@ -114,3 +114,4 @@ class TestGetLlmForTask:
 
         result = get_llm_for_task("evaluator")
         assert result is sentinel
+

@@ -17,3 +17,4 @@ class TestRunnerModelRouting:
         )
 
         mock_get_task_llm.assert_called_once_with("evaluator")
+

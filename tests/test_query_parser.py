@@ -113,3 +113,4 @@ class TestQueryParser:
         mock_generate.assert_called_once()
         call_kwargs = mock_generate.call_args[1]
         assert call_kwargs["model"] == "d4bl-query-parser"
+

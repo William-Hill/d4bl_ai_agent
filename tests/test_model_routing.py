@@ -34,6 +34,18 @@ class TestModelForTask:
         assert model_for_task("evaluator") == "d4bl-evaluator"
 
     @patch("d4bl.llm.ollama_client.get_settings")
+    def test_explainer_falls_back_when_empty(self, mock_settings) -> None:
+        mock_settings.return_value.explainer_model = ""
+        mock_settings.return_value.ollama_model = "mistral"
+        assert model_for_task("explainer") == "mistral"
+
+    @patch("d4bl.llm.ollama_client.get_settings")
+    def test_evaluator_falls_back_when_empty(self, mock_settings) -> None:
+        mock_settings.return_value.evaluator_model = ""
+        mock_settings.return_value.ollama_model = "mistral"
+        assert model_for_task("evaluator") == "mistral"
+
+    @patch("d4bl.llm.ollama_client.get_settings")
     def test_unknown_task_returns_default(self, mock_settings):
         mock_settings.return_value.ollama_model = "mistral"
         assert model_for_task("unknown_task") == "mistral"

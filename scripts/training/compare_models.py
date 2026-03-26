@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sys
 import time
 from dataclasses import dataclass
@@ -19,8 +18,6 @@ from scripts.training.validate_model_output import (
     validate_explainer_output,
     validate_parser_output,
 )
-
-logger = logging.getLogger(__name__)
 
 # Sample prompts per task (representative of real usage)
 SAMPLE_PROMPTS: dict[str, list[str]] = {
@@ -112,12 +109,12 @@ async def compare_single(
     try:
         b_output, b_latency = await _run_prompt(base_url, baseline_model, prompt)
     except Exception as e:
-        b_output, b_latency = str(e), 0.0
+        b_output, b_latency = str(e), float("nan")
 
     try:
         f_output, f_latency = await _run_prompt(base_url, finetuned_model, prompt)
     except Exception as e:
-        f_output, f_latency = str(e), 0.0
+        f_output, f_latency = str(e), float("nan")
 
     b_result = validator(b_output)
     f_result = validator(f_output)
@@ -193,7 +190,8 @@ async def main(args: argparse.Namespace) -> int:
             results.append(result)
 
     print(format_report(results))
-    return 0
+    all_failed = all(not r.finetuned_valid for r in results)
+    return 1 if all_failed else 0
 
 
 def cli() -> int:
