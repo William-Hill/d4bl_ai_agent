@@ -265,6 +265,24 @@ class TestFieldDefaults:
             s.dagster_graphql_url == "http://dagster-webserver:3003/graphql"
         )
 
+    def test_task_model_settings_default_to_empty(self):
+        """Task-specific model settings default to empty string (use general model)."""
+        s = _fresh_settings()
+        assert s.query_parser_model == ""
+        assert s.explainer_model == ""
+        assert s.evaluator_model == ""
+
+    def test_task_model_settings_from_env(self):
+        """Task-specific model settings read from environment."""
+        s = _fresh_settings(
+            QUERY_PARSER_MODEL="d4bl-query-parser",
+            EXPLAINER_MODEL="d4bl-explainer",
+            EVALUATOR_MODEL="d4bl-evaluator",
+        )
+        assert s.query_parser_model == "d4bl-query-parser"
+        assert s.explainer_model == "d4bl-explainer"
+        assert s.evaluator_model == "d4bl-evaluator"
+
 
 # ---------------------------------------------------------------------------
 # Supabase auth settings via get_settings

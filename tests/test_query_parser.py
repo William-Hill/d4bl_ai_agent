@@ -1,5 +1,6 @@
 """Tests for the NL query parser."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -94,3 +95,22 @@ class TestQueryParser:
         assert result.search_queries == ("NIL policies Mississippi",)
         assert "vector" in result.data_sources
         assert "structured" in result.data_sources
+
+    @pytest.mark.asyncio
+    @patch("d4bl.query.parser.model_for_task", return_value="d4bl-query-parser")
+    @patch("d4bl.query.parser.ollama_generate", new_callable=AsyncMock)
+    async def test_parse_uses_task_specific_model(self, mock_generate, mock_model):
+        """Parser should call model_for_task('query_parser') and pass result to ollama_generate."""
+        mock_generate.return_value = json.dumps({
+            "entities": ["test"],
+            "search_queries": ["test query"],
+            "data_sources": ["vector"],
+        })
+        parser = QueryParser(ollama_base_url="http://localhost:11434")
+        await parser.parse("test question")
+
+        mock_model.assert_called_once_with("query_parser")
+        mock_generate.assert_called_once()
+        call_kwargs = mock_generate.call_args[1]
+        assert call_kwargs["model"] == "d4bl-query-parser"
+

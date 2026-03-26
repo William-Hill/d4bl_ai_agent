@@ -163,6 +163,23 @@ class TestResultFusion:
         assert "no" in result.answer.lower()
 
     @pytest.mark.asyncio
+    @patch("d4bl.query.fusion.model_for_task", return_value="d4bl-explainer")
+    @patch("d4bl.query.fusion.ollama_generate", new_callable=AsyncMock)
+    async def test_synthesize_uses_task_specific_model(self, mock_generate, mock_model):
+        """Fusion should use the explainer model for synthesis."""
+        mock_generate.return_value = "Test answer"
+        fusion = ResultFusion(ollama_base_url="http://localhost:11434")
+        sources = [SourceReference(
+            url="http://example.com", title="Test", snippet="test",
+            source_type="vector", relevance_score=0.9,
+        )]
+        await fusion.synthesize("test query", sources)
+
+        mock_model.assert_called_once_with("explainer")
+        call_kwargs = mock_generate.call_args[1]
+        assert call_kwargs["model"] == "d4bl-explainer"
+
+    @pytest.mark.asyncio
     @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
     async def test_synthesize_falls_back_on_llm_failure(self, mock_session_cls):
         """synthesize() should fall back to raw sources if LLM fails."""

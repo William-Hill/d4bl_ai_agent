@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from string import Template
 
-from d4bl.llm.ollama_client import ollama_generate
+from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -63,12 +63,13 @@ class QueryParser:
             return self._fallback_parse(query)
 
     async def _parse_with_llm(self, query: str) -> ParsedQuery:
-        """Use Ollama/Mistral to parse the query."""
+        """Use the fine-tuned query parser model (or fallback) to parse the query."""
         prompt = PARSE_PROMPT.substitute(query=query)
 
         raw_text = await ollama_generate(
             base_url=self.ollama_base_url,
             prompt=prompt,
+            model=model_for_task("query_parser"),
             temperature=0.1,
             timeout_seconds=30,
         )
