@@ -42,10 +42,11 @@ export default function LoRAVisualizer() {
   return (
     <div>
       <div className="mb-8">
-        <label className="block text-sm text-gray-400 mb-2">
+        <label htmlFor="lora-rank" className="block text-sm text-gray-400 mb-2">
           LoRA Rank: <span className="text-white font-mono font-bold">{rank}</span>
         </label>
         <input
+          id="lora-rank"
           type="range"
           min={4}
           max={64}
@@ -53,7 +54,6 @@ export default function LoRAVisualizer() {
           value={rank}
           onChange={(e) => setRank(Number(e.target.value))}
           className="w-full accent-[#00ff32]"
-          aria-label="LoRA rank slider"
         />
         <div className="flex justify-between text-xs text-gray-500 mt-1">
           <span>4</span>

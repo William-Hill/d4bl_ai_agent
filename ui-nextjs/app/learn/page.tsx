@@ -7,6 +7,14 @@ import QuantizationSlider from '@/components/learn/QuantizationSlider';
 import RegisterComparison from '@/components/learn/RegisterComparison';
 import TutorialStep from '@/components/learn/TutorialStep';
 
+const TUTORIALS = [
+  { title: 'Understanding Your Data', description: 'Query Supabase and see the shape of equity data.' },
+  { title: 'Creating Training Data', description: 'Write distillation prompts and generate training pairs.' },
+  { title: 'Training with Unsloth', description: 'Load the model, configure LoRA, and run training.' },
+  { title: 'Testing Your Model', description: 'Load in Ollama and compare outputs to the base model.' },
+  { title: 'Making It Your Own', description: "Customize the model for your community's data." },
+];
+
 export const metadata = {
   title: 'Learn — Building AI That Centers Community | D4BL',
   description:
@@ -167,36 +175,15 @@ export default function LearnPage() {
         subtitle="Guided tutorials to build your own equity-focused model"
       >
         <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
-          <TutorialStep
-            step={1}
-            title="Understanding Your Data"
-            description="Query Supabase and see the shape of equity data."
-            colabUrl="#"
-          />
-          <TutorialStep
-            step={2}
-            title="Creating Training Data"
-            description="Write distillation prompts and generate training pairs."
-            colabUrl="#"
-          />
-          <TutorialStep
-            step={3}
-            title="Training with Unsloth"
-            description="Load the model, configure LoRA, and run training."
-            colabUrl="#"
-          />
-          <TutorialStep
-            step={4}
-            title="Testing Your Model"
-            description="Load in Ollama and compare outputs to the base model."
-            colabUrl="#"
-          />
-          <TutorialStep
-            step={5}
-            title="Making It Your Own"
-            description="Customize the model for your community's data."
-            colabUrl="#"
-          />
+          {TUTORIALS.map((t, i) => (
+            <TutorialStep
+              key={t.title}
+              step={i + 1}
+              title={t.title}
+              description={t.description}
+              colabUrl="#"
+            />
+          ))}
         </div>
       </ConceptSection>
 

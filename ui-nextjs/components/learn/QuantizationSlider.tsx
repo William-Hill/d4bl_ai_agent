@@ -33,13 +33,13 @@ export default function QuantizationSlider() {
 
   return (
     <div>
-      {/* Slider */}
       <div className="mb-8">
-        <label className="block text-sm text-gray-400 mb-2">
+        <label htmlFor="quant-level" className="block text-sm text-gray-400 mb-2">
           Quantization:{' '}
           <span className="text-white font-mono font-bold">{level.label}</span>
         </label>
         <input
+          id="quant-level"
           type="range"
           min={0}
           max={LEVELS.length - 1}
@@ -47,7 +47,6 @@ export default function QuantizationSlider() {
           value={index}
           onChange={(e) => setIndex(Number(e.target.value))}
           className="w-full accent-[#00ff32]"
-          aria-label="Quantization level slider"
         />
         <div className="flex justify-between text-xs text-gray-500 mt-1">
           {LEVELS.map((l) => (

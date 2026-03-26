@@ -31,8 +31,8 @@ export default function ConceptSection({ title, subtitle, children }: Props) {
   return (
     <section
       ref={ref}
-      className={`max-w-4xl mx-auto px-6 py-24 transition-all duration-700 ease-out ${
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'
+      className={`max-w-4xl mx-auto px-6 py-24 motion-safe:transition-all motion-safe:duration-700 motion-safe:ease-out ${
+        visible ? 'opacity-100 translate-y-0' : 'motion-safe:opacity-0 motion-safe:translate-y-5'
       }`}
     >
       <h2 className="text-3xl font-bold text-white mb-2">{title}</h2>

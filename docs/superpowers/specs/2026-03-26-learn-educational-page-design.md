@@ -252,7 +252,7 @@ Add "Learn" link to `NavBar.tsx` between "Explore Data" and the admin-only links
 ## Styling Approach
 
 - Tailwind CSS classes throughout, consistent with the rest of the app
-- Dark background (`#1a1a1a` for sections, `#292929` for page background)
+- Dark background (`#1a1a1a` for page background, `#292929` for cards/panels)
 - Neon green (`#00ff32`) for accents, active states, and interactive highlights
 - Use existing CSS custom properties from `globals.css`
 - Generous whitespace between sections (py-24 or similar)

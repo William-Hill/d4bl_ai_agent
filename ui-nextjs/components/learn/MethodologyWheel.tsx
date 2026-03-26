@@ -43,7 +43,7 @@ const STAGES: MethodologyStage[] = [
 ];
 
 function wrapText(text: string, maxLineLen: number): string[] {
-  if (text.length <= 18) return [text];
+  if (text.length <= maxLineLen) return [text];
   return text.split(' ').reduce<string[]>((lines, word) => {
     const last = lines[lines.length - 1];
     if (last && last.length + word.length < maxLineLen) {
