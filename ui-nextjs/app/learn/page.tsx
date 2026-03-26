@@ -1,5 +1,6 @@
 import ConceptSection from '@/components/learn/ConceptSection';
 import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
+import QuantizationSlider from '@/components/learn/QuantizationSlider';
 
 export const metadata = {
   title: 'Learn — Building AI That Centers Community | D4BL',
@@ -99,6 +100,20 @@ export default function LearnPage() {
           changes with rank.
         </p>
         <LoRAVisualizer />
+      </ConceptSection>
+
+      {/* Section: How Quantization Works */}
+      <ConceptSection
+        title="How Quantization Works"
+        subtitle="Shrinking models without losing their minds"
+      >
+        <p className="mb-6">
+          Quantization reduces the precision of a model&apos;s numbers — from 16-bit
+          floating point down to 4-bit or even 2-bit integers. Less precision means
+          a smaller file and faster inference, but too aggressive and quality
+          drops. Drag to explore the trade-off.
+        </p>
+        <QuantizationSlider />
       </ConceptSection>
     </main>
   );
