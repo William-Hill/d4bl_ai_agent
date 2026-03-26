@@ -1,4 +1,5 @@
 import ConceptSection from '@/components/learn/ConceptSection';
+import DistillationPipeline from '@/components/learn/DistillationPipeline';
 import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
 import QuantizationSlider from '@/components/learn/QuantizationSlider';
 
@@ -114,6 +115,20 @@ export default function LearnPage() {
           drops. Drag to explore the trade-off.
         </p>
         <QuantizationSlider />
+      </ConceptSection>
+
+      {/* Section: Training Data & Distillation */}
+      <ConceptSection
+        title="Training Data & Distillation"
+        subtitle="How we create high-quality training data from real equity metrics"
+      >
+        <p className="mb-6">
+          We can&apos;t just fine-tune on raw data — we need instruction/response pairs
+          that teach the model how to think about equity. We use a process called
+          distillation: a larger model (Claude) generates expert-level responses
+          from our real data, creating training examples for the smaller model.
+        </p>
+        <DistillationPipeline />
       </ConceptSection>
     </main>
   );
