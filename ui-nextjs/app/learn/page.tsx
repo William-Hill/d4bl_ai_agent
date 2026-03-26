@@ -3,6 +3,7 @@ import DistillationPipeline from '@/components/learn/DistillationPipeline';
 import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
 import MethodologyWheel from '@/components/learn/MethodologyWheel';
 import QuantizationSlider from '@/components/learn/QuantizationSlider';
+import RegisterComparison from '@/components/learn/RegisterComparison';
 
 export const metadata = {
   title: 'Learn — Building AI That Centers Community | D4BL',
@@ -143,6 +144,19 @@ export default function LearnPage() {
           each stage to see the connection.
         </p>
         <MethodologyWheel />
+      </ConceptSection>
+
+      {/* Section: From Data to Justice */}
+      <ConceptSection
+        title="From Data to Justice"
+        subtitle="The same data, told three ways"
+      >
+        <p className="mb-6">
+          Our model doesn&apos;t just analyze data — it communicates findings in the
+          register that serves each audience best. Community members, policymakers,
+          and researchers all need different framings of the same truth.
+        </p>
+        <RegisterComparison />
       </ConceptSection>
     </main>
   );
