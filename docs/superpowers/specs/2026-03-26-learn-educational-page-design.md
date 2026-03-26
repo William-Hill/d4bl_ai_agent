@@ -95,7 +95,16 @@ Interactive visualization of how LoRA adapters work.
 **Logic (all hardcoded, no API):**
 - `adapter_params = 2 * rank * hidden_dim` where `hidden_dim = 3072` (Qwen2.5-3B)
 - `percentage = adapter_params / total_base_params * 100` where `total_base_params = 3_000_000_000`
-- VRAM estimates mapped to rank ranges
+- VRAM estimates:
+
+| Rank | Adapter Params | VRAM Overhead |
+|------|---------------|---------------|
+| 4 | ~24.6K | ~0.1 GB |
+| 8 | ~49.2K | ~0.2 GB |
+| 16 | ~98.3K | ~0.4 GB |
+| 32 | ~196.6K | ~0.8 GB |
+| 64 | ~393.2K | ~1.5 GB |
+
 - Default slider position: rank 16 (what D4BL actually uses)
 - Callout at rank 16: "This is what we use"
 
@@ -251,6 +260,18 @@ Add "Learn" link to `NavBar.tsx` between "Explore Data" and the admin-only links
 - Responsive: single column on mobile, components stack naturally
 - Interactive sliders use native range inputs styled with Tailwind + custom CSS
 - SVG for MethodologyWheel (inline, not external file)
+
+## Pre-Launch Dependencies
+
+- **Methodology wheel copy:** Draft copy included, to be replaced with final text from D4BL leadership before public launch.
+- **Colab notebook URLs:** Placeholder links until notebooks are created.
+
+## Accessibility
+
+- Sliders (LoRAVisualizer, QuantizationSlider) use native `<input type="range">` for built-in keyboard and screen reader support.
+- MethodologyWheel SVG segments must be focusable (`tabIndex={0}`) with `aria-label` per stage and keyboard activation (Enter/Space).
+- DistillationPipeline play/pause and next/prev buttons use semantic `<button>` elements with aria labels.
+- RegisterComparison tabs use `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA pattern.
 
 ## Out of Scope
 
