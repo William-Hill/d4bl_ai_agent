@@ -1,6 +1,7 @@
 import ConceptSection from '@/components/learn/ConceptSection';
 import DistillationPipeline from '@/components/learn/DistillationPipeline';
 import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
+import MethodologyWheel from '@/components/learn/MethodologyWheel';
 import QuantizationSlider from '@/components/learn/QuantizationSlider';
 
 export const metadata = {
@@ -129,6 +130,19 @@ export default function LearnPage() {
           from our real data, creating training examples for the smaller model.
         </p>
         <DistillationPipeline />
+      </ConceptSection>
+
+      {/* Section: D4BL Methodology in AI */}
+      <ConceptSection
+        title="D4BL Methodology in AI"
+        subtitle="How each stage of our work maps to the model"
+      >
+        <p className="mb-6">
+          D4BL&apos;s methodology isn&apos;t just a framework we reference — it&apos;s embedded
+          in how the model was trained, what it generates, and who it serves. Click
+          each stage to see the connection.
+        </p>
+        <MethodologyWheel />
       </ConceptSection>
     </main>
   );
