@@ -121,7 +121,6 @@ def compute_parser_metrics(
 
         if result.parsed and i < len(expected):
             exp = expected[i]
-            # Entity F1
             pred_entities = result.parsed.get("entities", [])
             exp_entities = exp.get("entities", [])
             if isinstance(pred_entities, list) and isinstance(exp_entities, list):
@@ -129,7 +128,6 @@ def compute_parser_metrics(
                     compute_entity_f1(pred_entities, exp_entities)
                 )
 
-            # Data source accuracy
             pred_ds = set(result.parsed.get("data_sources", []))
             exp_ds = set(exp.get("data_sources", []))
             if exp_ds and pred_ds:

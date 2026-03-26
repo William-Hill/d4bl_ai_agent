@@ -14,7 +14,7 @@ import hashlib
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from scripts.training.eval_harness import (
@@ -27,7 +27,7 @@ from scripts.training.ship_criteria import ShipDecision, check_ship_criteria
 
 logger = logging.getLogger(__name__)
 
-# Metrics where higher is worse (latency, MAE)
+# Metrics where higher is worse (latency, MAE); also display as raw numbers
 _HIGHER_IS_WORSE = {"p50_latency_ms", "p95_latency_ms", "relevance_mae", "bias_mae"}
 
 # Default test set paths (relative to repo root)
@@ -165,12 +165,10 @@ def format_eval_report(results: list[EvalRunResult]) -> str:
         lines.append("")
 
         lines.append("   Metrics:")
-        # Metrics that should display as raw numbers, not percentages
-        _RAW_METRICS = {"p50_latency_ms", "p95_latency_ms", "relevance_mae", "bias_mae"}
         for metric, value in sorted(r.metrics.items()):
             if value is None:
                 lines.append(f"     {metric}: (deferred -- requires LLM judge)")
-            elif metric in _RAW_METRICS:
+            elif metric in _HIGHER_IS_WORSE:
                 lines.append(f"     {metric}: {value:.2f}")
             elif isinstance(value, float) and value <= 1.0:
                 lines.append(f"     {metric}: {value:.2%}")
@@ -288,13 +286,7 @@ async def persist_results(results: list[EvalRunResult]) -> None:
                 metrics=r.metrics,
                 ship_decision=r.ship_decision.decision,
                 blocking_failures=[
-                    {
-                        "metric": f.metric,
-                        "threshold": f.threshold,
-                        "actual": f.actual,
-                        "direction": f.direction,
-                    }
-                    for f in r.ship_decision.blocking_failures
+                    asdict(f) for f in r.ship_decision.blocking_failures
                 ] or None,
             )
             session.add(run)
