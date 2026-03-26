@@ -25,18 +25,18 @@ const REGISTERS: { key: Register; label: string; content: string }[] = [
   },
 ];
 
+const REGISTER_KEYS = REGISTERS.map((r) => r.key);
+
 export default function RegisterComparison() {
   const [active, setActive] = useState<Register>('community');
   const current = REGISTERS.find((r) => r.key === active)!;
 
   return (
     <div>
-      {/* Banner */}
       <p className="text-center text-sm text-gray-500 mb-6 italic">
         Same data, different audiences
       </p>
 
-      {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-[#292929] rounded-lg p-1" role="tablist">
         {REGISTERS.map((reg) => (
           <button
@@ -48,16 +48,15 @@ export default function RegisterComparison() {
             tabIndex={active === reg.key ? 0 : -1}
             onClick={() => setActive(reg.key)}
             onKeyDown={(e) => {
-              const keys = REGISTERS.map((r) => r.key);
-              const idx = keys.indexOf(reg.key);
+              const idx = REGISTER_KEYS.indexOf(reg.key);
               if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                const next = keys[(idx + 1) % keys.length];
+                const next = REGISTER_KEYS[(idx + 1) % REGISTER_KEYS.length];
                 setActive(next);
                 document.getElementById(`tab-${next}`)?.focus();
               } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                const prev = keys[(idx - 1 + keys.length) % keys.length];
+                const prev = REGISTER_KEYS[(idx - 1 + REGISTER_KEYS.length) % REGISTER_KEYS.length];
                 setActive(prev);
                 document.getElementById(`tab-${prev}`)?.focus();
               }
@@ -73,7 +72,6 @@ export default function RegisterComparison() {
         ))}
       </div>
 
-      {/* Content panel */}
       <div
         id={`tabpanel-${active}`}
         role="tabpanel"
@@ -83,7 +81,6 @@ export default function RegisterComparison() {
         <p className="text-gray-300 leading-relaxed">{current.content}</p>
       </div>
 
-      {/* Metric label */}
       <p className="text-center text-xs text-gray-600 mt-4">
         Metric: Black maternal mortality rate (2.6x disparity)
       </p>

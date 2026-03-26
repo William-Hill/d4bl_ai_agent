@@ -19,10 +19,11 @@ function formatParams(n: number): string {
   return String(n);
 }
 
+const VRAM_KEYS = Object.keys(VRAM_TABLE).map(Number).sort((a, b) => a - b);
+
 function nearestVram(rank: number): string {
-  const keys = Object.keys(VRAM_TABLE).map(Number).sort((a, b) => a - b);
-  let closest = keys[0];
-  for (const k of keys) {
+  let closest = VRAM_KEYS[0];
+  for (const k of VRAM_KEYS) {
     if (Math.abs(k - rank) <= Math.abs(closest - rank)) closest = k;
   }
   return VRAM_TABLE[closest];
@@ -40,7 +41,6 @@ export default function LoRAVisualizer() {
 
   return (
     <div>
-      {/* Slider */}
       <div className="mb-8">
         <label className="block text-sm text-gray-400 mb-2">
           LoRA Rank: <span className="text-white font-mono font-bold">{rank}</span>
@@ -64,7 +64,6 @@ export default function LoRAVisualizer() {
         </div>
       </div>
 
-      {/* Visual blocks */}
       <div className="flex items-end gap-3 mb-6 h-32">
         <div className="bg-[#404040] rounded-lg flex-1 h-full flex items-center justify-center">
           <div className="text-center">
@@ -83,7 +82,6 @@ export default function LoRAVisualizer() {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 text-center">
         <div className="bg-[#292929] rounded-lg p-4">
           <p className="text-xs text-gray-500 uppercase mb-1">Parameters</p>
@@ -99,7 +97,6 @@ export default function LoRAVisualizer() {
         </div>
       </div>
 
-      {/* Callout */}
       {rank === 16 && (
         <div className="mt-4 px-4 py-2 bg-[#00ff32]/10 border border-[#00ff32]/30 rounded-lg text-sm text-[#00ff32] text-center">
           This is what we use — rank 16 gives strong results with minimal overhead.

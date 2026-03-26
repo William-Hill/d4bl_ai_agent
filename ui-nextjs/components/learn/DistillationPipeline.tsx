@@ -55,7 +55,6 @@ export default function DistillationPipeline() {
 
   return (
     <div>
-      {/* Pipeline steps */}
       <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
         {STAGES.map((stage, i) => (
           <div key={stage.title} className="flex items-center">
@@ -80,7 +79,6 @@ export default function DistillationPipeline() {
         ))}
       </div>
 
-      {/* Controls */}
       <div className="flex gap-3 mb-6">
         <button
           onClick={() => setPlaying(!playing)}
@@ -107,7 +105,6 @@ export default function DistillationPipeline() {
         </button>
       </div>
 
-      {/* Detail panel */}
       <div className="bg-[#292929] border border-[#404040] rounded-lg p-6">
         <p className="text-gray-300 mb-4">{STAGES[activeStep].description}</p>
         <pre className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-4 text-sm text-gray-400 overflow-x-auto whitespace-pre-wrap font-mono">

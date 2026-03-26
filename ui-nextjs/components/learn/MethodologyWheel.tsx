@@ -42,6 +42,21 @@ const STAGES: MethodologyStage[] = [
   },
 ];
 
+function wrapText(text: string, maxLineLen: number): string[] {
+  if (text.length <= 18) return [text];
+  return text.split(' ').reduce<string[]>((lines, word) => {
+    const last = lines[lines.length - 1];
+    if (last && last.length + word.length < maxLineLen) {
+      lines[lines.length - 1] = `${last} ${word}`;
+    } else {
+      lines.push(word);
+    }
+    return lines;
+  }, []);
+}
+
+const WRAPPED_NAMES = STAGES.map((s) => wrapText(s.name, 16));
+
 function polarToCartesian(cx: number, cy: number, r: number, angle: number) {
   const rad = ((angle - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
@@ -95,16 +110,8 @@ export default function MethodologyWheel() {
                   className="fill-gray-300 text-[9px] pointer-events-none select-none"
                   aria-hidden="true"
                 >
-                  {stage.name.length > 18
-                    ? stage.name.split(' ').reduce<string[]>((lines, word) => {
-                        const last = lines[lines.length - 1];
-                        if (last && last.length + word.length < 16) {
-                          lines[lines.length - 1] = `${last} ${word}`;
-                        } else {
-                          lines.push(word);
-                        }
-                        return lines;
-                      }, []).map((line, li) => (
+                  {WRAPPED_NAMES[i].length > 1
+                    ? WRAPPED_NAMES[i].map((line, li) => (
                         <tspan key={li} x={labelPos.x} dy={li === 0 ? '-0.3em' : '1.1em'}>
                           {line}
                         </tspan>
