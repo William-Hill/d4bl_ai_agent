@@ -41,10 +41,27 @@ export default function RegisterComparison() {
         {REGISTERS.map((reg) => (
           <button
             key={reg.key}
+            id={`tab-${reg.key}`}
             role="tab"
             aria-selected={active === reg.key}
             aria-controls={`tabpanel-${reg.key}`}
+            tabIndex={active === reg.key ? 0 : -1}
             onClick={() => setActive(reg.key)}
+            onKeyDown={(e) => {
+              const keys = REGISTERS.map((r) => r.key);
+              const idx = keys.indexOf(reg.key);
+              if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                const next = keys[(idx + 1) % keys.length];
+                setActive(next);
+                document.getElementById(`tab-${next}`)?.focus();
+              } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const prev = keys[(idx - 1 + keys.length) % keys.length];
+                setActive(prev);
+                document.getElementById(`tab-${prev}`)?.focus();
+              }
+            }}
             className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
               active === reg.key
                 ? 'bg-[#00ff32]/20 text-[#00ff32] border border-[#00ff32]/30'
@@ -60,6 +77,7 @@ export default function RegisterComparison() {
       <div
         id={`tabpanel-${active}`}
         role="tabpanel"
+        aria-labelledby={`tab-${active}`}
         className="bg-[#292929] border border-[#404040] rounded-lg p-6"
       >
         <p className="text-gray-300 leading-relaxed">{current.content}</p>

@@ -116,7 +116,7 @@ export default function MethodologyWheel() {
           })}
           {selected === null && (
             <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" className="fill-gray-500 text-xs">
-              Click a stage
+              Click a stage to explore
             </text>
           )}
         </svg>
