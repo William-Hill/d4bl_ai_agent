@@ -1,4 +1,5 @@
 import ConceptSection from '@/components/learn/ConceptSection';
+import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
 
 export const metadata = {
   title: 'Learn — Building AI That Centers Community | D4BL',
@@ -84,6 +85,20 @@ export default function LearnPage() {
             </p>
           </div>
         </div>
+      </ConceptSection>
+
+      {/* Section: How LoRA Works */}
+      <ConceptSection
+        title="How LoRA Works"
+        subtitle="Small adapters, big impact"
+      >
+        <p className="mb-6">
+          LoRA (Low-Rank Adaptation) is a technique that lets you fine-tune a
+          large model by training only a small set of adapter weights — leaving
+          the original model frozen. Drag the slider to see how adapter size
+          changes with rank.
+        </p>
+        <LoRAVisualizer />
       </ConceptSection>
     </main>
   );
