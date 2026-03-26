@@ -113,3 +113,21 @@ class TestLoadTestSet:
         p.write_text("")
         result = load_test_set(str(p))
         assert result == []
+
+
+from d4bl.infra.database import ModelEvalRun
+
+
+class TestModelEvalRun:
+    def test_model_has_required_columns(self):
+        """ModelEvalRun should have all columns from the design spec."""
+        columns = {c.name for c in ModelEvalRun.__table__.columns}
+        expected = {
+            "id", "model_name", "model_version", "base_model_name",
+            "task", "test_set_hash", "metrics", "ship_decision",
+            "blocking_failures", "created_at",
+        }
+        assert expected.issubset(columns)
+
+    def test_tablename(self):
+        assert ModelEvalRun.__tablename__ == "model_eval_runs"

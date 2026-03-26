@@ -20,7 +20,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
@@ -104,6 +104,36 @@ class EvaluationResult(Base):
             "input_text": self.input_text,
             "output_text": self.output_text,
             "context_text": self.context_text,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ModelEvalRun(Base):
+    """Track evaluation runs per model version for regression detection."""
+    __tablename__ = "model_eval_runs"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    model_name = Column(String(100), nullable=False, index=True)
+    model_version = Column(String(50), nullable=False)
+    base_model_name = Column(String(100), nullable=False)
+    task = Column(String(50), nullable=False, index=True)
+    test_set_hash = Column(String(64), nullable=False)
+    metrics = Column(JSONB, nullable=False)
+    ship_decision = Column(String(20), nullable=False)
+    blocking_failures = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "model_name": self.model_name,
+            "model_version": self.model_version,
+            "base_model_name": self.base_model_name,
+            "task": self.task,
+            "test_set_hash": self.test_set_hash,
+            "metrics": self.metrics,
+            "ship_decision": self.ship_decision,
+            "blocking_failures": self.blocking_failures,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
