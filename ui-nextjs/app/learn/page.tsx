@@ -2,8 +2,10 @@ import ConceptSection from '@/components/learn/ConceptSection';
 import DistillationPipeline from '@/components/learn/DistillationPipeline';
 import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
 import MethodologyWheel from '@/components/learn/MethodologyWheel';
+import PlaygroundPlaceholder from '@/components/learn/PlaygroundPlaceholder';
 import QuantizationSlider from '@/components/learn/QuantizationSlider';
 import RegisterComparison from '@/components/learn/RegisterComparison';
+import TutorialStep from '@/components/learn/TutorialStep';
 
 export const metadata = {
   title: 'Learn — Building AI That Centers Community | D4BL',
@@ -157,6 +159,58 @@ export default function LearnPage() {
           and researchers all need different framings of the same truth.
         </p>
         <RegisterComparison />
+      </ConceptSection>
+
+      {/* Section: Try It Yourself */}
+      <ConceptSection
+        title="Try It Yourself"
+        subtitle="Guided tutorials to build your own equity-focused model"
+      >
+        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+          <TutorialStep
+            step={1}
+            title="Understanding Your Data"
+            description="Query Supabase and see the shape of equity data."
+            colabUrl="#"
+          />
+          <TutorialStep
+            step={2}
+            title="Creating Training Data"
+            description="Write distillation prompts and generate training pairs."
+            colabUrl="#"
+          />
+          <TutorialStep
+            step={3}
+            title="Training with Unsloth"
+            description="Load the model, configure LoRA, and run training."
+            colabUrl="#"
+          />
+          <TutorialStep
+            step={4}
+            title="Testing Your Model"
+            description="Load in Ollama and compare outputs to the base model."
+            colabUrl="#"
+          />
+          <TutorialStep
+            step={5}
+            title="Making It Your Own"
+            description="Customize the model for your community's data."
+            colabUrl="#"
+          />
+        </div>
+      </ConceptSection>
+
+      {/* Section: What's Next */}
+      <ConceptSection
+        title="What's Next"
+        subtitle="The playground is coming"
+      >
+        <p className="mb-6">
+          We&apos;re building an interactive playground where you can query the D4BL
+          model directly, compare outputs across registers, and export results
+          for your own analysis.
+        </p>
+        <PlaygroundPlaceholder />
       </ConceptSection>
     </main>
   );
