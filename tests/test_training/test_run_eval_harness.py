@@ -1,17 +1,15 @@
 """Tests for the eval harness CLI."""
 from __future__ import annotations
 
-import hashlib
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from scripts.training.run_eval_harness import (
+    EvalRunResult,
     compute_test_set_hash,
     format_eval_report,
     run_task_eval,
-    EvalRunResult,
 )
 
 

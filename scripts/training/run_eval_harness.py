@@ -14,7 +14,7 @@ import hashlib
 import logging
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from scripts.training.eval_harness import (
@@ -95,6 +95,8 @@ async def run_task_eval(
     base_model_name: str,
     base_url: str,
     test_set_hash: str,
+    *,
+    partial: bool = False,
 ) -> EvalRunResult:
     """Run evaluation for a single task.
 
@@ -122,21 +124,26 @@ async def run_task_eval(
     elif task == "explainer":
         metrics = compute_explainer_metrics(outputs)
     elif task == "evaluator":
-        # Extract expected labels from ground truth
         expected_labels = []
+        expected_scores = []
         for ex in test_set:
             exp = ex.get("expected") or {}
-            label = exp.get("label", "")
-            expected_labels.append(label)
+            expected_labels.append(exp.get("label", ""))
+            score = exp.get("score")
+            if isinstance(score, (int, float)):
+                expected_scores.append(float(score))
         metrics = compute_evaluator_metrics(
-            outputs, expected_labels=expected_labels if any(expected_labels) else None
+            outputs,
+            expected_labels=expected_labels if any(expected_labels) else None,
+            expected_scores=expected_scores if expected_scores else None,
         )
     else:
+        logger.warning("Unknown task '%s', returning empty metrics", task)
         metrics = {}
 
     # Filter None values before ship criteria check (deferred LLM-judged metrics)
     checkable = {k: v for k, v in metrics.items() if v is not None}
-    ship_decision = check_ship_criteria(checkable, task)
+    ship_decision = check_ship_criteria(checkable, task, partial=partial)
 
     elapsed = time.monotonic() - start
 
@@ -275,28 +282,36 @@ async def persist_results(results: list[EvalRunResult]) -> None:
     engine = create_async_engine(db_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    async with session_factory() as session:
-        for r in results:
-            run = ModelEvalRun(
-                model_name=r.model_name,
-                model_version=r.model_version,
-                base_model_name=r.base_model_name,
-                task=r.task,
-                test_set_hash=r.test_set_hash,
-                metrics=r.metrics,
-                ship_decision=r.ship_decision.decision,
-                blocking_failures=[
-                    asdict(f) for f in r.ship_decision.blocking_failures
-                ] or None,
-            )
-            session.add(run)
-        await session.commit()
-
-    await engine.dispose()
-    logger.info("Persisted %d eval runs to database", len(results))
+    try:
+        async with session_factory() as session:
+            for r in results:
+                run = ModelEvalRun(
+                    model_name=r.model_name,
+                    model_version=r.model_version,
+                    base_model_name=r.base_model_name,
+                    task=r.task,
+                    test_set_hash=r.test_set_hash,
+                    metrics=r.metrics,
+                    ship_decision=r.ship_decision.decision,
+                    blocking_failures=[
+                        asdict(f) for f in r.ship_decision.blocking_failures
+                    ] or None,
+                )
+                session.add(run)
+            await session.commit()
+        logger.info("Persisted %d eval runs to database", len(results))
+    except Exception as e:
+        logger.error("Failed to persist results to database: %s", e)
+        raise
+    finally:
+        await engine.dispose()
 
 
 async def main(args: argparse.Namespace) -> int:
+    if args.test_set and not args.task:
+        logger.error("--test-set requires --task to specify which task to run")
+        return 1
+
     tasks = [args.task] if args.task else list(DEFAULT_TEST_SETS.keys())
     results: list[EvalRunResult] = []
 
@@ -324,6 +339,7 @@ async def main(args: argparse.Namespace) -> int:
             base_model_name=args.baseline,
             base_url=args.ollama_url,
             test_set_hash=compute_test_set_hash(test_path),
+            partial=args.partial,
         )
         results.append(result)
 

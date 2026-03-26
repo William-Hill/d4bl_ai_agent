@@ -119,19 +119,32 @@ def compute_parser_metrics(
         if result.valid:
             schema_valid += 1
 
-        if result.parsed and i < len(expected):
+        if i < len(expected):
             exp = expected[i]
-            pred_entities = result.parsed.get("entities", [])
             exp_entities = exp.get("entities", [])
-            if isinstance(pred_entities, list) and isinstance(exp_entities, list):
-                entity_f1_scores.append(
-                    compute_entity_f1(pred_entities, exp_entities)
-                )
+            if isinstance(exp_entities, list):
+                if (
+                    result.valid
+                    and result.parsed
+                    and isinstance(result.parsed.get("entities"), list)
+                    and all(isinstance(e, str) for e in result.parsed["entities"])
+                ):
+                    entity_f1_scores.append(
+                        compute_entity_f1(result.parsed["entities"], exp_entities)
+                    )
+                else:
+                    entity_f1_scores.append(0.0)
 
-            pred_ds = set(result.parsed.get("data_sources", []))
-            exp_ds = set(exp.get("data_sources", []))
-            if exp_ds and pred_ds:
-                ds_correct += 1 if pred_ds & exp_ds else 0
+            exp_ds_raw = exp.get("data_sources", [])
+            if isinstance(exp_ds_raw, list) and exp_ds_raw:
+                if (
+                    result.valid
+                    and result.parsed
+                    and isinstance(result.parsed.get("data_sources"), list)
+                ):
+                    pred_ds = set(result.parsed["data_sources"])
+                    exp_ds = set(exp_ds_raw)
+                    ds_correct += 1 if pred_ds & exp_ds else 0
 
     return {
         "json_valid_rate": json_valid / n,
@@ -216,7 +229,8 @@ def compute_evaluator_metrics(
 
     json_valid = 0
     correct_labels = 0
-    score_errors: list[float] = []
+    total_score_error = 0.0
+    scored_count = 0
 
     for i, output in enumerate(outputs):
         result = validate_evaluator_output(output["raw"])
@@ -224,17 +238,19 @@ def compute_evaluator_metrics(
             json_valid += 1
 
         if result.valid and result.parsed:
-            # Hallucination accuracy
             if expected_labels and i < len(expected_labels):
                 pred_label = result.parsed.get("label", "").upper()
                 if pred_label == expected_labels[i].upper():
                     correct_labels += 1
 
-            # Score MAE
             if expected_scores and i < len(expected_scores):
+                scored_count += 1
                 pred_score = result.parsed.get("score")
                 if isinstance(pred_score, (int, float)):
-                    score_errors.append(abs(pred_score - expected_scores[i]))
+                    total_score_error += abs(pred_score - expected_scores[i])
+                else:
+                    # Invalid/missing score: worst-case error on 1-5 scale
+                    total_score_error += 4.0
 
     label_count = len(expected_labels) if expected_labels else 0
 
@@ -243,7 +259,7 @@ def compute_evaluator_metrics(
             correct_labels / label_count if label_count > 0 else 0.0
         ),
         "relevance_mae": (
-            sum(score_errors) / len(score_errors) if score_errors else None
+            total_score_error / scored_count if scored_count > 0 else None
         ),
         "bias_mae": None,  # Requires separate bias test set
         "relevance_correlation": None,  # Requires scipy — deferred

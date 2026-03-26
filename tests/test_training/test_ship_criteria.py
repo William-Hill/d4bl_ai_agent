@@ -5,7 +5,6 @@ import pytest
 
 from scripts.training.ship_criteria import (
     SHIP_CRITERIA,
-    ShipDecision,
     check_ship_criteria,
 )
 

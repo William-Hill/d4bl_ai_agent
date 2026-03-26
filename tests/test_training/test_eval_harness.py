@@ -5,11 +5,12 @@ import json
 
 import pytest
 
+from d4bl.infra.database import ModelEvalRun
 from scripts.training.eval_harness import (
     compute_entity_f1,
-    compute_parser_metrics,
-    compute_explainer_metrics,
     compute_evaluator_metrics,
+    compute_explainer_metrics,
+    compute_parser_metrics,
     load_test_set,
 )
 
@@ -114,8 +115,6 @@ class TestLoadTestSet:
         result = load_test_set(str(p))
         assert result == []
 
-
-from d4bl.infra.database import ModelEvalRun
 
 
 class TestModelEvalRun:

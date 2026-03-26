@@ -1,9 +1,7 @@
 """Tests for regression detection between eval runs."""
 from __future__ import annotations
 
-import pytest
-
-from scripts.training.run_eval_harness import detect_regressions, RegressionAlert
+from scripts.training.run_eval_harness import detect_regressions
 
 
 class TestDetectRegressions:

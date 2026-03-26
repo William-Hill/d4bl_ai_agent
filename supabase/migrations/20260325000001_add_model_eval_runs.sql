@@ -15,3 +15,5 @@ CREATE TABLE IF NOT EXISTS model_eval_runs (
 CREATE INDEX IF NOT EXISTS idx_model_eval_runs_model_name ON model_eval_runs (model_name);
 CREATE INDEX IF NOT EXISTS idx_model_eval_runs_task ON model_eval_runs (task);
 CREATE INDEX IF NOT EXISTS idx_model_eval_runs_created_at ON model_eval_runs (created_at);
+CREATE INDEX IF NOT EXISTS idx_model_eval_runs_model_task_created_at
+ON model_eval_runs (model_name, task, created_at DESC);

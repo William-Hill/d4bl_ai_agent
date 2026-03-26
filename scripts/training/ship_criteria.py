@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # From design spec Section 6.4 — do not change without updating the spec.
 SHIP_CRITERIA: dict[str, dict[str, dict]] = {
     "query_parser": {
@@ -72,6 +71,7 @@ def check_ship_criteria(
     criteria = SHIP_CRITERIA[task]
     blocking_failures: list[CriterionFailure] = []
     nonblocking_failures: list[CriterionFailure] = []
+    metrics_checked = 0
 
     for metric, spec in criteria.items():
         actual = metrics.get(metric)
@@ -81,6 +81,7 @@ def check_ship_criteria(
         if partial and actual is None:
             continue
 
+        metrics_checked += 1
         failed = False
         direction = "min" if "min" in spec else "max"
 
@@ -116,5 +117,5 @@ def check_ship_criteria(
         decision=decision,
         blocking_failures=blocking_failures,
         nonblocking_failures=nonblocking_failures,
-        metrics_checked=len(criteria),
+        metrics_checked=metrics_checked,
     )
