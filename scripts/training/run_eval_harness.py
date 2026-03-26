@@ -27,6 +27,9 @@ from scripts.training.ship_criteria import ShipDecision, check_ship_criteria
 
 logger = logging.getLogger(__name__)
 
+# Metrics where higher is worse (latency, MAE)
+_HIGHER_IS_WORSE = {"p50_latency_ms", "p95_latency_ms", "relevance_mae", "bias_mae"}
+
 # Default test set paths (relative to repo root)
 DEFAULT_TEST_SETS: dict[str, str] = {
     "query_parser": "scripts/training_data/final/query_parser_test.jsonl",
@@ -40,6 +43,15 @@ TASK_MODELS: dict[str, str] = {
     "explainer": "d4bl-explainer",
     "evaluator": "d4bl-evaluator",
 }
+
+
+@dataclass
+class RegressionAlert:
+    metric: str
+    previous: float
+    current: float
+    delta: float
+    direction: str  # "increased" or "decreased"
 
 
 @dataclass
@@ -197,6 +209,57 @@ def format_eval_report(results: list[EvalRunResult]) -> str:
         lines.append("OVERALL: SHIP WITH GAPS -- non-blocking issues remain")
 
     return "\n".join(lines)
+
+
+def detect_regressions(
+    current: dict[str, float | None],
+    previous: dict[str, float | None] | None,
+    task: str,
+    tolerance: float = 0.02,
+) -> list[RegressionAlert]:
+    """Compare current metrics against previous run, flag regressions.
+
+    A regression is when a metric moves in the wrong direction by more
+    than ``tolerance`` (default 2%).
+
+    Args:
+        current: Current eval metrics.
+        previous: Previous eval metrics (None = no comparison).
+        task: Task name (for context, currently unused).
+        tolerance: Minimum absolute change to trigger alert.
+
+    Returns:
+        List of RegressionAlert for each regressed metric.
+    """
+    if previous is None:
+        return []
+
+    alerts: list[RegressionAlert] = []
+    for metric, cur_val in current.items():
+        if cur_val is None:
+            continue
+        prev_val = previous.get(metric)
+        if prev_val is None:
+            continue
+
+        delta = cur_val - prev_val
+
+        if metric in _HIGHER_IS_WORSE:
+            # For latency/MAE, increase is bad
+            if delta > tolerance:
+                alerts.append(RegressionAlert(
+                    metric=metric, previous=prev_val, current=cur_val,
+                    delta=delta, direction="increased",
+                ))
+        else:
+            # For accuracy/F1, decrease is bad
+            if delta < -tolerance:
+                alerts.append(RegressionAlert(
+                    metric=metric, previous=prev_val, current=cur_val,
+                    delta=delta, direction="decreased",
+                ))
+
+    return alerts
 
 
 async def persist_results(results: list[EvalRunResult]) -> None:
