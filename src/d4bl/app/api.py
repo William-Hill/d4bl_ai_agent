@@ -35,7 +35,6 @@ from d4bl.app.explore_helpers import (
 )
 from d4bl.app.explore_insights import router as explore_insights_router
 from d4bl.app.schemas import (
-    CompareMetrics,
     CompareRequest,
     CompareResponse,
     EvalRunItem,
@@ -46,7 +45,8 @@ from d4bl.app.schemas import (
     InviteRequest,
     JobHistoryResponse,
     JobStatus,
-    ModelOutput,
+    PipelinePath,
+    PipelineStep,
     PolicyBillItem,
     QueryRequest,
     QueryResponse,
@@ -84,37 +84,125 @@ from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
 from d4bl.settings import get_settings
-from d4bl.validation.model_output import (
-    VALID_INTENTS,
-    ValidationResult,
-    validate_evaluator_output,
-    validate_explainer_output,
-    validate_parser_output,
-)
-
-_COMPARE_VALIDATORS = {
-    "query_parser": validate_parser_output,
-    "explainer": validate_explainer_output,
-    "evaluator": validate_evaluator_output,
-}
 
 
-def _task_specific_flag(task: str, validation_result: ValidationResult) -> str | None:
-    """Compute a human-readable task-specific flag from validated output."""
-    if not validation_result.valid or not validation_result.parsed:
-        return None
-    parsed = validation_result.parsed
-    if task == "query_parser":
-        if parsed.get("intent") in VALID_INTENTS:
-            return "Intent parsed"
-    elif task == "explainer":
-        if "narrative" in parsed:
-            return "Has structural framing"
-    elif task == "evaluator":
-        score = parsed.get("score")
-        if isinstance(score, (int, float)):
-            return "Score present"
-    return None
+async def _run_pipeline(
+    question: str,
+    parser_model: str,
+    explainer_model: str,
+    base_url: str,
+    db: AsyncSession,
+    label: str,
+) -> PipelinePath:
+    """Run the full query pipeline (parse → search → synthesize) with explicit models.
+
+    This mirrors the QueryEngine flow but allows specifying which model
+    to use at each LLM step, enabling side-by-side comparison.
+    """
+    from d4bl.infra.vector_store import get_vector_store
+    from d4bl.query.fusion import SYNTHESIS_PROMPT, ResultFusion
+    from d4bl.query.parser import PARSE_PROMPT
+    from d4bl.query.structured import StructuredSearcher
+
+    steps: list[PipelineStep] = []
+    total_start = time.monotonic()
+
+    # Step 1: Parse
+    parse_prompt = PARSE_PROMPT.substitute(query=question)
+    parse_start = time.monotonic()
+    raw_parse = await ollama_generate(
+        base_url=base_url, prompt=parse_prompt,
+        model=parser_model, temperature=0.1, timeout_seconds=30,
+    )
+    parse_latency = round(time.monotonic() - parse_start, 3)
+    steps.append(PipelineStep(
+        step="parse", model_name=parser_model,
+        output=raw_parse, latency_seconds=parse_latency,
+    ))
+
+    # Try to extract structured query from parse output
+    import json
+    try:
+        parsed_dict = json.loads(raw_parse)
+        entities = parsed_dict.get("entities", [])
+        if not isinstance(entities, list):
+            entities = []
+        search_queries = parsed_dict.get("search_queries", [question])
+        if not isinstance(search_queries, list) or not search_queries:
+            search_queries = [question]
+        data_sources = parsed_dict.get("data_sources", ["vector", "structured"])
+        if not isinstance(data_sources, list) or not data_sources:
+            data_sources = ["vector", "structured"]
+    except (json.JSONDecodeError, TypeError):
+        # Base model likely returned prose, not JSON — fall back
+        search_queries = [question]
+        data_sources = ["vector", "structured"]
+
+    # Step 2: Search (same for both paths — data is data)
+    search_start = time.monotonic()
+    vector_results: list[dict] = []
+    structured_results = []
+
+    if "vector" in data_sources:
+        vs = get_vector_store()
+        for sq in search_queries[:3]:
+            results = await vs.search_similar(
+                db=db, query_text=sq, limit=5, similarity_threshold=0.7,
+            )
+            vector_results.extend(results)
+
+    if "structured" in data_sources:
+        searcher = StructuredSearcher()
+        structured_results = await searcher.search(
+            db=db, search_queries=list(search_queries[:3]), limit=5,
+        )
+
+    fusion = ResultFusion()
+    sources = fusion.merge_and_rank(vector_results, structured_results)
+    search_latency = round(time.monotonic() - search_start, 3)
+
+    sources_summary = f"Found {len(sources)} sources"
+    if sources:
+        source_titles = [s.title[:60] for s in sources[:3]]
+        sources_summary += ": " + "; ".join(source_titles)
+
+    steps.append(PipelineStep(
+        step="search", model_name="database",
+        output=sources_summary, latency_seconds=search_latency,
+    ))
+
+    # Step 3: Synthesize
+    if sources:
+        sources_text = "\n".join(
+            f"[{i + 1}] ({s.source_type}) {s.title}\n{s.snippet}"
+            for i, s in enumerate(sources[:10])
+        )
+        synth_prompt = SYNTHESIS_PROMPT.substitute(
+            query=question, sources_text=sources_text,
+        )
+    else:
+        synth_prompt = (
+            f"Answer this question about racial equity data: {question}\n\n"
+            "No data sources were found. Provide what context you can."
+        )
+
+    synth_start = time.monotonic()
+    final_answer = await ollama_generate(
+        base_url=base_url, prompt=synth_prompt,
+        model=explainer_model, temperature=0.3, timeout_seconds=60,
+    )
+    synth_latency = round(time.monotonic() - synth_start, 3)
+    steps.append(PipelineStep(
+        step="synthesize", model_name=explainer_model,
+        output=final_answer, latency_seconds=synth_latency,
+    ))
+
+    total_latency = round(time.monotonic() - total_start, 3)
+
+    return PipelinePath(
+        label=label, steps=steps,
+        final_answer=final_answer, total_latency_seconds=total_latency,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -534,77 +622,68 @@ async def get_eval_runs(
 async def compare_models_endpoint(
     request: CompareRequest,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Run a prompt through base and fine-tuned models, return side-by-side comparison."""
-    settings = get_settings()
-    baseline_model = settings.ollama_model
-    finetuned_model = model_for_task(request.task)
+    """Run the full query pipeline through both base and fine-tuned models.
 
-    if baseline_model == finetuned_model:
+    Pipeline: parse → search → synthesize
+    - Path A (baseline): all LLM steps use the base model (e.g. mistral)
+    - Path B (fine-tuned): parse uses d4bl-query-parser, synthesize uses d4bl-explainer
+    - Search step is identical (same data for both paths)
+    """
+    settings = get_settings()
+    base_model = settings.ollama_model
+    parser_model = model_for_task("query_parser")
+    explainer_model = model_for_task("explainer")
+
+    if base_model == parser_model and base_model == explainer_model:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Fine-tuned model not configured for task '{request.task}'. "
-                f"Set the {request.task.upper()}_MODEL environment variable."
+                "Fine-tuned models not configured. "
+                "Set QUERY_PARSER_MODEL and EXPLAINER_MODEL environment variables."
             ),
         )
 
     base_url = settings.ollama_base_url
 
-    async def _run(model: str) -> tuple[str, float]:
-        start = time.monotonic()
-        output = await ollama_generate(
+    baseline_task = asyncio.create_task(
+        _run_pipeline(
+            question=request.prompt,
+            parser_model=base_model,
+            explainer_model=base_model,
             base_url=base_url,
-            prompt=request.prompt,
-            model=model,
-            temperature=0.1,
-            timeout_seconds=60,
+            db=db,
+            label="Base Model",
         )
-        return output, round(time.monotonic() - start, 3)
-
-    baseline_task = asyncio.create_task(_run(baseline_model))
-    finetuned_task = asyncio.create_task(_run(finetuned_model))
-    try:
-        (b_output, b_latency), (f_output, f_latency) = await asyncio.gather(
-            baseline_task,
-            finetuned_task,
+    )
+    finetuned_task = asyncio.create_task(
+        _run_pipeline(
+            question=request.prompt,
+            parser_model=parser_model,
+            explainer_model=explainer_model,
+            base_url=base_url,
+            db=db,
+            label="Fine-Tuned",
         )
-    except Exception as exc:
-        # Cancel the sibling task so it doesn't consume an Ollama worker
-        for t in (baseline_task, finetuned_task):
-            t.cancel()
-        logger.warning("Model inference failed for task %s", request.task, exc_info=True)
-        raise HTTPException(status_code=502, detail="Model inference failed") from exc
-
-    validator = _COMPARE_VALIDATORS[request.task]
-    b_result = validator(b_output)
-    f_result = validator(f_output)
-
-    latency_delta_pct = (
-        round((f_latency - b_latency) / b_latency * 100, 1) if b_latency > 0 else 0.0
     )
 
+    try:
+        baseline_path, finetuned_path = await asyncio.gather(
+            baseline_task, finetuned_task,
+        )
+    except Exception as exc:
+        for t in (baseline_task, finetuned_task):
+            t.cancel()
+        logger.warning("Pipeline comparison failed", exc_info=True)
+        raise HTTPException(
+            status_code=502, detail="Model inference failed"
+        ) from exc
+
     return CompareResponse(
-        baseline=ModelOutput(
-            model_name=baseline_model,
-            output=b_output,
-            latency_seconds=b_latency,
-            valid_json=b_result.parsed is not None,
-            errors=b_result.errors or None,
-        ),
-        finetuned=ModelOutput(
-            model_name=finetuned_model,
-            output=f_output,
-            latency_seconds=f_latency,
-            valid_json=f_result.parsed is not None,
-            errors=f_result.errors or None,
-        ),
-        metrics=CompareMetrics(
-            latency_delta_pct=latency_delta_pct,
-            validity_improved=(f_result.parsed is not None) and (b_result.parsed is None),
-            task_specific_flag=_task_specific_flag(request.task, f_result),
-        ),
-        task=request.task,
+        baseline=baseline_path,
+        finetuned=finetuned_path,
+        prompt=request.prompt,
     )
 
 

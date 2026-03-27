@@ -205,25 +205,24 @@ export async function getAuthToken(): Promise<string | null> {
 
 // --- Model Comparison types ---
 
-export interface ModelOutput {
+export interface PipelineStep {
+  step: string;
   model_name: string;
   output: string;
   latency_seconds: number;
-  valid_json: boolean;
-  errors: string[] | null;
 }
 
-export interface CompareMetrics {
-  latency_delta_pct: number;
-  validity_improved: boolean;
-  task_specific_flag: string | null;
+export interface PipelinePath {
+  label: string;
+  steps: PipelineStep[];
+  final_answer: string;
+  total_latency_seconds: number;
 }
 
 export interface CompareResponse {
-  baseline: ModelOutput;
-  finetuned: ModelOutput;
-  metrics: CompareMetrics;
-  task: string;
+  baseline: PipelinePath;
+  finetuned: PipelinePath;
+  prompt: string;
 }
 
 export interface EvalRunItem {
@@ -241,12 +240,12 @@ export interface EvalRunsResponse {
   runs: EvalRunItem[];
 }
 
-export async function compareModels(prompt: string, task: string): Promise<CompareResponse> {
+export async function compareModels(prompt: string): Promise<CompareResponse> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE}/api/compare`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ prompt, task }),
+    body: JSON.stringify({ prompt }),
   });
 
   handle401(response);
