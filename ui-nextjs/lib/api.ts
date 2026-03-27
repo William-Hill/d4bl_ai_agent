@@ -202,3 +202,73 @@ export async function getAuthToken(): Promise<string | null> {
     return null;
   }
 }
+
+// --- Model Comparison types ---
+
+export interface ModelOutput {
+  model_name: string;
+  output: string;
+  latency_seconds: number;
+  valid_json: boolean;
+  errors: string[] | null;
+}
+
+export interface CompareMetrics {
+  latency_delta_pct: number;
+  validity_improved: boolean;
+  task_specific_flag: string | null;
+}
+
+export interface CompareResponse {
+  baseline: ModelOutput;
+  finetuned: ModelOutput;
+  metrics: CompareMetrics;
+  task: string;
+}
+
+export interface EvalRunItem {
+  model_name: string;
+  model_version: string;
+  base_model_name: string;
+  task: string;
+  metrics: Record<string, number | null>;
+  ship_decision: string;
+  blocking_failures: Record<string, unknown>[] | null;
+  created_at: string | null;
+}
+
+export interface EvalRunsResponse {
+  runs: EvalRunItem[];
+}
+
+export async function compareModels(prompt: string, task: string): Promise<CompareResponse> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE}/api/compare`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ prompt, task }),
+  });
+
+  handle401(response);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Model comparison failed');
+  }
+
+  return response.json();
+}
+
+export async function getEvalRuns(task?: string): Promise<EvalRunsResponse> {
+  const params = task ? `?task=${encodeURIComponent(task)}` : '';
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE}/api/eval-runs${params}`, { headers });
+
+  handle401(response);
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch evaluation runs');
+  }
+
+  return response.json();
+}
