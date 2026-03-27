@@ -20,6 +20,8 @@ class ValidationResult:
 
 
 _VALID_INTENTS = {"compare", "trend", "lookup", "aggregate"}
+# Public alias for external use
+VALID_INTENTS = _VALID_INTENTS
 _JSON_RE = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.DOTALL)
 
 
@@ -63,9 +65,7 @@ def validate_parser_output(raw: str) -> ValidationResult:
         if not isinstance(parsed["intent"], str):
             errors.append(f"intent must be a string, got {type(parsed['intent']).__name__}")
         elif parsed["intent"] not in _VALID_INTENTS:
-            errors.append(
-                f"Invalid intent '{parsed['intent']}', must be one of: {_VALID_INTENTS}"
-            )
+            errors.append(f"Invalid intent '{parsed['intent']}', must be one of: {_VALID_INTENTS}")
     else:
         if "entities" in parsed:
             if not isinstance(parsed["entities"], list):
@@ -74,15 +74,23 @@ def validate_parser_output(raw: str) -> ValidationResult:
                 has_training_schema = True
         if "search_queries" in parsed:
             if not isinstance(parsed["search_queries"], list):
-                errors.append(f"search_queries must be a list, got {type(parsed['search_queries']).__name__}")
+                errors.append(
+                    f"search_queries must be a list, got {type(parsed['search_queries']).__name__}"
+                )
             else:
                 has_training_schema = True
         if "data_sources" in parsed and not isinstance(parsed["data_sources"], list):
-            errors.append(f"data_sources must be a list, got {type(parsed['data_sources']).__name__}")
+            errors.append(
+                f"data_sources must be a list, got {type(parsed['data_sources']).__name__}"
+            )
         if "community_framing" in parsed and not isinstance(parsed["community_framing"], dict):
-            errors.append(f"community_framing must be an object, got {type(parsed['community_framing']).__name__}")
+            errors.append(
+                f"community_framing must be an object, got {type(parsed['community_framing']).__name__}"
+            )
         if not has_training_schema:
-            errors.append("Missing required fields: need 'intent' or 'entities'/'search_queries' (as lists)")
+            errors.append(
+                "Missing required fields: need 'intent' or 'entities'/'search_queries' (as lists)"
+            )
 
     return ValidationResult(valid=len(errors) == 0, parsed=parsed, errors=errors)
 
@@ -110,9 +118,19 @@ def validate_evaluator_output(raw: str) -> ValidationResult:
     if err:
         return ValidationResult(valid=False, parsed=None, errors=[err])
 
-    _KNOWN_EVAL_FIELDS = {"score", "bias", "relevance", "equity_framing", "hallucination",
-                          "explanation", "issues", "category", "context", "evaluation",
-                          "supporting_evidence"}
+    _KNOWN_EVAL_FIELDS = {
+        "score",
+        "bias",
+        "relevance",
+        "equity_framing",
+        "hallucination",
+        "explanation",
+        "issues",
+        "category",
+        "context",
+        "evaluation",
+        "supporting_evidence",
+    }
 
     errors = []
     if "score" in parsed:
@@ -123,9 +141,13 @@ def validate_evaluator_output(raw: str) -> ValidationResult:
     if "bias" in parsed and not isinstance(parsed["bias"], (bool, dict)):
         errors.append(f"bias must be a boolean or object, got {type(parsed['bias']).__name__}")
     if "relevance" in parsed and not isinstance(parsed["relevance"], (bool, dict)):
-        errors.append(f"relevance must be a boolean or object, got {type(parsed['relevance']).__name__}")
+        errors.append(
+            f"relevance must be a boolean or object, got {type(parsed['relevance']).__name__}"
+        )
     if "equity_framing" in parsed and not isinstance(parsed["equity_framing"], (dict, str)):
-        errors.append(f"equity_framing must be an object or string, got {type(parsed['equity_framing']).__name__}")
+        errors.append(
+            f"equity_framing must be an object or string, got {type(parsed['equity_framing']).__name__}"
+        )
     if "explanation" in parsed and not isinstance(parsed["explanation"], str):
         errors.append(f"explanation must be a string, got {type(parsed['explanation']).__name__}")
     if "issues" in parsed and not isinstance(parsed["issues"], list):

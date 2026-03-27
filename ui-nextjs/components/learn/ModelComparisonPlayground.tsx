@@ -205,7 +205,11 @@ export default function ModelComparisonPlayground() {
               </div>
               <div
                 className={`text-sm font-bold ${
-                  result.metrics.latency_delta_pct < 0 ? 'text-[#4ade80]' : 'text-[#f87171]'
+                  result.metrics.latency_delta_pct === 0
+                    ? 'text-gray-400'
+                    : result.metrics.latency_delta_pct < 0
+                      ? 'text-[#4ade80]'
+                      : 'text-[#f87171]'
                 }`}
               >
                 {result.metrics.latency_delta_pct > 0 ? '+' : ''}
