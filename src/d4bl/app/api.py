@@ -159,7 +159,10 @@ async def _run_pipeline(
             if not data_sources:
                 data_sources = ["vector", "structured"]
     except (json.JSONDecodeError, TypeError, ValueError):
-        logger.debug("Parse output is not valid JSON object (model=%s), falling back to raw query", parser_model)
+        logger.debug(
+            "Parse output is not valid JSON object (model=%s), using fallback",
+            parser_model,
+        )
         search_queries = [question]
         data_sources = ["vector", "structured"]
 

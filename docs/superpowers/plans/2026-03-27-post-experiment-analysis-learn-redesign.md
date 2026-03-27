@@ -358,7 +358,7 @@ Add to `tests/test_api_models.py`:
 
 ```python
 @patch("d4bl.llm.provider.get_settings")
-def test_available_models_include_type_and_version(self, mock_settings):
+def test_available_models_include_type_and_version(mock_settings):
     from d4bl.llm.provider import get_available_models
     mock_settings.return_value.llm_provider = "ollama"
     mock_settings.return_value.llm_model = "mistral"
