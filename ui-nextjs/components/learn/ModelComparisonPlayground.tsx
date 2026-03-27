@@ -7,6 +7,7 @@ const STEP_LABELS: Record<string, string> = {
   parse: 'Parse Query',
   search: 'Search Data',
   synthesize: 'Synthesize Answer',
+  evaluate: 'Evaluate Quality',
 };
 
 const PLACEHOLDER_PROMPT =
@@ -127,9 +128,14 @@ export default function ModelComparisonPlayground() {
           <span className="bg-[#1a1a1a] px-3 py-1.5 rounded-md">
             <span className="text-gray-500">3.</span> Synthesize Answer
           </span>
+          <span className="text-gray-600">&rarr;</span>
+          <span className="bg-[#1a1a1a] px-3 py-1.5 rounded-md">
+            <span className="text-gray-500">4.</span> Evaluate Quality
+          </span>
         </div>
         <p className="text-[11px] text-gray-600 text-center mt-2">
-          Both paths search the same data. The difference is which model parses and synthesizes.
+          Both paths search the same data and are scored by the same evaluator.
+          The difference is which model parses and synthesizes.
         </p>
       </div>
 
@@ -220,6 +226,31 @@ export default function ModelComparisonPlayground() {
                 );
               })()}
             </div>
+            {(result.baseline.eval_score != null || result.finetuned.eval_score != null) && (
+              <div className="flex-1 text-center py-2.5 px-2">
+                <div className="text-[9px] text-gray-500 uppercase tracking-widest mb-0.5">
+                  Equity Score
+                </div>
+                <div className="text-sm font-bold">
+                  <span className="text-gray-400">
+                    {result.baseline.eval_score?.toFixed(1) ?? '—'}
+                  </span>
+                  <span className="text-gray-600 mx-1">&rarr;</span>
+                  <span className={
+                    result.finetuned.eval_score != null && result.baseline.eval_score != null
+                      ? result.finetuned.eval_score > result.baseline.eval_score
+                        ? 'text-[#4ade80]'
+                        : result.finetuned.eval_score === result.baseline.eval_score
+                          ? 'text-gray-400'
+                          : 'text-[#f87171]'
+                      : 'text-gray-400'
+                  }>
+                    {result.finetuned.eval_score?.toFixed(1) ?? '—'}
+                  </span>
+                  <span className="text-[10px] text-gray-600 ml-1">/ 5</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Side-by-side pipeline panels */}

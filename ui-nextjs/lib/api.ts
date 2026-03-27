@@ -217,6 +217,7 @@ export interface PipelinePath {
   steps: PipelineStep[];
   final_answer: string;
   total_latency_seconds: number;
+  eval_score: number | null;
 }
 
 export interface CompareResponse {

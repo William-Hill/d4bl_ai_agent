@@ -488,6 +488,7 @@ class PipelinePath(BaseModel):
     steps: list[PipelineStep]
     final_answer: str
     total_latency_seconds: float
+    eval_score: float | None = None  # 1-5 score from evaluator model
 
 
 class CompareRequest(BaseModel):

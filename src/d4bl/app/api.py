@@ -85,19 +85,34 @@ from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
 from d4bl.settings import get_settings
 
+_EVAL_PROMPT_TEMPLATE = """\
+Evaluate the following model output for equity framing quality.
+
+Question: {question}
+Model output: {answer}
+
+Score 1-5 on each dimension and return ONLY valid JSON:
+{{
+  "score": <overall 1-5>,
+  "explanation": "<brief justification>",
+  "issues": ["<specific issue found>"] or []
+}}"""
+
 
 async def _run_pipeline(
     question: str,
     parser_model: str,
     explainer_model: str,
+    evaluator_model: str,
     base_url: str,
     db: AsyncSession,
     label: str,
 ) -> PipelinePath:
-    """Run the full query pipeline (parse → search → synthesize) with explicit models.
+    """Run the full query pipeline (parse → search → synthesize → evaluate).
 
     This mirrors the QueryEngine flow but allows specifying which model
     to use at each LLM step, enabling side-by-side comparison.
+    The evaluator is the same model for both paths — it's the judge.
     """
     from d4bl.infra.vector_store import get_vector_store
     from d4bl.query.fusion import SYNTHESIS_PROMPT, ResultFusion
@@ -197,11 +212,38 @@ async def _run_pipeline(
         output=final_answer, latency_seconds=synth_latency,
     ))
 
+    # Step 4: Evaluate (same judge model for both paths)
+    eval_prompt = _EVAL_PROMPT_TEMPLATE.format(
+        question=question, answer=final_answer[:500],
+    )
+    eval_start = time.monotonic()
+    raw_eval = await ollama_generate(
+        base_url=base_url, prompt=eval_prompt,
+        model=evaluator_model, temperature=0.1, timeout_seconds=30,
+    )
+    eval_latency = round(time.monotonic() - eval_start, 3)
+
+    # Extract score from evaluator output
+    eval_score: float | None = None
+    try:
+        eval_parsed = json.loads(raw_eval)
+        score = eval_parsed.get("score")
+        if isinstance(score, (int, float)) and 1 <= score <= 5:
+            eval_score = float(score)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    steps.append(PipelineStep(
+        step="evaluate", model_name=evaluator_model,
+        output=raw_eval, latency_seconds=eval_latency,
+    ))
+
     total_latency = round(time.monotonic() - total_start, 3)
 
     return PipelinePath(
         label=label, steps=steps,
         final_answer=final_answer, total_latency_seconds=total_latency,
+        eval_score=eval_score,
     )
 
 
@@ -626,15 +668,17 @@ async def compare_models_endpoint(
 ):
     """Run the full query pipeline through both base and fine-tuned models.
 
-    Pipeline: parse → search → synthesize
+    Pipeline: parse → search → synthesize → evaluate
     - Path A (baseline): all LLM steps use the base model (e.g. mistral)
     - Path B (fine-tuned): parse uses d4bl-query-parser, synthesize uses d4bl-explainer
     - Search step is identical (same data for both paths)
+    - Evaluate step uses the same judge model (d4bl-evaluator) for both paths
     """
     settings = get_settings()
     base_model = settings.ollama_model
     parser_model = model_for_task("query_parser")
     explainer_model = model_for_task("explainer")
+    evaluator_model = model_for_task("evaluator")
 
     if base_model == parser_model and base_model == explainer_model:
         raise HTTPException(
@@ -652,6 +696,7 @@ async def compare_models_endpoint(
             question=request.prompt,
             parser_model=base_model,
             explainer_model=base_model,
+            evaluator_model=evaluator_model,
             base_url=base_url,
             db=db,
             label="Base Model",
@@ -662,6 +707,7 @@ async def compare_models_endpoint(
             question=request.prompt,
             parser_model=parser_model,
             explainer_model=explainer_model,
+            evaluator_model=evaluator_model,
             base_url=base_url,
             db=db,
             label="Fine-Tuned",
