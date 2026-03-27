@@ -475,7 +475,7 @@ class ExplainResponse(BaseModel):
 class PipelineStep(BaseModel):
     """A single step in the model pipeline."""
 
-    step: str  # "parse", "search", "synthesize"
+    step: str  # "parse", "search", "synthesize", "evaluate"
     model_name: str
     output: str
     latency_seconds: float

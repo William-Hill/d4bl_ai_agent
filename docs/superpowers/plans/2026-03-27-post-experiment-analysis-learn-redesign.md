@@ -588,6 +588,7 @@ export default function LearnTabs({
         {TABS.map((tab) => (
           <button
             key={tab.key}
+            id={`tab-${tab.key}`}
             role="tab"
             aria-selected={active === tab.key}
             aria-controls={`tabpanel-${tab.key}`}

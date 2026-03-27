@@ -1,6 +1,8 @@
 # Model Comparison Playground — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **SUPERSEDED:** This plan was for the original per-task comparison design (PR #133). The feature was redesigned as an end-to-end pipeline comparison in PR #134. See `docs/superpowers/plans/2026-03-27-post-experiment-analysis-learn-redesign.md` for the current plan. This file is kept for historical reference only.
+
+> ~~**For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.~~
 
 **Goal:** Replace the "Coming Soon" placeholder on the `/learn` page with a live side-by-side model comparison playground and a pre-computed eval metrics panel, backed by two new API endpoints.
 

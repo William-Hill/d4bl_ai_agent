@@ -85,6 +85,8 @@ The endpoint maps these to two `_run_pipeline()` calls:
 
 The `evaluator_model` is resolved from `model_for_task("evaluator")` for both pipelines (same judge).
 
+**Server-side validation:** The endpoint must validate that `pipeline_a_parser`, `pipeline_a_explainer`, `pipeline_b_parser`, and `pipeline_b_explainer` are models available in Ollama (checked against the list from `get_available_models()`). Reject unknown model names with a 400 error to prevent arbitrary model pulls or inference cost spikes.
+
 ### 4.4 /api/models Update
 
 Extend the existing `get_available_models()` response (currently returns `provider`, `model`, `model_string`, `is_default`, `task`) with two new fields:
@@ -209,7 +211,7 @@ python -m scripts.training.run_eval_harness --analyze-existing <run-id>
 python -m scripts.training.run_eval_harness --analyze-existing latest
 ```
 
-`--analyze-existing` accepts a UUID run ID or the keyword `latest` (resolved as the most recent run by `created_at` globally). It loads the existing metrics from `model_eval_runs`, generates rules-based suggestions, runs LLM analysis, and updates the `suggestions` column. Does not re-run model inference.
+`--analyze-existing` accepts a UUID run ID or the keyword `latest`. When `latest` is used with `--task`, it resolves to the most recent run for that task. Without `--task`, it resolves to the most recent run globally by `created_at`. It loads the existing metrics from `model_eval_runs`, generates rules-based suggestions, runs LLM analysis, and updates the `suggestions` column. Does not re-run model inference.
 
 Suggestions are printed to CLI alongside the metrics report and persisted to DB when `--persist` is used.
 
@@ -221,7 +223,7 @@ New endpoint for on-demand LLM analysis:
 ```
 POST /api/eval-runs/{run_id}/analyze
 ```
-Triggers LLM analysis for a specific eval run, updates the `suggestions.llm_analysis` field, and returns the updated suggestions.
+Triggers LLM analysis for a specific eval run, updates the `suggestions.llm_analysis` field, and returns the updated suggestions. **Idempotent:** if `suggestions.llm_analysis` is already populated, return the existing analysis without re-running (and without incurring additional API cost). Pass `?force=true` query parameter to explicitly re-run the analysis.
 
 ### 5.6 UI: SuggestionsPanel
 

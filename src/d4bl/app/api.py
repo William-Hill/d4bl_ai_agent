@@ -139,17 +139,27 @@ async def _run_pipeline(
     # Try to extract structured query from parse output
     try:
         parsed_dict = json.loads(raw_parse)
+        if not isinstance(parsed_dict, dict):
+            raise ValueError("parse output must be a JSON object")
         entities = parsed_dict.get("entities", [])
         if not isinstance(entities, list):
             entities = []
         search_queries = parsed_dict.get("search_queries", [question])
         if not isinstance(search_queries, list) or not search_queries:
             search_queries = [question]
+        else:
+            search_queries = [str(q) for q in search_queries if q]
+            if not search_queries:
+                search_queries = [question]
         data_sources = parsed_dict.get("data_sources", ["vector", "structured"])
         if not isinstance(data_sources, list) or not data_sources:
             data_sources = ["vector", "structured"]
-    except (json.JSONDecodeError, TypeError):
-        logger.debug("Parse output is not JSON (model=%s), falling back to raw query", parser_model)
+        else:
+            data_sources = [str(d) for d in data_sources if d]
+            if not data_sources:
+                data_sources = ["vector", "structured"]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        logger.debug("Parse output is not valid JSON object (model=%s), falling back to raw query", parser_model)
         search_queries = [question]
         data_sources = ["vector", "structured"]
 
@@ -229,6 +239,8 @@ async def _run_pipeline(
     eval_issues: list[str] | None = None
     try:
         eval_parsed = json.loads(raw_eval)
+        if not isinstance(eval_parsed, dict):
+            raise ValueError("evaluator output must be a JSON object")
         score = eval_parsed.get("score")
         if isinstance(score, (int, float)) and 1 <= score <= 5:
             eval_score = float(score)
@@ -238,8 +250,8 @@ async def _run_pipeline(
         issues = eval_parsed.get("issues")
         if isinstance(issues, list) and issues:
             eval_issues = [str(i) for i in issues if i]
-    except (json.JSONDecodeError, TypeError):
-        logger.debug("Evaluator output is not valid JSON (model=%s)", evaluator_model)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        logger.debug("Evaluator output is not valid JSON object (model=%s)", evaluator_model)
 
     steps.append(PipelineStep(
         step="evaluate", model_name=evaluator_model,
