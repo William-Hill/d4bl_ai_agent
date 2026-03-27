@@ -7,12 +7,14 @@ import QuantizationSlider from '@/components/learn/QuantizationSlider';
 import RegisterComparison from '@/components/learn/RegisterComparison';
 import TutorialStep from '@/components/learn/TutorialStep';
 
+const COLAB_BASE = 'https://colab.research.google.com/github/William-Hill/d4bl_ai_agent/blob/main/notebooks/tutorials';
+
 const TUTORIALS = [
-  { title: 'Understanding Your Data', description: 'Query Supabase and see the shape of equity data.' },
-  { title: 'Creating Training Data', description: 'Write distillation prompts and generate training pairs.' },
-  { title: 'Training with Unsloth', description: 'Load the model, configure LoRA, and run training.' },
-  { title: 'Testing Your Model', description: 'Load in Ollama and compare outputs to the base model.' },
-  { title: 'Making It Your Own', description: "Customize the model for your community's data." },
+  { title: 'Understanding Your Data', description: 'Query Supabase and see the shape of equity data.', colabUrl: `${COLAB_BASE}/01_understanding_your_data.ipynb` },
+  { title: 'Creating Training Data', description: 'Write distillation prompts and generate training pairs.', colabUrl: `${COLAB_BASE}/02_creating_training_data.ipynb` },
+  { title: 'Training with Unsloth', description: 'Load the model, configure LoRA, and run training.', colabUrl: `${COLAB_BASE}/03_training_with_unsloth.ipynb` },
+  { title: 'Testing Your Model', description: 'Load in Ollama and compare outputs to the base model.', colabUrl: `${COLAB_BASE}/04_testing_your_model.ipynb` },
+  { title: 'Making It Your Own', description: "Customize the model for your community's data.", colabUrl: `${COLAB_BASE}/05_making_it_your_own.ipynb` },
 ];
 
 export const metadata = {
@@ -34,6 +36,17 @@ export default function LearnPage() {
           racial equity as the starting point, not an afterthought.
         </p>
         <div className="mx-auto w-24 h-1 bg-gradient-to-r from-[#00ff32] to-[#00cc28] rounded-full" />
+        <a
+          href="https://gamma.app/docs/Building-AI-That-Centers-Racial-Equity-m8qd4n13bdtboa1"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 mt-6 px-6 py-3 bg-[#00ff32]/10 border border-[#00ff32]/30 rounded-lg text-sm text-[#00ff32] hover:bg-[#00ff32]/20 transition-colors"
+        >
+          View the Slide Deck
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </a>
       </section>
 
       {/* Section: What is a Language Model? */}
@@ -181,7 +194,7 @@ export default function LearnPage() {
               step={i + 1}
               title={t.title}
               description={t.description}
-              colabUrl="#"
+              colabUrl={t.colabUrl}
             />
           ))}
         </div>
