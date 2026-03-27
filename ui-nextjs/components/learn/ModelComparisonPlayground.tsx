@@ -117,8 +117,9 @@ export default function ModelComparisonPlayground() {
             rows={2}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            disabled={loading}
             placeholder={PLACEHOLDER_PROMPTS[task]}
-            className="w-full bg-[#292929] border border-[#404040] rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50 resize-y"
+            className="w-full bg-[#292929] border border-[#404040] rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !loading) {
                 e.preventDefault();

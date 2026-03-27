@@ -1,6 +1,8 @@
 """Tests for the --model flag in run_eval_harness.py."""
 from __future__ import annotations
 
+import pytest
+
 
 class TestModelFlag:
     def test_model_flag_overrides_task_model(self):
@@ -18,8 +20,6 @@ class TestModelFlag:
 
     def test_unknown_task_without_override_raises(self):
         """Without --model, unknown tasks should raise KeyError."""
-        import pytest
-
         from scripts.training.run_eval_harness import resolve_model_name
 
         with pytest.raises(KeyError):

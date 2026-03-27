@@ -522,12 +522,16 @@ async def compare_models_endpoint(
         )
         return output, round(time.monotonic() - start, 3)
 
+    baseline_task = asyncio.create_task(_run(baseline_model))
+    finetuned_task = asyncio.create_task(_run(finetuned_model))
     try:
         (b_output, b_latency), (f_output, f_latency) = await asyncio.gather(
-            _run(baseline_model),
-            _run(finetuned_model),
+            baseline_task, finetuned_task,
         )
     except Exception as exc:
+        # Cancel the sibling task so it doesn't consume an Ollama worker
+        for t in (baseline_task, finetuned_task):
+            t.cancel()
         logger.warning("Model inference failed for task %s", request.task, exc_info=True)
         raise HTTPException(
             status_code=502, detail="Model inference failed"
