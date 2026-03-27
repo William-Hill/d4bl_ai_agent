@@ -214,14 +214,16 @@ export default function LearnPage() {
         <EvalMetricsPanel />
       </ConceptSection>
 
-      {/* Section: Compare Models Live */}
+      {/* Section: Compare Pipelines Live */}
       <ConceptSection
-        title="Compare Models Live"
-        subtitle="Run any prompt through both models and see the difference"
+        title="Compare Pipelines Live"
+        subtitle="Same question, two pipelines — see every step side by side"
       >
         <p className="mb-6">
-          Type a query below to see how the fine-tuned D4BL model compares to
-          the base model. Select a task type to test different adapters.
+          Type a question below to run it through the full pipeline twice:
+          once with the base model at every step, once with our fine-tuned
+          adapters. Both paths search the same data — the difference is how
+          they parse your question and how they frame the answer.
         </p>
         <ModelComparisonPlayground />
       </ConceptSection>

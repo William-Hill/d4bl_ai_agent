@@ -472,29 +472,31 @@ class ExplainResponse(BaseModel):
 # --- Model Comparison models ---
 
 
-class ModelOutput(BaseModel):
-    """Output from a single model run."""
+class PipelineStep(BaseModel):
+    """A single step in the model pipeline."""
 
+    step: str  # "parse", "search", "synthesize", "evaluate"
     model_name: str
     output: str
     latency_seconds: float
-    valid_json: bool
-    errors: list[str] | None = None
 
 
-class CompareMetrics(BaseModel):
-    """Computed deltas between baseline and fine-tuned outputs."""
+class PipelinePath(BaseModel):
+    """Full pipeline execution path for one model configuration."""
 
-    latency_delta_pct: float
-    validity_improved: bool
-    task_specific_flag: str | None = None
+    label: str  # "Base Model" or "Fine-Tuned"
+    steps: list[PipelineStep]
+    final_answer: str
+    total_latency_seconds: float
+    eval_score: float | None = None  # 1-5 score from evaluator model
+    eval_explanation: str | None = None  # why the evaluator gave this score
+    eval_issues: list[str] | None = None  # specific issues found
 
 
 class CompareRequest(BaseModel):
-    """Request to compare base vs fine-tuned model on a prompt."""
+    """Request to compare base vs fine-tuned model pipelines end-to-end."""
 
     prompt: str
-    task: Literal["query_parser", "explainer", "evaluator"]
 
     @field_validator("prompt")
     @classmethod
@@ -505,12 +507,11 @@ class CompareRequest(BaseModel):
 
 
 class CompareResponse(BaseModel):
-    """Side-by-side comparison of base and fine-tuned model outputs."""
+    """End-to-end comparison of base and fine-tuned model pipelines."""
 
-    baseline: ModelOutput
-    finetuned: ModelOutput
-    metrics: CompareMetrics
-    task: str
+    baseline: PipelinePath
+    finetuned: PipelinePath
+    prompt: str
 
 
 # --- Eval Run models ---

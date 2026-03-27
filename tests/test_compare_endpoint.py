@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -25,73 +25,113 @@ def _override_auth(app):
 
 class TestCompareRequest:
     def test_valid_request(self):
-        r = CompareRequest(prompt="What is poverty rate?", task="query_parser")
+        r = CompareRequest(prompt="What is poverty rate?")
         assert r.prompt == "What is poverty rate?"
-        assert r.task == "query_parser"
 
     def test_blank_prompt_rejected(self):
         with pytest.raises(ValidationError):
-            CompareRequest(prompt="", task="query_parser")
-
-    def test_invalid_task_rejected(self):
-        with pytest.raises(ValidationError):
-            CompareRequest(prompt="test", task="invalid_task")
+            CompareRequest(prompt="")
 
 
 class TestCompareEndpoint:
     @pytest.mark.asyncio
-    async def test_compare_returns_both_outputs(self):
+    async def test_compare_runs_both_pipelines(self):
         from d4bl.app.api import app
 
         test_app = _override_auth(app)
 
-        baseline_output = "The median income is $45,081."
-        finetuned_output = json.dumps({
-            "intent": "lookup",
-            "metrics": ["median_household_income"],
-            "geographies": ["Mississippi"],
-            "races": [],
-            "time_range": None,
-            "sources": ["census"],
+        parse_output = json.dumps({
+            "entities": ["Mississippi"],
+            "search_queries": ["median income Mississippi"],
+            "data_sources": ["vector"],
         })
-
-        call_count = 0
+        synth_output = "The median income reflects structural inequity."
 
         async def mock_generate(
             *, base_url, prompt, model=None, temperature=0.1, timeout_seconds=30
         ):
-            nonlocal call_count
-            call_count += 1
-            if model and "d4bl" in model:
-                return finetuned_output
-            return baseline_output
+            # Parse step gets JSON, synthesize step gets prose
+            if "extract" in prompt.lower() or "parser" in prompt.lower():
+                return parse_output
+            return synth_output
+
+        # Mock DB session and vector store
+        mock_session = AsyncMock()
+        mock_vs = MagicMock()
+        mock_vs.search_similar = AsyncMock(return_value=[])
+
+        async def mock_get_db():
+            yield mock_session
+
+        from d4bl.infra.database import get_db
+
+        test_app.dependency_overrides[get_db] = mock_get_db
 
         with (
             patch("d4bl.app.api.ollama_generate", side_effect=mock_generate),
-            patch("d4bl.app.api.model_for_task", return_value="d4bl-query-parser"),
+            patch(
+                "d4bl.app.api.model_for_task",
+                side_effect=lambda t: f"d4bl-{t}" if t != "evaluator" else "mistral",
+            ),
+            patch("d4bl.app.api._run_pipeline") as mock_pipeline,
         ):
+            # Instead of mocking the internals, let's test the endpoint contract
+            pass
+
+        # Simpler approach: mock _run_pipeline directly
+        from d4bl.app.schemas import PipelinePath, PipelineStep
+
+        baseline_path = PipelinePath(
+            label="Base Model",
+            steps=[
+                PipelineStep(step="parse", model_name="mistral", output=parse_output, latency_seconds=1.0),
+                PipelineStep(step="search", model_name="database", output="Found 0 sources", latency_seconds=0.1),
+                PipelineStep(step="synthesize", model_name="mistral", output=synth_output, latency_seconds=2.0),
+            ],
+            final_answer=synth_output,
+            total_latency_seconds=3.1,
+        )
+        finetuned_path = PipelinePath(
+            label="Fine-Tuned",
+            steps=[
+                PipelineStep(step="parse", model_name="d4bl-query_parser", output=parse_output, latency_seconds=0.5),
+                PipelineStep(step="search", model_name="database", output="Found 0 sources", latency_seconds=0.1),
+                PipelineStep(step="synthesize", model_name="d4bl-explainer", output=synth_output, latency_seconds=1.5),
+            ],
+            final_answer=synth_output,
+            total_latency_seconds=2.1,
+        )
+
+        async def mock_run_pipeline(**kwargs):
+            if kwargs.get("label") == "Base Model":
+                return baseline_path
+            return finetuned_path
+
+        with (
+            patch("d4bl.app.api._run_pipeline", side_effect=mock_run_pipeline),
+            patch("d4bl.app.api.model_for_task", side_effect=lambda t: f"d4bl-{t}"),
+        ):
+            from d4bl.infra.database import get_db
+
+            test_app.dependency_overrides[get_db] = mock_get_db
+
             transport = ASGITransport(app=test_app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/compare",
-                    json={
-                        "prompt": "What is the median income in Mississippi?",
-                        "task": "query_parser",
-                    },
+                    json={"prompt": "What is the median income in Mississippi?"},
                 )
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["baseline"]["model_name"] == "mistral"
-        assert data["finetuned"]["valid_json"] is True
-        assert data["baseline"]["valid_json"] is False
-        assert data["metrics"]["validity_improved"] is True
-        assert data["task"] == "query_parser"
-        assert call_count == 2
+        assert data["baseline"]["label"] == "Base Model"
+        assert data["finetuned"]["label"] == "Fine-Tuned"
+        assert len(data["baseline"]["steps"]) == 3
+        assert len(data["finetuned"]["steps"]) == 3
+        assert data["baseline"]["steps"][0]["step"] == "parse"
+        assert data["baseline"]["steps"][2]["step"] == "synthesize"
+        assert data["prompt"] == "What is the median income in Mississippi?"
 
-        # Clean up
         test_app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
@@ -103,15 +143,10 @@ class TestCompareEndpoint:
 
         with patch("d4bl.app.api.model_for_task", return_value="mistral"):
             transport = ASGITransport(app=test_app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/compare",
-                    json={
-                        "prompt": "test",
-                        "task": "query_parser",
-                    },
+                    json={"prompt": "test"},
                 )
 
         assert resp.status_code == 400
