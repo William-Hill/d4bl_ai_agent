@@ -34,12 +34,16 @@ from d4bl.app.explore_helpers import (
 )
 from d4bl.app.explore_insights import router as explore_insights_router
 from d4bl.app.schemas import (
+    CompareMetrics,
+    CompareRequest,
+    CompareResponse,
     EvaluationResultItem,
     ExploreResponse,
     ExploreRow,
     InviteRequest,
     JobHistoryResponse,
     JobStatus,
+    ModelOutput,
     PolicyBillItem,
     QueryRequest,
     QueryResponse,
@@ -72,9 +76,41 @@ from d4bl.infra.database import (
 )
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.llm import get_available_models
+from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.engine import QueryEngine
+from scripts.training.validate_model_output import (
+    validate_evaluator_output,
+    validate_explainer_output,
+    validate_parser_output,
+)
 from d4bl.services.research_runner import run_research_job
 from d4bl.settings import get_settings
+
+_COMPARE_VALIDATORS = {
+    "query_parser": validate_parser_output,
+    "explainer": validate_explainer_output,
+    "evaluator": validate_evaluator_output,
+}
+
+
+def _task_specific_flag(task: str, validation_result) -> str | None:
+    """Compute a human-readable task-specific flag from validated output."""
+    if not validation_result.valid or not validation_result.parsed:
+        return None
+    parsed = validation_result.parsed
+    if task == "query_parser":
+        valid_intents = {"compare", "trend", "lookup", "aggregate"}
+        if parsed.get("intent") in valid_intents:
+            return "Intent parsed"
+    elif task == "explainer":
+        if "narrative" in parsed:
+            return "Has structural framing"
+    elif task == "evaluator":
+        score = parsed.get("score")
+        if isinstance(score, (int, float)):
+            return "Score present"
+    return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +431,82 @@ async def get_evaluations(
     result = await db.execute(query)
     rows = result.scalars().all()
     return [EvaluationResultItem(**row.to_dict()) for row in rows]
+
+
+@app.post("/api/compare", response_model=CompareResponse)
+async def compare_models_endpoint(
+    request: CompareRequest,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Run a prompt through base and fine-tuned models, return side-by-side comparison."""
+    settings = get_settings()
+    baseline_model = settings.ollama_model
+    finetuned_model = model_for_task(request.task)
+
+    if baseline_model == finetuned_model:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Fine-tuned model not configured for task '{request.task}'. "
+                f"Set the {request.task.upper()}_MODEL environment variable."
+            ),
+        )
+
+    base_url = settings.ollama_base_url
+
+    async def _run(model: str) -> tuple[str, float]:
+        start = time.monotonic()
+        output = await ollama_generate(
+            base_url=base_url,
+            prompt=request.prompt,
+            model=model,
+            temperature=0.1,
+            timeout_seconds=60,
+        )
+        return output, round(time.monotonic() - start, 3)
+
+    try:
+        (b_output, b_latency), (f_output, f_latency) = await asyncio.gather(
+            _run(baseline_model),
+            _run(finetuned_model),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Model inference failed: {exc}"
+        )
+
+    validator = _COMPARE_VALIDATORS[request.task]
+    b_result = validator(b_output)
+    f_result = validator(f_output)
+
+    latency_delta_pct = (
+        round((f_latency - b_latency) / b_latency * 100, 1)
+        if b_latency > 0
+        else 0.0
+    )
+
+    return CompareResponse(
+        baseline=ModelOutput(
+            model_name=baseline_model,
+            output=b_output,
+            latency_seconds=b_latency,
+            valid_json=b_result.valid,
+            errors=b_result.errors or None,
+        ),
+        finetuned=ModelOutput(
+            model_name=finetuned_model,
+            output=f_output,
+            latency_seconds=f_latency,
+            valid_json=f_result.valid,
+            errors=f_result.errors or None,
+        ),
+        metrics=CompareMetrics(
+            latency_delta_pct=latency_delta_pct,
+            validity_improved=f_result.valid and not b_result.valid,
+            task_specific_flag=_task_specific_flag(request.task, f_result),
+        ),
+        task=request.task,
+    )
 
 
 @app.websocket("/ws/{job_id}")
