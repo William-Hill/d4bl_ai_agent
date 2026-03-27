@@ -489,6 +489,8 @@ class PipelinePath(BaseModel):
     final_answer: str
     total_latency_seconds: float
     eval_score: float | None = None  # 1-5 score from evaluator model
+    eval_explanation: str | None = None  # why the evaluator gave this score
+    eval_issues: list[str] | None = None  # specific issues found
 
 
 class CompareRequest(BaseModel):

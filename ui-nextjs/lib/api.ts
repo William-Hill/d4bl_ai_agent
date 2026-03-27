@@ -218,6 +218,8 @@ export interface PipelinePath {
   final_answer: string;
   total_latency_seconds: number;
   eval_score: number | null;
+  eval_explanation: string | null;
+  eval_issues: string[] | null;
 }
 
 export interface CompareResponse {

@@ -223,13 +223,21 @@ async def _run_pipeline(
     )
     eval_latency = round(time.monotonic() - eval_start, 3)
 
-    # Extract score from evaluator output
+    # Extract score, explanation, and issues from evaluator output
     eval_score: float | None = None
+    eval_explanation: str | None = None
+    eval_issues: list[str] | None = None
     try:
         eval_parsed = json.loads(raw_eval)
         score = eval_parsed.get("score")
         if isinstance(score, (int, float)) and 1 <= score <= 5:
             eval_score = float(score)
+        explanation = eval_parsed.get("explanation")
+        if isinstance(explanation, str) and explanation.strip():
+            eval_explanation = explanation.strip()
+        issues = eval_parsed.get("issues")
+        if isinstance(issues, list) and issues:
+            eval_issues = [str(i) for i in issues if i]
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -244,6 +252,8 @@ async def _run_pipeline(
         label=label, steps=steps,
         final_answer=final_answer, total_latency_seconds=total_latency,
         eval_score=eval_score,
+        eval_explanation=eval_explanation,
+        eval_issues=eval_issues,
     )
 
 

@@ -13,6 +13,14 @@ const STEP_LABELS: Record<string, string> = {
 const PLACEHOLDER_PROMPT =
   'What is the median household income for Black families in Mississippi?';
 
+const EXAMPLE_PROMPTS = [
+  'What is the median household income for Black families in Mississippi?',
+  'Compare cancer rates between Black and white populations in Alabama',
+  'Which states have the highest incarceration rates for Black men?',
+  'How does air quality near Superfund sites affect minority communities?',
+  'What is the maternal mortality rate disparity in Georgia?',
+];
+
 function PipelinePanel({
   path,
   isFineTuned,
@@ -49,6 +57,9 @@ function PipelinePanel({
                     : 'bg-[#333] text-gray-500'
                 }`}>
                   {step.model_name}
+                  {step.step === 'evaluate' && (
+                    <span className="text-gray-600 ml-1">(judge)</span>
+                  )}
                 </span>
               </div>
               <span className="text-[10px] text-gray-600">{step.latency_seconds.toFixed(2)}s</span>
@@ -75,6 +86,46 @@ function PipelinePanel({
           </pre>
         </div>
       </div>
+
+      {/* Eval explainability */}
+      {path.eval_score != null && (
+        <div className="bg-[#1a1a1a] border border-[#404040] rounded-md p-3 mt-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+              Equity Score
+            </span>
+            <span className={`text-sm font-bold ${
+              path.eval_score >= 4 ? 'text-[#4ade80]'
+                : path.eval_score >= 3 ? 'text-[#fbbf24]'
+                  : 'text-[#f87171]'
+            }`}>
+              {path.eval_score.toFixed(1)} / 5
+            </span>
+          </div>
+          {path.eval_explanation && (
+            <p className="text-[11px] text-gray-400 leading-relaxed mb-2">
+              {path.eval_explanation}
+            </p>
+          )}
+          {path.eval_issues && path.eval_issues.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Issues found:</span>
+              {path.eval_issues.map((issue, i) => (
+                <div key={i} className="text-[11px] text-[#f87171] bg-[#402424]/50 rounded px-2 py-1">
+                  {issue}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 pt-2 border-t border-[#333]">
+            <p className="text-[10px] text-gray-600 leading-relaxed">
+              Scored by the D4BL evaluator model on: structural framing (names systemic causes),
+              community voice (accessible language), policy connection (links to interventions),
+              and data acknowledgment (notes limitations and biases).
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -168,6 +219,27 @@ export default function ModelComparisonPlayground() {
         >
           {loading ? 'Running...' : 'Compare Pipelines'}
         </button>
+      </div>
+
+      {/* Example prompts */}
+      <div className="flex gap-2 flex-wrap">
+        <span className="text-[10px] text-gray-500 uppercase tracking-widest self-center">
+          Try:
+        </span>
+        {EXAMPLE_PROMPTS.map((example, i) => (
+          <button
+            key={i}
+            disabled={loading}
+            onClick={() => {
+              setPrompt(example);
+              setResult(null);
+              setError(null);
+            }}
+            className="text-[11px] text-gray-400 bg-[#292929] border border-[#404040] rounded-md px-2 py-1 hover:text-white hover:border-[#00ff32]/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {example.length > 50 ? example.slice(0, 50) + '...' : example}
+          </button>
+        ))}
       </div>
 
       {/* Error state */}
