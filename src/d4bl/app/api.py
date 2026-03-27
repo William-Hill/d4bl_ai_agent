@@ -5,6 +5,7 @@ FastAPI backend for D4BL AI Agent UI
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -136,7 +137,6 @@ async def _run_pipeline(
     ))
 
     # Try to extract structured query from parse output
-    import json
     try:
         parsed_dict = json.loads(raw_parse)
         entities = parsed_dict.get("entities", [])
@@ -149,7 +149,7 @@ async def _run_pipeline(
         if not isinstance(data_sources, list) or not data_sources:
             data_sources = ["vector", "structured"]
     except (json.JSONDecodeError, TypeError):
-        # Base model likely returned prose, not JSON — fall back
+        logger.debug("Parse output is not JSON (model=%s), falling back to raw query", parser_model)
         search_queries = [question]
         data_sources = ["vector", "structured"]
 
@@ -239,7 +239,7 @@ async def _run_pipeline(
         if isinstance(issues, list) and issues:
             eval_issues = [str(i) for i in issues if i]
     except (json.JSONDecodeError, TypeError):
-        pass
+        logger.debug("Evaluator output is not valid JSON (model=%s)", evaluator_model)
 
     steps.append(PipelineStep(
         step="evaluate", model_name=evaluator_model,
@@ -674,7 +674,6 @@ async def get_eval_runs(
 async def compare_models_endpoint(
     request: CompareRequest,
     user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ):
     """Run the full query pipeline through both base and fine-tuned models.
 
@@ -699,29 +698,47 @@ async def compare_models_endpoint(
             ),
         )
 
+    # Warn if only partially configured — one adapter missing means one
+    # pipeline step quietly uses the base model under the "Fine-Tuned" label.
+    if base_model == parser_model or base_model == explainer_model:
+        partial = []
+        if base_model == parser_model:
+            partial.append("QUERY_PARSER_MODEL")
+        if base_model == explainer_model:
+            partial.append("EXPLAINER_MODEL")
+        logger.warning(
+            "Partially configured fine-tuned pipeline: %s not set, using base model",
+            ", ".join(partial),
+        )
+
     base_url = settings.ollama_base_url
 
+    # Each pipeline needs its own AsyncSession — SQLAlchemy AsyncSession
+    # is not safe for concurrent use from multiple asyncio tasks.
+    from d4bl.infra.database import async_session_maker as _session_maker
+
+    if _session_maker is None:
+        from d4bl.infra.database import init_db
+        init_db()
+        from d4bl.infra.database import async_session_maker as _session_maker
+
+    async def _run_with_session(label: str, p_model: str, e_model: str) -> PipelinePath:
+        async with _session_maker() as session:
+            return await _run_pipeline(
+                question=request.prompt,
+                parser_model=p_model,
+                explainer_model=e_model,
+                evaluator_model=evaluator_model,
+                base_url=base_url,
+                db=session,
+                label=label,
+            )
+
     baseline_task = asyncio.create_task(
-        _run_pipeline(
-            question=request.prompt,
-            parser_model=base_model,
-            explainer_model=base_model,
-            evaluator_model=evaluator_model,
-            base_url=base_url,
-            db=db,
-            label="Base Model",
-        )
+        _run_with_session("Base Model", base_model, base_model)
     )
     finetuned_task = asyncio.create_task(
-        _run_pipeline(
-            question=request.prompt,
-            parser_model=parser_model,
-            explainer_model=explainer_model,
-            evaluator_model=evaluator_model,
-            base_url=base_url,
-            db=db,
-            label="Fine-Tuned",
-        )
+        _run_with_session("Fine-Tuned", parser_model, explainer_model)
     )
 
     try:
