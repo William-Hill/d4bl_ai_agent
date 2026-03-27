@@ -37,6 +37,8 @@ from d4bl.app.schemas import (
     CompareMetrics,
     CompareRequest,
     CompareResponse,
+    EvalRunItem,
+    EvalRunsResponse,
     EvaluationResultItem,
     ExploreResponse,
     ExploreRow,
@@ -66,6 +68,7 @@ from d4bl.infra.database import (
     FbiCrimeStat,
     HudFairHousing,
     IngestionRun,
+    ModelEvalRun,
     PoliceViolenceIncident,
     PolicyBill,
     ResearchJob,
@@ -431,6 +434,46 @@ async def get_evaluations(
     result = await db.execute(query)
     rows = result.scalars().all()
     return [EvaluationResultItem(**row.to_dict()) for row in rows]
+
+
+@app.get("/api/eval-runs", response_model=EvalRunsResponse)
+async def get_eval_runs(
+    task: str | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return latest model evaluation runs for the eval metrics dashboard."""
+    query = (
+        select(ModelEvalRun)
+        .order_by(desc(ModelEvalRun.created_at))
+        .limit(20)
+    )
+    if task:
+        query = query.where(ModelEvalRun.task == task)
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    # Deduplicate: keep only the latest per (model_name, task)
+    seen: set[tuple[str, str]] = set()
+    unique_runs: list[EvalRunItem] = []
+    for row in rows:
+        key = (row.model_name, row.task)
+        if key not in seen:
+            seen.add(key)
+            d = row.to_dict()
+            unique_runs.append(EvalRunItem(
+                model_name=d["model_name"],
+                model_version=d["model_version"],
+                base_model_name=d["base_model_name"],
+                task=d["task"],
+                metrics=d["metrics"],
+                ship_decision=d["ship_decision"],
+                blocking_failures=d.get("blocking_failures"),
+                created_at=str(d.get("created_at", "")),
+            ))
+
+    return EvalRunsResponse(runs=unique_runs)
 
 
 @app.post("/api/compare", response_model=CompareResponse)
