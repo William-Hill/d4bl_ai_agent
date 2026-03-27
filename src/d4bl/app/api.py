@@ -81,13 +81,13 @@ from d4bl.infra.vector_store import get_vector_store
 from d4bl.llm import get_available_models
 from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.engine import QueryEngine
+from d4bl.services.research_runner import run_research_job
+from d4bl.settings import get_settings
 from scripts.training.validate_model_output import (
     validate_evaluator_output,
     validate_explainer_output,
     validate_parser_output,
 )
-from d4bl.services.research_runner import run_research_job
-from d4bl.settings import get_settings
 
 _COMPARE_VALIDATORS = {
     "query_parser": validate_parser_output,
@@ -443,35 +443,48 @@ async def get_eval_runs(
     db: AsyncSession = Depends(get_db),
 ):
     """Return latest model evaluation runs for the eval metrics dashboard."""
+    # Deduplicate first: get latest run per (model_name, task) via subquery,
+    # then apply limit — avoids dropping less-frequent model/task combos.
+    latest_subq = (
+        select(
+            ModelEvalRun.model_name,
+            ModelEvalRun.task,
+            func.max(ModelEvalRun.created_at).label("max_created"),
+        )
+        .group_by(ModelEvalRun.model_name, ModelEvalRun.task)
+    )
+    if task:
+        latest_subq = latest_subq.where(ModelEvalRun.task == task)
+    latest_subq = latest_subq.subquery()
+
     query = (
         select(ModelEvalRun)
+        .join(
+            latest_subq,
+            (ModelEvalRun.model_name == latest_subq.c.model_name)
+            & (ModelEvalRun.task == latest_subq.c.task)
+            & (ModelEvalRun.created_at == latest_subq.c.max_created),
+        )
         .order_by(desc(ModelEvalRun.created_at))
         .limit(20)
     )
-    if task:
-        query = query.where(ModelEvalRun.task == task)
 
     result = await db.execute(query)
     rows = result.scalars().all()
 
-    # Deduplicate: keep only the latest per (model_name, task)
-    seen: set[tuple[str, str]] = set()
     unique_runs: list[EvalRunItem] = []
     for row in rows:
-        key = (row.model_name, row.task)
-        if key not in seen:
-            seen.add(key)
-            d = row.to_dict()
-            unique_runs.append(EvalRunItem(
-                model_name=d["model_name"],
-                model_version=d["model_version"],
-                base_model_name=d["base_model_name"],
-                task=d["task"],
-                metrics=d["metrics"],
-                ship_decision=d["ship_decision"],
-                blocking_failures=d.get("blocking_failures"),
-                created_at=str(d.get("created_at", "")),
-            ))
+        d = row.to_dict()
+        unique_runs.append(EvalRunItem(
+            model_name=d["model_name"],
+            model_version=d["model_version"],
+            base_model_name=d["base_model_name"],
+            task=d["task"],
+            metrics=d["metrics"],
+            ship_decision=d["ship_decision"],
+            blocking_failures=d.get("blocking_failures"),
+            created_at=str(d.get("created_at", "")),
+        ))
 
     return EvalRunsResponse(runs=unique_runs)
 
@@ -514,9 +527,10 @@ async def compare_models_endpoint(
             _run(finetuned_model),
         )
     except Exception as exc:
+        logger.warning("Model inference failed for task %s", request.task, exc_info=True)
         raise HTTPException(
-            status_code=502, detail=f"Model inference failed: {exc}"
-        )
+            status_code=502, detail="Model inference failed"
+        ) from exc
 
     validator = _COMPARE_VALIDATORS[request.task]
     b_result = validator(b_output)
@@ -533,19 +547,19 @@ async def compare_models_endpoint(
             model_name=baseline_model,
             output=b_output,
             latency_seconds=b_latency,
-            valid_json=b_result.valid,
+            valid_json=b_result.parsed is not None,
             errors=b_result.errors or None,
         ),
         finetuned=ModelOutput(
             model_name=finetuned_model,
             output=f_output,
             latency_seconds=f_latency,
-            valid_json=f_result.valid,
+            valid_json=f_result.parsed is not None,
             errors=f_result.errors or None,
         ),
         metrics=CompareMetrics(
             latency_delta_pct=latency_delta_pct,
-            validity_improved=f_result.valid and not b_result.valid,
+            validity_improved=(f_result.parsed is not None) and (b_result.parsed is None),
             task_specific_flag=_task_specific_flag(request.task, f_result),
         ),
         task=request.task,

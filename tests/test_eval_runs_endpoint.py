@@ -4,8 +4,6 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from d4bl.app.schemas import EvalRunsResponse
-
 
 def _override_auth(app):
     from d4bl.app.auth import get_current_user
@@ -21,7 +19,7 @@ def _override_auth(app):
 class TestEvalRunsEndpoint:
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_runs(self):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         from d4bl.app.api import app
 
@@ -51,7 +49,7 @@ class TestEvalRunsEndpoint:
 
     @pytest.mark.asyncio
     async def test_returns_runs_grouped(self):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         from d4bl.app.api import app
 

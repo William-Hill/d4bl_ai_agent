@@ -101,17 +101,26 @@ export default function ModelComparisonPlayground() {
   return (
     <div className="space-y-4">
       {/* Query input */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder={PLACEHOLDER_PROMPTS[task]}
-          className="flex-1 bg-[#292929] border border-[#404040] rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !loading) handleCompare();
-          }}
-        />
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <label htmlFor="compare-prompt" className="sr-only">
+            Prompt
+          </label>
+          <textarea
+            id="compare-prompt"
+            rows={2}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={PLACEHOLDER_PROMPTS[task]}
+            className="w-full bg-[#292929] border border-[#404040] rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50 resize-y"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !loading) {
+                e.preventDefault();
+                handleCompare();
+              }
+            }}
+          />
+        </div>
         <button
           onClick={handleCompare}
           disabled={loading}
