@@ -83,7 +83,8 @@ from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
 from d4bl.settings import get_settings
-from scripts.training.validate_model_output import (
+from d4bl.validation.model_output import (
+    ValidationResult,
     validate_evaluator_output,
     validate_explainer_output,
     validate_parser_output,
@@ -96,7 +97,7 @@ _COMPARE_VALIDATORS = {
 }
 
 
-def _task_specific_flag(task: str, validation_result) -> str | None:
+def _task_specific_flag(task: str, validation_result: ValidationResult) -> str | None:
     """Compute a human-readable task-specific flag from validated output."""
     if not validation_result.valid or not validation_result.parsed:
         return None

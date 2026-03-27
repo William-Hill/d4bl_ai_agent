@@ -523,9 +523,9 @@ class EvalRunItem(BaseModel):
     model_version: str
     base_model_name: str
     task: str
-    metrics: dict[str, Any]
+    metrics: dict[str, float | None]
     ship_decision: str
-    blocking_failures: list[dict] | None = None
+    blocking_failures: list[dict] | None = None  # CriterionFailure dicts from eval harness
     created_at: str | None = None
 
 

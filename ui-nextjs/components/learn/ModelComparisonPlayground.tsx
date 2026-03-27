@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { compareModels, CompareResponse } from '@/lib/api';
 
 type Task = 'query_parser' | 'explainer' | 'evaluator';
@@ -81,20 +81,26 @@ export default function ModelComparisonPlayground() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const handleCompare = async () => {
     const queryText = prompt.trim() || PLACEHOLDER_PROMPTS[task];
+    const currentRequestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
       const data = await compareModels(queryText, task);
+      if (requestIdRef.current !== currentRequestId) return;
       setResult(data);
     } catch (err: unknown) {
+      if (requestIdRef.current !== currentRequestId) return;
       setError(err instanceof Error ? err.message : 'Comparison failed');
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === currentRequestId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -135,14 +141,19 @@ export default function ModelComparisonPlayground() {
         {(Object.keys(TASK_LABELS) as Task[]).map((t) => (
           <button
             key={t}
+            disabled={loading}
             onClick={() => {
+              if (loading) return;
               setTask(t);
               setResult(null);
+              setError(null);
             }}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               task === t
                 ? 'bg-[#00ff32] text-black'
-                : 'bg-[#333] text-gray-400 hover:text-white'
+                : loading
+                  ? 'bg-[#333] text-gray-600 cursor-not-allowed'
+                  : 'bg-[#333] text-gray-400 hover:text-white'
             }`}
           >
             {TASK_LABELS[t]}

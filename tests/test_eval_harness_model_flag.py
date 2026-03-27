@@ -10,6 +10,17 @@ class TestModelFlag:
         # Without --model: uses default
         assert resolve_model_name(None, "query_parser") == TASK_MODELS["query_parser"]
 
+        assert resolve_model_name(None, "evaluator") == TASK_MODELS["evaluator"]
+
         # With --model: uses override
         assert resolve_model_name("mistral", "query_parser") == "mistral"
         assert resolve_model_name("custom-model", "explainer") == "custom-model"
+
+    def test_unknown_task_without_override_raises(self):
+        """Without --model, unknown tasks should raise KeyError."""
+        import pytest
+
+        from scripts.training.run_eval_harness import resolve_model_name
+
+        with pytest.raises(KeyError):
+            resolve_model_name(None, "unknown_task")

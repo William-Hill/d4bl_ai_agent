@@ -15,8 +15,16 @@ const SHIP_BADGES: Record<string, { bg: string; text: string; label: string }> =
   ship_with_gaps: { bg: 'bg-[#3d3520]', text: 'text-[#fbbf24]', label: 'Ship with Gaps' },
 };
 
-/** Metrics where lower is better (latency, MAE). */
+/** Metrics where lower is better (latency, MAE) — display as raw numbers. */
 const LOWER_IS_BETTER = new Set(['p50_latency_ms', 'p95_latency_ms', 'relevance_mae', 'bias_mae']);
+
+/** Suffixes that indicate a metric is a 0-1 rate displayed as percentage. */
+const PERCENT_SUFFIXES = ['_rate', '_accuracy', '_f1', '_pass_rate', '_consistency'];
+
+function isPercentMetric(name: string): boolean {
+  if (LOWER_IS_BETTER.has(name)) return false;
+  return PERCENT_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
 
 function MetricRow({ name, value }: { name: string; value: number | null }) {
   if (value === null) {
@@ -28,8 +36,7 @@ function MetricRow({ name, value }: { name: string; value: number | null }) {
     );
   }
 
-  const isPercent = !LOWER_IS_BETTER.has(name) && value <= 1.0;
-  const displayValue = isPercent ? `${(value * 100).toFixed(1)}%` : value.toFixed(2);
+  const displayValue = isPercentMetric(name) ? `${(value * 100).toFixed(1)}%` : value.toFixed(2);
 
   return (
     <div className="flex justify-between py-1">
