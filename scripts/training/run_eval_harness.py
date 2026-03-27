@@ -45,6 +45,13 @@ TASK_MODELS: dict[str, str] = {
 }
 
 
+def resolve_model_name(model_override: str | None, task: str) -> str:
+    """Resolve inference model: --model override takes precedence over TASK_MODELS."""
+    if model_override:
+        return model_override
+    return TASK_MODELS[task]
+
+
 @dataclass
 class RegressionAlert:
     metric: str
@@ -326,15 +333,16 @@ async def main(args: argparse.Namespace) -> int:
             logger.warning("Empty test set: %s", test_path)
             continue
 
+        model_name = resolve_model_name(args.model, task)
         logger.info(
             "Running %s eval: %d examples, model=%s",
-            task, len(test_set), TASK_MODELS[task],
+            task, len(test_set), model_name,
         )
 
         result = await run_task_eval(
             task=task,
             test_set=test_set,
-            model_name=TASK_MODELS[task],
+            model_name=model_name,
             model_version=args.model_version,
             base_model_name=args.baseline,
             base_url=args.ollama_url,
@@ -369,6 +377,10 @@ def cli() -> int:
     )
     parser.add_argument(
         "--baseline", default="mistral", help="Baseline model name",
+    )
+    parser.add_argument(
+        "--model",
+        help="Override inference model (default: use task-specific fine-tuned model)",
     )
     parser.add_argument(
         "--model-version", default="v1.0",

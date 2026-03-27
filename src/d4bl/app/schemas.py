@@ -468,3 +468,69 @@ class ExplainResponse(BaseModel):
     caveats: list[str]
     generated_at: str
 
+
+# --- Model Comparison models ---
+
+
+class ModelOutput(BaseModel):
+    """Output from a single model run."""
+
+    model_name: str
+    output: str
+    latency_seconds: float
+    valid_json: bool
+    errors: list[str] | None = None
+
+
+class CompareMetrics(BaseModel):
+    """Computed deltas between baseline and fine-tuned outputs."""
+
+    latency_delta_pct: float
+    validity_improved: bool
+    task_specific_flag: str | None = None
+
+
+class CompareRequest(BaseModel):
+    """Request to compare base vs fine-tuned model on a prompt."""
+
+    prompt: str
+    task: Literal["query_parser", "explainer", "evaluator"]
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Prompt cannot be empty")
+        return v
+
+
+class CompareResponse(BaseModel):
+    """Side-by-side comparison of base and fine-tuned model outputs."""
+
+    baseline: ModelOutput
+    finetuned: ModelOutput
+    metrics: CompareMetrics
+    task: str
+
+
+# --- Eval Run models ---
+
+
+class EvalRunItem(BaseModel):
+    """A single model evaluation run result."""
+
+    model_name: str
+    model_version: str
+    base_model_name: str
+    task: str
+    metrics: dict[str, float | None]
+    ship_decision: str
+    blocking_failures: list[dict] | None = None  # CriterionFailure dicts from eval harness
+    created_at: str | None = None
+
+
+class EvalRunsResponse(BaseModel):
+    """Collection of eval run results."""
+
+    runs: list[EvalRunItem]
+

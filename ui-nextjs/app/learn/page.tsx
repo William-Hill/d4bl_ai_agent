@@ -1,8 +1,9 @@
 import ConceptSection from '@/components/learn/ConceptSection';
 import DistillationPipeline from '@/components/learn/DistillationPipeline';
+import EvalMetricsPanel from '@/components/learn/EvalMetricsPanel';
 import LoRAVisualizer from '@/components/learn/LoRAVisualizer';
 import MethodologyWheel from '@/components/learn/MethodologyWheel';
-import PlaygroundPlaceholder from '@/components/learn/PlaygroundPlaceholder';
+import ModelComparisonPlayground from '@/components/learn/ModelComparisonPlayground';
 import QuantizationSlider from '@/components/learn/QuantizationSlider';
 import RegisterComparison from '@/components/learn/RegisterComparison';
 import TutorialStep from '@/components/learn/TutorialStep';
@@ -200,17 +201,29 @@ export default function LearnPage() {
         </div>
       </ConceptSection>
 
-      {/* Section: What's Next */}
+      {/* Section: How It Performs */}
       <ConceptSection
-        title="What's Next"
-        subtitle="The playground is coming"
+        title="How It Performs"
+        subtitle="Eval harness results comparing base and fine-tuned models"
       >
         <p className="mb-6">
-          We&apos;re building an interactive playground where you can query the D4BL
-          model directly, compare outputs across registers, and export results
-          for your own analysis.
+          We run each model through a standardized test set and measure JSON
+          validity, entity extraction, equity framing, and latency. These are
+          the latest results from our evaluation harness.
         </p>
-        <PlaygroundPlaceholder />
+        <EvalMetricsPanel />
+      </ConceptSection>
+
+      {/* Section: Compare Models Live */}
+      <ConceptSection
+        title="Compare Models Live"
+        subtitle="Run any prompt through both models and see the difference"
+      >
+        <p className="mb-6">
+          Type a query below to see how the fine-tuned D4BL model compares to
+          the base model. Select a task type to test different adapters.
+        </p>
+        <ModelComparisonPlayground />
       </ConceptSection>
     </main>
   );

@@ -1,6 +1,7 @@
 """
 FastAPI backend for D4BL AI Agent UI
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,12 +35,18 @@ from d4bl.app.explore_helpers import (
 )
 from d4bl.app.explore_insights import router as explore_insights_router
 from d4bl.app.schemas import (
+    CompareMetrics,
+    CompareRequest,
+    CompareResponse,
+    EvalRunItem,
+    EvalRunsResponse,
     EvaluationResultItem,
     ExploreResponse,
     ExploreRow,
     InviteRequest,
     JobHistoryResponse,
     JobStatus,
+    ModelOutput,
     PolicyBillItem,
     QueryRequest,
     QueryResponse,
@@ -62,6 +69,7 @@ from d4bl.infra.database import (
     FbiCrimeStat,
     HudFairHousing,
     IngestionRun,
+    ModelEvalRun,
     PoliceViolenceIncident,
     PolicyBill,
     ResearchJob,
@@ -72,23 +80,101 @@ from d4bl.infra.database import (
 )
 from d4bl.infra.vector_store import get_vector_store
 from d4bl.llm import get_available_models
+from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
 from d4bl.settings import get_settings
+from d4bl.validation.model_output import (
+    VALID_INTENTS,
+    ValidationResult,
+    validate_evaluator_output,
+    validate_explainer_output,
+    validate_parser_output,
+)
+
+_COMPARE_VALIDATORS = {
+    "query_parser": validate_parser_output,
+    "explainer": validate_explainer_output,
+    "evaluator": validate_evaluator_output,
+}
+
+
+def _task_specific_flag(task: str, validation_result: ValidationResult) -> str | None:
+    """Compute a human-readable task-specific flag from validated output."""
+    if not validation_result.valid or not validation_result.parsed:
+        return None
+    parsed = validation_result.parsed
+    if task == "query_parser":
+        if parsed.get("intent") in VALID_INTENTS:
+            return "Intent parsed"
+    elif task == "explainer":
+        if "narrative" in parsed:
+            return "Has structural framing"
+    elif task == "evaluator":
+        score = parsed.get("score")
+        if isinstance(score, (int, float)):
+            return "Score present"
+    return None
+
 
 logger = logging.getLogger(__name__)
 
-ABBREV_TO_FIPS: dict[str, str] = {v: k for k, v in {
-    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO",
-    "09": "CT", "10": "DE", "11": "DC", "12": "FL", "13": "GA", "15": "HI",
-    "16": "ID", "17": "IL", "18": "IN", "19": "IA", "20": "KS", "21": "KY",
-    "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN",
-    "28": "MS", "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH",
-    "34": "NJ", "35": "NM", "36": "NY", "37": "NC", "38": "ND", "39": "OH",
-    "40": "OK", "41": "OR", "42": "PA", "44": "RI", "45": "SC", "46": "SD",
-    "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA",
-    "54": "WV", "55": "WI", "56": "WY",
-}.items()}
+ABBREV_TO_FIPS: dict[str, str] = {
+    v: k
+    for k, v in {
+        "01": "AL",
+        "02": "AK",
+        "04": "AZ",
+        "05": "AR",
+        "06": "CA",
+        "08": "CO",
+        "09": "CT",
+        "10": "DE",
+        "11": "DC",
+        "12": "FL",
+        "13": "GA",
+        "15": "HI",
+        "16": "ID",
+        "17": "IL",
+        "18": "IN",
+        "19": "IA",
+        "20": "KS",
+        "21": "KY",
+        "22": "LA",
+        "23": "ME",
+        "24": "MD",
+        "25": "MA",
+        "26": "MI",
+        "27": "MN",
+        "28": "MS",
+        "29": "MO",
+        "30": "MT",
+        "31": "NE",
+        "32": "NV",
+        "33": "NH",
+        "34": "NJ",
+        "35": "NM",
+        "36": "NY",
+        "37": "NC",
+        "38": "ND",
+        "39": "OH",
+        "40": "OK",
+        "41": "OR",
+        "42": "PA",
+        "44": "RI",
+        "45": "SC",
+        "46": "SD",
+        "47": "TN",
+        "48": "TX",
+        "49": "UT",
+        "50": "VT",
+        "51": "VA",
+        "53": "WA",
+        "54": "WV",
+        "55": "WI",
+        "56": "WY",
+    }.items()
+}
 
 # Reverse lookup: FIPS -> abbreviation
 FIPS_TO_ABBREV: dict[str, str] = {v: k for k, v in ABBREV_TO_FIPS.items()}
@@ -120,9 +206,7 @@ async def _check_cache_freshness(session: AsyncSession):
     _last_freshness_check = now
     try:
         result = await session.execute(
-            select(func.max(IngestionRun.completed_at)).where(
-                IngestionRun.status == "completed"
-            )
+            select(func.max(IngestionRun.completed_at)).where(IngestionRun.status == "completed")
         )
         latest = result.scalar()
         if latest:
@@ -142,9 +226,7 @@ def parse_job_uuid(job_id: str) -> UUID:
 
 async def fetch_research_job(db: AsyncSession, job_uuid: UUID) -> ResearchJob:
     """Load a ResearchJob by UUID, raising HTTP 404 if not found."""
-    result = await db.execute(
-        select(ResearchJob).where(ResearchJob.job_id == job_uuid)
-    )
+    result = await db.execute(select(ResearchJob).where(ResearchJob.job_id == job_uuid))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -236,8 +318,7 @@ _ingestion_jobs: dict[str, dict] = {}  # job_id -> {process, sources, started_at
 def _evict_finished_jobs() -> None:
     """Remove completed jobs to prevent unbounded growth."""
     to_remove = [
-        jid for jid, entry in _ingestion_jobs.items()
-        if entry["process"].poll() is not None
+        jid for jid, entry in _ingestion_jobs.items() if entry["process"].poll() is not None
     ]
     for jid in to_remove:
         _ingestion_jobs.pop(jid, None)
@@ -279,20 +360,20 @@ async def create_research(
 
         # Start the research job in the background (WebSocket will connect separately)
         # Store the task reference to prevent GC from cancelling it prematurely
-        task = asyncio.create_task(run_research_job(
-            job_id,
-            request.query,
-            request.summary_format,
-            request.selected_agents,
-            request.model,
-        ))
+        task = asyncio.create_task(
+            run_research_job(
+                job_id,
+                request.query,
+                request.summary_format,
+                request.selected_agents,
+                request.model,
+            )
+        )
         _background_tasks.add(task)
         task.add_done_callback(_log_task_exception)
 
         return ResearchResponse(
-            job_id=job_id,
-            status="pending",
-            message="Research job created successfully"
+            job_id=job_id, status="pending", message="Research job created successfully"
         )
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -356,7 +437,7 @@ async def get_job_history(
             jobs=[JobStatus(**job.to_dict()) for job in jobs],
             total=total,
             page=page,
-            page_size=page_size
+            page_size=page_size,
         )
     except Exception as e:
         logger.error("Error fetching job history: %s", e)
@@ -397,16 +478,145 @@ async def get_evaluations(
     return [EvaluationResultItem(**row.to_dict()) for row in rows]
 
 
-@app.websocket("/ws/{job_id}")
-async def websocket_endpoint(
-    websocket: WebSocket, job_id: str, token: str | None = None
+@app.get("/api/eval-runs", response_model=EvalRunsResponse)
+async def get_eval_runs(
+    task: str | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    """Return latest model evaluation runs for the eval metrics dashboard."""
+    # Deduplicate first: get latest run per (model_name, task) via subquery,
+    # then apply limit — avoids dropping less-frequent model/task combos.
+    latest_subq = select(
+        ModelEvalRun.model_name,
+        ModelEvalRun.task,
+        func.max(ModelEvalRun.created_at).label("max_created"),
+    ).group_by(ModelEvalRun.model_name, ModelEvalRun.task)
+    if task:
+        latest_subq = latest_subq.where(ModelEvalRun.task == task)
+    latest_subq = latest_subq.subquery()
+
+    query = (
+        select(ModelEvalRun)
+        .join(
+            latest_subq,
+            (ModelEvalRun.model_name == latest_subq.c.model_name)
+            & (ModelEvalRun.task == latest_subq.c.task)
+            & (ModelEvalRun.created_at == latest_subq.c.max_created),
+        )
+        .order_by(desc(ModelEvalRun.created_at))
+        .limit(20)
+    )
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    unique_runs: list[EvalRunItem] = []
+    for row in rows:
+        d = row.to_dict()
+        unique_runs.append(
+            EvalRunItem(
+                model_name=d["model_name"],
+                model_version=d["model_version"],
+                base_model_name=d["base_model_name"],
+                task=d["task"],
+                metrics=d["metrics"],
+                ship_decision=d["ship_decision"],
+                blocking_failures=d.get("blocking_failures"),
+                created_at=str(d.get("created_at", "")),
+            )
+        )
+
+    return EvalRunsResponse(runs=unique_runs)
+
+
+@app.post("/api/compare", response_model=CompareResponse)
+async def compare_models_endpoint(
+    request: CompareRequest,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Run a prompt through base and fine-tuned models, return side-by-side comparison."""
+    settings = get_settings()
+    baseline_model = settings.ollama_model
+    finetuned_model = model_for_task(request.task)
+
+    if baseline_model == finetuned_model:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Fine-tuned model not configured for task '{request.task}'. "
+                f"Set the {request.task.upper()}_MODEL environment variable."
+            ),
+        )
+
+    base_url = settings.ollama_base_url
+
+    async def _run(model: str) -> tuple[str, float]:
+        start = time.monotonic()
+        output = await ollama_generate(
+            base_url=base_url,
+            prompt=request.prompt,
+            model=model,
+            temperature=0.1,
+            timeout_seconds=60,
+        )
+        return output, round(time.monotonic() - start, 3)
+
+    baseline_task = asyncio.create_task(_run(baseline_model))
+    finetuned_task = asyncio.create_task(_run(finetuned_model))
+    try:
+        (b_output, b_latency), (f_output, f_latency) = await asyncio.gather(
+            baseline_task,
+            finetuned_task,
+        )
+    except Exception as exc:
+        # Cancel the sibling task so it doesn't consume an Ollama worker
+        for t in (baseline_task, finetuned_task):
+            t.cancel()
+        logger.warning("Model inference failed for task %s", request.task, exc_info=True)
+        raise HTTPException(status_code=502, detail="Model inference failed") from exc
+
+    validator = _COMPARE_VALIDATORS[request.task]
+    b_result = validator(b_output)
+    f_result = validator(f_output)
+
+    latency_delta_pct = (
+        round((f_latency - b_latency) / b_latency * 100, 1) if b_latency > 0 else 0.0
+    )
+
+    return CompareResponse(
+        baseline=ModelOutput(
+            model_name=baseline_model,
+            output=b_output,
+            latency_seconds=b_latency,
+            valid_json=b_result.parsed is not None,
+            errors=b_result.errors or None,
+        ),
+        finetuned=ModelOutput(
+            model_name=finetuned_model,
+            output=f_output,
+            latency_seconds=f_latency,
+            valid_json=f_result.parsed is not None,
+            errors=f_result.errors or None,
+        ),
+        metrics=CompareMetrics(
+            latency_delta_pct=latency_delta_pct,
+            validity_improved=(f_result.parsed is not None) and (b_result.parsed is None),
+            task_specific_flag=_task_specific_flag(request.task, f_result),
+        ),
+        task=request.task,
+    )
+
+
+@app.websocket("/ws/{job_id}")
+async def websocket_endpoint(websocket: WebSocket, job_id: str, token: str | None = None):
     """WebSocket endpoint for real-time progress updates"""
     if not token:
         await websocket.close(code=1008, reason="Missing token")
         return
     # Validate JWT manually (can't use Depends in WebSocket easily)
     from d4bl.app.auth import decode_supabase_jwt
+
     settings = get_settings()
     try:
         payload = decode_supabase_jwt(token, settings)
@@ -457,38 +667,41 @@ async def websocket_endpoint(
                 if job:
                     job_dict = job.to_dict()
                     if job.status == "completed":
-                        await websocket.send_json({
-                            "type": "complete",
-                            "job_id": job_id,
-                            "status": "completed",
-                            "result": job_dict.get("result")
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "complete",
+                                "job_id": job_id,
+                                "status": "completed",
+                                "result": job_dict.get("result"),
+                            }
+                        )
                     elif job.status == "error":
-                        await websocket.send_json({
-                            "type": "error",
-                            "job_id": job_id,
-                            "status": "error",
-                            "error": job_dict.get("error")
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "job_id": job_id,
+                                "status": "error",
+                                "error": job_dict.get("error"),
+                            }
+                        )
                     else:
-                        await websocket.send_json({
-                            "type": "status",
-                            "job_id": job_id,
-                            "status": job.status,
-                            "progress": job_dict.get("progress"),
-                            "logs": job_dict.get("logs") or get_job_logs(job_id)
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "status",
+                                "job_id": job_id,
+                                "status": job.status,
+                                "progress": job_dict.get("progress"),
+                                "logs": job_dict.get("logs") or get_job_logs(job_id),
+                            }
+                        )
         except Exception as db_error:
             logger.error("Error fetching job from database: %s", db_error)
             # Fallback to in-memory logs if available
             fallback_logs = get_job_logs(job_id)
             if fallback_logs:
-                await websocket.send_json({
-                    "type": "status",
-                    "job_id": job_id,
-                    "status": "unknown",
-                    "logs": fallback_logs
-                })
+                await websocket.send_json(
+                    {"type": "status", "job_id": job_id, "status": "unknown", "logs": fallback_logs}
+                )
 
         # Keep connection alive and handle messages
         while True:
@@ -518,13 +731,15 @@ async def search_similar_content(
     query: str = Body(..., embed=True, description="Text query to search for"),
     job_id: str | None = Body(None, embed=True, description="Optional job ID to filter results"),
     limit: int = Body(10, embed=True, ge=1, le=50, description="Maximum number of results"),
-    similarity_threshold: float = Body(0.7, embed=True, ge=0.0, le=1.0, description="Minimum cosine similarity score"),
+    similarity_threshold: float = Body(
+        0.7, embed=True, ge=0.0, le=1.0, description="Minimum cosine similarity score"
+    ),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Search for similar scraped content using vector similarity.
-    
+
     Request body:
     - query (required): Text query to search for
     - job_id (optional): Job ID to filter results to a specific research job
@@ -568,7 +783,7 @@ async def get_scraped_content_by_job(
 ):
     """
     Get all scraped content stored in vector database for a specific job.
-    
+
     Args:
         job_id: Research job ID
         limit: Optional limit on number of results
@@ -650,9 +865,7 @@ async def get_indicators(
     if cached is not None:
         return cached
     try:
-        query = select(CensusIndicator).where(
-            CensusIndicator.geography_type == "state"
-        )
+        query = select(CensusIndicator).where(CensusIndicator.geography_type == "state")
         if state_fips is not None:
             query = query.where(CensusIndicator.state_fips == state_fips)
         if metric is not None:
@@ -847,9 +1060,7 @@ async def get_bls_labor_stats(
     if cached is not None:
         return cached
     try:
-        query = select(BlsLaborStatistic).where(
-            BlsLaborStatistic.state_fips.isnot(None)
-        )
+        query = select(BlsLaborStatistic).where(BlsLaborStatistic.state_fips.isnot(None))
         if state_fips:
             query = query.where(BlsLaborStatistic.state_fips == state_fips)
         if metric:
@@ -1068,8 +1279,12 @@ async def get_police_violence(
             race_query = race_query.where(PoliceViolenceIncident.year == year)
             total_query = total_query.where(PoliceViolenceIncident.year == year)
 
-        race_query = race_query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
-        total_query = total_query.order_by(PoliceViolenceIncident.state).limit(max(1, min(limit, 5000)))
+        race_query = race_query.order_by(PoliceViolenceIncident.state).limit(
+            max(1, min(limit, 5000))
+        )
+        total_query = total_query.order_by(PoliceViolenceIncident.state).limit(
+            max(1, min(limit, 5000))
+        )
 
         race_result = await db.execute(race_query)
         total_result = await db.execute(total_query)
@@ -1078,31 +1293,33 @@ async def get_police_violence(
         # Add per-race rows
         for r in race_result.mappings().all():
             fips = ABBREV_TO_FIPS.get(r["state"], "")
-            row_dicts.append({
-                "state_fips": fips,
-                "state_name": FIPS_TO_NAME.get(fips, r["state"]),
-                "value": float(r["count"]),
-                "metric": "incidents",
-                "year": r["year"],
-                "race": r["race"],
-            })
+            row_dicts.append(
+                {
+                    "state_fips": fips,
+                    "state_name": FIPS_TO_NAME.get(fips, r["state"]),
+                    "value": float(r["count"]),
+                    "metric": "incidents",
+                    "year": r["year"],
+                    "race": r["race"],
+                }
+            )
         # Add "total" rows so the map and table can display state-level values
         for r in total_result.mappings().all():
             fips = ABBREV_TO_FIPS.get(r["state"], "")
-            row_dicts.append({
-                "state_fips": fips,
-                "state_name": FIPS_TO_NAME.get(fips, r["state"]),
-                "value": float(r["count"]),
-                "metric": "incidents",
-                "year": r["year"],
-                "race": "total",
-            })
+            row_dicts.append(
+                {
+                    "state_fips": fips,
+                    "state_name": FIPS_TO_NAME.get(fips, r["state"]),
+                    "value": float(r["count"]),
+                    "metric": "incidents",
+                    "year": r["year"],
+                    "race": "total",
+                }
+            )
 
         response = ExploreResponse(
             rows=[ExploreRow(**d) for d in row_dicts],
-            national_average=compute_national_avg(
-                [d for d in row_dicts if d["race"] == "total"]
-            ),
+            national_average=compute_national_avg([d for d in row_dicts if d["race"] == "total"]),
             available_metrics=distinct_values(row_dicts, "metric"),
             available_years=distinct_values(row_dicts, "year"),
             available_races=distinct_values(row_dicts, "race"),
@@ -1298,9 +1515,7 @@ async def get_policies(
             query = query.where(PolicyBill.session == session)
         if topic is not None:
             # JSON array containment: cast topic_tags to text and use LIKE
-            query = query.where(
-                PolicyBill.topic_tags.cast(String).contains(topic)
-            )
+            query = query.where(PolicyBill.topic_tags.cast(String).contains(topic))
         query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()
@@ -1421,9 +1636,7 @@ async def invite_user(
             },
         )
     if response.status_code >= 400:
-        raise HTTPException(
-            status_code=response.status_code, detail="Failed to invite user"
-        )
+        raise HTTPException(status_code=response.status_code, detail="Failed to invite user")
     return {"message": f"Invitation sent to {request.email}"}
 
 
@@ -1434,10 +1647,7 @@ async def list_users(
 ):
     """List all user profiles (admin only)."""
     result = await db.execute(
-        text(
-            "SELECT id, email, role, display_name, created_at"
-            " FROM profiles ORDER BY created_at"
-        )
+        text("SELECT id, email, role, display_name, created_at FROM profiles ORDER BY created_at")
     )
     rows = result.mappings().all()
     return [
@@ -1446,9 +1656,7 @@ async def list_users(
             email=row["email"],
             role=row["role"],
             display_name=row["display_name"],
-            created_at=(
-                row["created_at"].isoformat() if row["created_at"] else None
-            ),
+            created_at=(row["created_at"].isoformat() if row["created_at"] else None),
         )
         for row in rows
     ]
@@ -1466,16 +1674,12 @@ async def update_user_role(
 
     # Prevent demoting the last admin
     if request.role != "admin":
-        count_result = await db.execute(
-            text("SELECT count(*) FROM profiles WHERE role = 'admin'")
-        )
+        count_result = await db.execute(text("SELECT count(*) FROM profiles WHERE role = 'admin'"))
         admin_count = count_result.scalar_one()
         if admin_count <= 1:
             # Check if target is currently an admin
             target_result = await db.execute(
-                text(
-                    "SELECT role FROM profiles WHERE id = CAST(:uid AS uuid)"
-                ),
+                text("SELECT role FROM profiles WHERE id = CAST(:uid AS uuid)"),
                 {"uid": str(target_uuid)},
             )
             target_role = target_result.scalar_one_or_none()
@@ -1486,10 +1690,7 @@ async def update_user_role(
                 )
 
     result = await db.execute(
-        text(
-            "UPDATE profiles SET role = :role, updated_at = now()"
-            " WHERE id = CAST(:uid AS uuid)"
-        ),
+        text("UPDATE profiles SET role = :role, updated_at = now() WHERE id = CAST(:uid AS uuid)"),
         {"role": request.role, "uid": str(target_uuid)},
     )
     if result.rowcount == 0:
@@ -1525,9 +1726,7 @@ async def start_ingestion(
         )
 
     job_id = str(uuid4())
-    script = str(
-        Path(__file__).resolve().parents[3] / "scripts" / "run_ingestion.py"
-    )
+    script = str(Path(__file__).resolve().parents[3] / "scripts" / "run_ingestion.py")
     cmd = [sys.executable, script, "--sources", ",".join(sources)]
     log_dir = Path(__file__).resolve().parents[3] / "logs"
     log_dir.mkdir(exist_ok=True)
@@ -1576,5 +1775,5 @@ async def ingestion_status(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
+    uvicorn.run(app, host="0.0.0.0", port=8000)
