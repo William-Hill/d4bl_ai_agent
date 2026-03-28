@@ -56,6 +56,149 @@ STUDENT_EVALUATOR_SYSTEMS: dict[str, str] = {
     "equity_framing": STUDENT_EVALUATOR_EQUITY_FRAMING_SYSTEM,
 }
 
+# ---------------------------------------------------------------------------
+# Perturbation prompt for hallucination generation (v2)
+# ---------------------------------------------------------------------------
+
+PERTURBATION_TYPES = (
+    "entity_swap",
+    "statistic_fabrication",
+    "trend_invention",
+    "source_misattribution",
+    "causal_fabrication",
+)
+
+_PERTURBATION_INSTRUCTIONS: dict[str, str] = {
+    "entity_swap": (
+        "Replace one geographic entity (state, county, city) with a different one. "
+        "The replacement should be plausible but factually incorrect given the context. "
+        "Keep all other claims unchanged."
+    ),
+    "statistic_fabrication": (
+        "Change one numeric value (rate, count, dollar amount, percentage) to a "
+        "different number. The fabricated number should be plausible for the metric "
+        "but not match the source data. Keep all other claims unchanged."
+    ),
+    "trend_invention": (
+        "Add a claim about a trend over time (increase, decrease, or change) that "
+        "is not supported by the context data. The trend should sound plausible "
+        "but be entirely fabricated."
+    ),
+    "source_misattribution": (
+        "Attribute a data finding to the wrong source (e.g., claim CDC data came "
+        "from Census, or EPA data came from FBI). The claim itself can remain "
+        "accurate, but the source attribution must be wrong."
+    ),
+    "causal_fabrication": (
+        "Add a causal claim (e.g., 'this is caused by...' or 'this led to...') "
+        "that is not supported by the context data. The causal relationship should "
+        "sound plausible but not be derivable from the provided data."
+    ),
+}
+
+
+def build_perturbation_prompt(
+    context: str,
+    factual_response: str,
+    perturbation_type: str,
+) -> str:
+    """Build a prompt asking Claude to perturb a factual response.
+
+    Args:
+        context: JSON string of the source data context.
+        factual_response: The correct, grounded response to perturb.
+        perturbation_type: One of the PERTURBATION_TYPES values.
+
+    Returns:
+        A prompt string instructing the model to introduce a subtle hallucination.
+
+    Raises:
+        ValueError: If perturbation_type is not a known type.
+    """
+    instruction = _PERTURBATION_INSTRUCTIONS.get(perturbation_type)
+    if instruction is None:
+        raise ValueError(
+            f"Unknown perturbation type: {perturbation_type!r}. "
+            f"Must be one of: {', '.join(sorted(PERTURBATION_TYPES))}"
+        )
+    return (
+        f"You are generating training data for a hallucination detector.\n\n"
+        f"Below is a factual response grounded in the provided context data. "
+        f"Your task is to create a subtly hallucinated version by applying "
+        f"exactly ONE perturbation.\n\n"
+        f"Perturbation type: {perturbation_type}\n"
+        f"Instruction: {instruction}\n\n"
+        f"Context data:\n{context}\n\n"
+        f"Factual response:\n{factual_response}\n\n"
+        f"Return ONLY the modified response text. Do not explain what you changed. "
+        f"The hallucination should be non-obvious — a human should need to check "
+        f"the context data to detect it."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tiered quality model output prompt (v2)
+# ---------------------------------------------------------------------------
+
+QUALITY_TIERS = ("excellent", "good", "poor", "hallucinated")
+
+_TIER_INSTRUCTIONS: dict[str, str] = {
+    "excellent": (
+        "Write an excellent response that is fully grounded in the data, uses "
+        "equity-centered structural framing, names historical causes of disparities, "
+        "connects findings to policy levers, and acknowledges data limitations."
+    ),
+    "good": (
+        "Write a mostly correct response that accurately states the data but "
+        "is missing some structural context or policy connections. It should be "
+        "factually sound but incomplete in its equity framing."
+    ),
+    "poor": (
+        "Write a vague, generic response that mentions the data topic but lacks "
+        "specifics. It should be superficial, miss key data points, and provide "
+        "no structural context or policy connections."
+    ),
+    "hallucinated": (
+        "Write a response that contains one or more factual errors: wrong numbers, "
+        "wrong geographic attributions, or fabricated trends not in the data. "
+        "The errors should be subtle and the overall response should sound plausible."
+    ),
+}
+
+
+def build_tiered_model_output_prompt(
+    data: dict,
+    quality_tier: str,
+) -> str:
+    """Build a prompt to generate a model output at a specific quality tier.
+
+    Args:
+        data: Dictionary of data fields describing the finding.
+        quality_tier: One of the QUALITY_TIERS values.
+
+    Returns:
+        A prompt string instructing the model to generate a response at the given tier.
+
+    Raises:
+        ValueError: If quality_tier is not a known tier.
+    """
+    instruction = _TIER_INSTRUCTIONS.get(quality_tier)
+    if instruction is None:
+        raise ValueError(
+            f"Unknown quality tier: {quality_tier!r}. "
+            f"Must be one of: {', '.join(sorted(QUALITY_TIERS))}"
+        )
+    data_str = json.dumps(data, indent=2, default=str)
+    return (
+        f"Generate a model response about the following data finding.\n\n"
+        f"Quality level: {quality_tier}\n"
+        f"Instruction: {instruction}\n\n"
+        f"Data:\n{data_str}\n\n"
+        f"Write 2-4 sentences as if you are an AI assistant responding to a "
+        f"question about this data. Return ONLY the response text."
+    )
+
+
 D4BL_SYSTEM_PROMPT = """\
 You are an AI assistant trained to support data justice and racial equity research \
 following the Data for Black Lives (D4BL) methodology.

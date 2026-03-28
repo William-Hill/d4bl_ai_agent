@@ -35,3 +35,77 @@ class TestPerSubtaskStudentPrompts:
     def test_systems_dict_has_all_four_subtasks(self):
         expected_keys = {"hallucination", "relevance", "bias", "equity_framing"}
         assert set(STUDENT_EVALUATOR_SYSTEMS.keys()) == expected_keys
+
+
+from scripts.training.prompts import (
+    build_perturbation_prompt,
+    build_tiered_model_output_prompt,
+    PERTURBATION_TYPES,
+    QUALITY_TIERS,
+)
+
+
+class TestPerturbationPrompt:
+    def test_build_includes_context(self):
+        result = build_perturbation_prompt(
+            context='{"state": "Mississippi", "metric": "poverty_rate", "value": 24.0}',
+            factual_response="Mississippi has a poverty rate of 24%.",
+            perturbation_type="statistic_fabrication",
+        )
+        assert "Mississippi" in result
+        assert "poverty rate of 24%" in result
+
+    def test_build_includes_perturbation_type(self):
+        result = build_perturbation_prompt(
+            context="{}",
+            factual_response="Some response.",
+            perturbation_type="entity_swap",
+        )
+        assert "entity" in result.lower() or "swap" in result.lower()
+
+    def test_all_perturbation_types_defined(self):
+        expected = {
+            "entity_swap",
+            "statistic_fabrication",
+            "trend_invention",
+            "source_misattribution",
+            "causal_fabrication",
+        }
+        assert set(PERTURBATION_TYPES) == expected
+
+    def test_raises_on_unknown_perturbation_type(self):
+        import pytest
+        with pytest.raises(ValueError, match="Unknown perturbation type"):
+            build_perturbation_prompt("{}", "resp", "made_up_type")
+
+
+class TestTieredModelOutputPrompt:
+    def test_build_includes_data(self):
+        result = build_tiered_model_output_prompt(
+            data={"state": "Alabama", "metric": "poverty_rate"},
+            quality_tier="excellent",
+        )
+        assert "Alabama" in result
+
+    def test_all_quality_tiers_defined(self):
+        expected = {"excellent", "good", "poor", "hallucinated"}
+        assert set(QUALITY_TIERS) == expected
+
+    def test_raises_on_unknown_tier(self):
+        import pytest
+        with pytest.raises(ValueError, match="Unknown quality tier"):
+            build_tiered_model_output_prompt({}, "legendary")
+
+    def test_excellent_tier_mentions_equity(self):
+        result = build_tiered_model_output_prompt(
+            data={"state": "Texas"},
+            quality_tier="excellent",
+        )
+        assert "equity" in result.lower() or "structural" in result.lower()
+
+    def test_poor_tier_mentions_vague(self):
+        result = build_tiered_model_output_prompt(
+            data={"state": "Texas"},
+            quality_tier="poor",
+        )
+        assert "vague" in result.lower() or "generic" in result.lower()
