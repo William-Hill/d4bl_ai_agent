@@ -14,23 +14,23 @@ interface LearnTabsProps {
 }
 
 export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsProps) {
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const tabIds = tabs.map((t) => t.id);
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return defaultTab;
+    const hash = window.location.hash.replace("#", "");
+    return tabIds.includes(hash) ? hash : defaultTab;
+  });
 
   useEffect(() => {
-    const hash = window.location.hash.replace("#", "");
-    if (hash && tabs.some((t) => t.id === hash)) {
-      setActiveTab(hash);
-    }
-
     const onHashChange = () => {
       const h = window.location.hash.replace("#", "");
-      if (h && tabs.some((t) => t.id === h)) {
+      if (h && tabIds.includes(h)) {
         setActiveTab(h);
       }
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, [tabs]);
+  }, [tabIds]);
 
   const handleTabClick = (id: string) => {
     setActiveTab(id);
