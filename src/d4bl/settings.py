@@ -31,8 +31,10 @@ class Settings:
     crawl_provider: str = field(init=False)
     crawl4ai_base_url: str = field(init=False)
     crawl4ai_api_key: str | None = field(init=False)
-    firecrawl_api_key: str | None = field(init=False)
-    firecrawl_base_url: str | None = field(init=False)
+
+    # -- Search provider --
+    searxng_base_url: str = field(init=False)
+    search_provider: str = field(init=False)
 
     # -- Langfuse / OTLP --
     langfuse_host: str = field(init=False)
@@ -91,16 +93,21 @@ class Settings:
         _set("ollama_model", os.getenv("OLLAMA_MODEL", "mistral"))
 
         # Crawl provider
-        _set("crawl_provider", os.getenv("CRAWL_PROVIDER", "firecrawl").lower())
+        _set("crawl_provider", os.getenv("CRAWL_PROVIDER", "crawl4ai").lower())
         _set(
             "crawl4ai_base_url",
             os.getenv("CRAWL4AI_BASE_URL", "http://crawl4ai:11235").rstrip("/"),
         )
         _set("crawl4ai_api_key", os.getenv("CRAWL4AI_API_KEY"))
-        _set("firecrawl_api_key", os.getenv("FIRECRAWL_API_KEY"))
+
+        # Search provider
         _set(
-            "firecrawl_base_url",
-            os.getenv("FIRECRAWL_BASE_URL", "http://firecrawl-api:3002").rstrip("/"),
+            "searxng_base_url",
+            os.getenv("SEARXNG_BASE_URL", "http://searxng:8080").rstrip("/"),
+        )
+        _set(
+            "search_provider",
+            os.getenv("SEARCH_PROVIDER", "searxng").lower(),
         )
 
         # Langfuse / OTLP

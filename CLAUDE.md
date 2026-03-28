@@ -52,9 +52,11 @@ docker compose -f docker-compose.base.yml up --build
 # Add Langfuse observability
 docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up --build
 
-# Add Crawl4AI or Firecrawl
+# Add Crawl4AI
 docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
-docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up --build
+
+# Add SearXNG search
+docker compose -f docker-compose.base.yml -f docker-compose.searxng.yml up --build
 ```
 
 ### Frontend
@@ -98,12 +100,13 @@ User Browser → Next.js Frontend (3000)
     │  Ingestion Scripts (run_ingestion) │
     │  CDC, Census, EPA, FBI, HUD, BLS, │
     │  USDA, DOE, BJS, Police Violence, │
-    │  OpenStates                        │
+    │  OpenStates, RSS, News, Web,      │
+    │  County Health, USASpending, Vera  │
     └─────────────────────────────────────┘
               ↓
     External Services:
     - Ollama LLM (localhost:11434)
-    - Firecrawl/Crawl4AI (web crawling)
+    - SearXNG (search) + Crawl4AI (JS rendering/crawling)
     - PostgreSQL (job storage + data lineage)
     - Supabase (vector storage)
     - Langfuse (observability)
@@ -114,7 +117,7 @@ User Browser → Next.js Frontend (3000)
 - **`src/d4bl/app/`** - FastAPI application: `api.py` (REST/WebSocket endpoints, lifespan manager), `schemas.py` (Pydantic models), `websocket_manager.py` (connection state)
 - **`src/d4bl/agents/`** - CrewAI agents: `crew.py` (8 agent definitions), `tools/crawl_tools/` (modular crawl providers)
 - **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`, `DataSource`, `IngestionRun`, `DataLineage`, `KeywordMonitor`), `vector_store.py` (Supabase pgvector)
-- **`scripts/ingestion/`** - Standalone ingestion scripts: one per data source (CDC, Census ACS, Census Decennial, EPA, FBI, BLS, HUD, USDA, DOE, Police Violence, BJS), orchestrated by `scripts/run_ingestion.py`
+- **`scripts/ingestion/`** - Standalone ingestion scripts: one per data source (CDC, Census ACS, Census Decennial, EPA, FBI, BLS, HUD, USDA, DOE, Police Violence, BJS, RSS Feeds, News Search, Web Scrape, County Health Rankings, USASpending, Vera Incarceration), orchestrated by `scripts/run_ingestion.py`
 - **`src/d4bl/query/`** - NL query engine: `parser.py` (intent extraction), `structured.py` (DB search), `fusion.py` (result merging + LLM synthesis), `engine.py` (orchestrator)
 - **`src/d4bl/evals/`** - Evaluation runner: `runner.py` (batch LLM evaluations on completed research jobs)
 - **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluators: hallucination, bias, relevance, quality)
@@ -138,10 +141,10 @@ All configuration via environment variables. Key settings in `src/d4bl/settings.
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434
-CRAWL_PROVIDER=firecrawl|crawl4ai
-FIRECRAWL_API_KEY=...
-FIRECRAWL_BASE_URL=http://firecrawl-api:3002
+CRAWL_PROVIDER=crawl4ai
 CRAWL4AI_BASE_URL=http://crawl4ai:11235
+SEARXNG_BASE_URL=http://searxng:8080
+SEARCH_PROVIDER=searxng
 LANGFUSE_HOST=http://localhost:3002
 CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres
@@ -189,5 +192,6 @@ To promote a user to admin: use the admin UI, `PATCH /api/admin/users/{id}` with
 | Backend API | 8000 |
 | Ollama | 11434 |
 | PostgreSQL | 5432 |
+| SearXNG | 8080 |
 | Langfuse Web | 3001 |
 | ClickHouse | 8123 |

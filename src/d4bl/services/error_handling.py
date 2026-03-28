@@ -122,19 +122,9 @@ class ErrorRecoveryStrategy:
     """Manages error recovery strategies for different failure scenarios."""
 
     @staticmethod
-    def fallback_to_firecrawl(error: Exception, context: dict[str, Any]) -> Any | None:
-        """Fallback to Firecrawl if Crawl4AI fails."""
-        if "Crawl4AI" in str(error) or "crawl4ai" in str(error).lower():
-            logger.info("Crawl4AI failed, attempting fallback to Firecrawl...")
-            try:
-                from crewai_tools import FirecrawlSearchTool
-                firecrawl_api_key = context.get("firecrawl_api_key")
-                if firecrawl_api_key:
-                    tool = FirecrawlSearchTool(api_key=firecrawl_api_key)
-                    query = context.get("query", "")
-                    return tool._run(query=query)
-            except Exception as fallback_error:
-                logger.error(f"Firecrawl fallback also failed: {str(fallback_error)}")
+    def handle_crawl_failure(error: Exception, context: dict[str, Any]) -> Any | None:
+        """Handle crawl failure. Returns None to signal no fallback is available."""
+        logger.warning("Crawl4AI failed and no fallback is configured: %s", str(error))
         return None
 
     @staticmethod

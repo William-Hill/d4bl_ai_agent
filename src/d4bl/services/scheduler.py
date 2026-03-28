@@ -32,6 +32,14 @@ DEFAULT_SCHEDULES: dict[str, str] = {
     "doe": "0 0 1 6 *",
     "bjs": "0 0 1 11 *",
     "police_violence": "0 6 * * 1",
+    # Web content (Sprint 2)
+    "rss": "0 6 * * *",           # Daily at 6 AM
+    "news": "0 6 * * *",          # Daily at 6 AM
+    "web": "0 6 * * 1",           # Weekly Monday at 6 AM
+    # New data sources (Sprint 2)
+    "county_health": "0 0 15 3 *", # Annually March 15
+    "usaspending": "0 0 1 * *",    # Monthly 1st
+    "vera": "0 0 1 1,4,7,10 *",   # Quarterly
 }
 
 

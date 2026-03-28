@@ -1,0 +1,24 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: d4bl-searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-please-change-in-production}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    networks:
+      - d4bl-network
+
+networks:
+  d4bl-network:
+    external: true

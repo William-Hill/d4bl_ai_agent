@@ -43,7 +43,8 @@ def test_ingestion_schedule_to_dict():
 def test_default_schedules_has_expected_sources():
     """DEFAULT_SCHEDULES covers all existing ingestion sources."""
     expected = {"cdc", "census_acs", "census_decennial", "epa", "bls", "fbi",
-                "openstates", "hud", "usda", "doe", "bjs", "police_violence"}
+                "openstates", "hud", "usda", "doe", "bjs", "police_violence",
+                "rss", "news", "web", "county_health", "usaspending", "vera"}
     assert expected == set(DEFAULT_SCHEDULES.keys())
 
 

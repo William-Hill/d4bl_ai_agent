@@ -7,13 +7,9 @@ from typing import Any
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, before_kickoff, crew, task
-from crewai_tools import FirecrawlSearchTool
 
-from d4bl.agents.tools import (
-    Crawl4AISearchTool,
-    FirecrawlSearchWrapper,
-    SelfHostedFirecrawlSearchTool,
-)
+from d4bl.agents.tools import Crawl4AISearchTool
+from d4bl.agents.tools.crawl_tools.searxng import SearXNGSearchTool
 from d4bl.llm import get_llm
 from d4bl.settings import get_settings
 
@@ -89,53 +85,27 @@ class D4Bl():
     @agent
     def researcher(self) -> Agent:
         settings = get_settings()
-        provider = settings.crawl_provider
 
-        if provider == "crawl4ai":
-            logger.info("Using Crawl4AI at: %s", settings.crawl4ai_base_url)
-            crawl_tool = Crawl4AISearchTool(
+        # Search tool: SearXNG (default) or legacy Serper via Crawl4AI
+        if settings.search_provider == "searxng":
+            logger.info("Using SearXNG at: %s", settings.searxng_base_url)
+            search_tool = SearXNGSearchTool(
+                base_url=settings.searxng_base_url,
+            )
+        else:
+            # Legacy Serper path — kept for backward compatibility
+            logger.info("Using Crawl4AI with Serper search")
+            search_tool = Crawl4AISearchTool(
                 base_url=settings.crawl4ai_base_url,
                 api_key=settings.crawl4ai_api_key,
-            )
-        elif provider == "firecrawl" and settings.firecrawl_base_url:
-            logger.info(
-                "Using Firecrawl (self-hosted) at: %s",
-                settings.firecrawl_base_url,
-            )
-            crawl_tool = FirecrawlSearchWrapper(
-                firecrawl_tool=SelfHostedFirecrawlSearchTool(
-                    base_url=settings.firecrawl_base_url,
-                    api_key=settings.firecrawl_api_key,
-                    max_pages=3,
-                    max_results=5,
-                )
-            )
-        elif provider == "firecrawl":
-            if not settings.firecrawl_api_key:
-                raise ValueError(
-                    "FIRECRAWL_API_KEY not found. Set it or use CRAWL_PROVIDER=crawl4ai "
-                    "or set FIRECRAWL_BASE_URL for self-hosted."
-                )
-            crawl_tool = FirecrawlSearchWrapper(
-                firecrawl_tool=FirecrawlSearchTool(
-                    api_key=settings.firecrawl_api_key,
-                    max_pages=3,
-                    max_results=5,
-                )
-            )
-            logger.info("Using Firecrawl (cloud) provider")
-        else:
-            raise ValueError(
-                "Unsupported CRAWL_PROVIDER: '%s'. "
-                "Expected 'crawl4ai' or 'firecrawl'." % provider
             )
 
         return Agent(
             config=self.agents_config['researcher'],
             llm=get_llm(),
-            tools=[crawl_tool],
+            tools=[search_tool],
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
         )
 
     @agent

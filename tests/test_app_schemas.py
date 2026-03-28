@@ -2,12 +2,13 @@
 import pytest
 from pydantic import ValidationError
 
-from d4bl.app.schemas import QueryRequest, ResearchRequest
 from d4bl.app.schemas import (
+    AnalyzeResponse,
     CompareRequest,
     EvalRunItem,
+    QueryRequest,
+    ResearchRequest,
     SuggestionItem,
-    AnalyzeResponse,
 )
 
 
