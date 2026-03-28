@@ -314,7 +314,62 @@ async def persist_results(results: list[EvalRunResult]) -> None:
         await engine.dispose()
 
 
+async def _analyze_existing_run(run_id_or_latest: str, task: str | None) -> None:
+    """Load an existing eval run from DB, generate suggestions, update the row."""
+    from sqlalchemy import desc as sa_desc
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.future import select
+
+    from d4bl.infra.database import ModelEvalRun
+    from d4bl.settings import get_settings
+    from scripts.training.suggestions import generate_suggestions
+
+    settings = get_settings()
+    db_url = (
+        f"postgresql+asyncpg://{settings.postgres_user}:{settings.postgres_password}"
+        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
+    )
+    engine = create_async_engine(db_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        async with session_factory() as session:
+            if run_id_or_latest == "latest":
+                query = select(ModelEvalRun).order_by(sa_desc(ModelEvalRun.created_at))
+                if task:
+                    query = query.where(ModelEvalRun.task == task)
+                result = await session.execute(query.limit(1))
+                run = result.scalar_one_or_none()
+            else:
+                result = await session.execute(
+                    select(ModelEvalRun).where(ModelEvalRun.id == run_id_or_latest)
+                )
+                run = result.scalar_one_or_none()
+
+            if not run:
+                print(f"No eval run found for: {run_id_or_latest}")
+                return
+
+            suggestions = generate_suggestions(run.task, run.metrics or {})
+            run.suggestions = suggestions.to_dict()
+            await session.commit()
+
+            print(f"Updated suggestions for run {run.id} ({run.task})")
+            for s in suggestions.rules:
+                icon = "BLOCK" if s.severity == "blocking" else "WARN"
+                print(f"  [{icon}] {s.metric}: {s.current:.2f} -> {s.target:.2f}")
+                print(f"         {s.suggestion}")
+            if not suggestions.rules:
+                print("  All metrics pass -- no suggestions.")
+    finally:
+        await engine.dispose()
+
+
 async def main(args: argparse.Namespace) -> int:
+    if hasattr(args, 'analyze_existing') and args.analyze_existing:
+        await _analyze_existing_run(args.analyze_existing, args.task)
+        return 0
+
     if args.test_set and not args.task:
         logger.error("--test-set requires --task to specify which task to run")
         return 1
@@ -360,11 +415,29 @@ async def main(args: argparse.Namespace) -> int:
     if args.persist:
         await persist_results(results)
 
+    # Print suggestions for each task
+    from scripts.training.suggestions import generate_suggestions
+    print("\n" + "=" * 60)
+    print("POST-EVAL SUGGESTIONS")
+    print("=" * 60)
+    for result in results:
+        suggestions = generate_suggestions(result.task, result.metrics)
+        print(f"\n--- {result.task} ---")
+        for s in suggestions.rules:
+            icon = "BLOCK" if s.severity == "blocking" else "WARN"
+            print(f"  [{icon}] {s.metric}: {s.current:.2f} -> {s.target:.2f}")
+            print(f"         {s.suggestion}")
+        if not suggestions.rules:
+            print("  All metrics pass -- no suggestions.")
+        if args.analyze:
+            print("  [LLM analysis coming soon -- requires Claude API key]")
+
     has_no_ship = any(r.ship_decision.decision == "no_ship" for r in results)
     return 1 if has_no_ship else 0
 
 
-def cli() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Run D4BL model evaluation harness"
     )
@@ -398,7 +471,19 @@ def cli() -> int:
         "--partial", action="store_true",
         help="Only check computable metrics (skip LLM-judged criteria)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--analyze", action="store_true",
+        help="Print LLM analysis placeholder after suggestions (coming soon)",
+    )
+    parser.add_argument(
+        "--analyze-existing",
+        help="Analyze an existing eval run by UUID or 'latest' (skips model inference)",
+    )
+    return parser
+
+
+def cli() -> int:
+    args = build_parser().parse_args()
     return asyncio.run(main(args))
 
 
