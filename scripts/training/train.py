@@ -274,6 +274,64 @@ def free_vram(*objects) -> None:
     torch.cuda.empty_cache()
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Telemetry
+# ──────────────────────────────────────────────────────────────────────
+
+class TelemetryCallback(TrainerCallback):
+    """Captures per-step training metrics and prints progress."""
+
+    def __init__(self, phase_label: str, phase_num: int, total_phases: int):
+        self.phase_label = phase_label
+        self.phase_num = phase_num
+        self.total_phases = total_phases
+        self.steps: list[dict] = []
+        self.total_steps: int | None = None
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.total_steps = state.max_steps
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None:
+            return
+        entry = {
+            "step": state.global_step,
+            "epoch": round(state.epoch, 2) if state.epoch else None,
+            "train_loss": logs.get("loss"),
+            "eval_loss": logs.get("eval_loss"),
+            "learning_rate": logs.get("learning_rate"),
+            "timestamp": _now_utc(),
+        }
+        self.steps.append(entry)
+
+        # Print progress line
+        step = state.global_step
+        total = self.total_steps or "?"
+        epoch_str = f"epoch {entry['epoch']:.1f}" if entry["epoch"] else ""
+        loss_str = f"loss: {entry['train_loss']:.4f}" if entry["train_loss"] is not None else ""
+        eval_str = f"eval_loss: {entry['eval_loss']:.4f}" if entry["eval_loss"] is not None else ""
+        lr_str = f"lr: {entry['learning_rate']:.1e}" if entry["learning_rate"] is not None else ""
+        parts = [p for p in [epoch_str, loss_str, eval_str, lr_str] if p]
+        print(f"      Step {step:>4}/{total} | {' | '.join(parts)}")
+
+    def get_summary(self) -> dict:
+        """Return a summary dict of the training metrics."""
+        if not self.steps:
+            return {}
+        train_losses = [s["train_loss"] for s in self.steps if s["train_loss"] is not None]
+        eval_losses = [s["eval_loss"] for s in self.steps if s["eval_loss"] is not None]
+        return {
+            "initial_train_loss": train_losses[0] if train_losses else None,
+            "final_train_loss": train_losses[-1] if train_losses else None,
+            "initial_eval_loss": eval_losses[0] if eval_losses else None,
+            "final_eval_loss": eval_losses[-1] if eval_losses else None,
+            "eval_checkpoints": eval_losses,
+            "best_eval_loss": min(eval_losses) if eval_losses else None,
+            "total_steps": self.total_steps,
+            "steps": self.steps,
+        }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
