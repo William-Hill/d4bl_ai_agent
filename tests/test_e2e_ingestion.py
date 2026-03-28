@@ -70,7 +70,6 @@ def _make_run(**overrides) -> MagicMock:
     run = MagicMock(spec=IngestionRun)
     run.id = overrides.get("id", RUN_ID)
     run.data_source_id = SOURCE_ID
-    run.dagster_run_id = None
     run.status = overrides.get("status", "completed")
     run.trigger_type = "manual"
     run.triggered_by = None
@@ -82,7 +81,6 @@ def _make_run(**overrides) -> MagicMock:
         return_value={
             "id": str(run.id),
             "data_source_id": str(SOURCE_ID),
-            "dagster_run_id": None,
             "status": run.status,
             "trigger_type": "manual",
             "triggered_by": None,
