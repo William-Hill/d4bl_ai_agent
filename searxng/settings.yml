@@ -1,0 +1,60 @@
+use_default_settings: true
+
+general:
+  instance_name: "D4BL Search"
+  debug: false
+
+search:
+  safe_search: 0
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "d4bl-searxng-secret-change-in-prod"
+
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+
+  - name: arxiv
+    engine: arxiv
+    shortcut: ar
+    disabled: false
+    categories: science
+
+  - name: google news
+    engine: google_news
+    shortcut: gn
+    disabled: false
+    categories: news
+
+  - name: bing news
+    engine: bing_news
+    shortcut: bn
+    disabled: false
+    categories: news
+
+outgoing:
+  request_timeout: 10
+  max_request_timeout: 15
