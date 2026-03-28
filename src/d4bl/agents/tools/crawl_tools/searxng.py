@@ -8,14 +8,28 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 import httpx
 from crewai.tools import BaseTool
+from pydantic import BaseModel, Field, field_validator
 
 from .utils import PROBLEMATIC_DOMAINS
 
 logger = logging.getLogger(__name__)
+
+
+class SearXNGSearchInput(BaseModel):
+    """Input schema for SearXNG search tool."""
+
+    query: str = Field(..., description="The search query string")
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def normalize_query(cls, v):
+        """Handle Ollama passing dicts instead of strings."""
+        if isinstance(v, dict):
+            return v.get("query", v.get("title", str(v)))
+        return str(v).strip()
 
 
 class SearXNGSearchTool(BaseTool):
@@ -27,26 +41,11 @@ class SearXNGSearchTool(BaseTool):
         "results with title, URL, and snippet. Use specific search queries "
         "for best results."
     )
+    args_schema: type[BaseModel] = SearXNGSearchInput
     base_url: str = "http://searxng:8080"
     default_category: str = "general"
     max_results: int = 10
     timeout: int = 30
-
-    def __init__(
-        self,
-        base_url: str = "http://searxng:8080",
-        default_category: str = "general",
-        max_results: int = 10,
-        timeout: int = 30,
-        **kwargs: Any,
-    ):
-        super().__init__(
-            base_url=base_url,
-            default_category=default_category,
-            max_results=max_results,
-            timeout=timeout,
-            **kwargs,
-        )
 
     def _is_problematic_url(self, url: str) -> bool:
         """Return True if the URL belongs to a known problematic domain."""

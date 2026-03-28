@@ -12,11 +12,13 @@ from d4bl.agents.tools.crawl_tools.firecrawl import (
     FirecrawlSearchWrapperInput,
     SelfHostedFirecrawlSearchTool,
 )
+from d4bl.agents.tools.crawl_tools.searxng import SearXNGSearchTool
 
 __all__ = [
     "Crawl4AISearchTool",
     "FirecrawlSearchWrapper",
     "FirecrawlSearchWrapperInput",
+    "SearXNGSearchTool",
     "SelfHostedFirecrawlSearchTool",
 ]
 
