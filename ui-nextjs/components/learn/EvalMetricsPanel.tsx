@@ -98,14 +98,16 @@ function TaskCard({ runs, onRefresh }: { runs: EvalRunItem[]; onRefresh: () => P
               ))}
             </div>
           )}
-          <SuggestionsPanel
-            suggestions={r.suggestions as Suggestions | null}
-            runId={r.id ?? ''}
-            onAnalyze={async (id) => {
-              await analyzeFailures(id);
-              await onRefresh();
-            }}
-          />
+          {r.id && (
+            <SuggestionsPanel
+              suggestions={r.suggestions as Suggestions | null}
+              runId={r.id}
+              onAnalyze={async (id) => {
+                await analyzeFailures(id);
+                await onRefresh();
+              }}
+            />
+          )}
         </div>
       ))}
 

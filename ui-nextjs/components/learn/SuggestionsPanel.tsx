@@ -13,12 +13,12 @@ export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: Sugg
   const [analyzing, setAnalyzing] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  if (!suggestions || suggestions.rules.length === 0) {
+  if (!suggestions && !onAnalyze) {
     return null;
   }
 
-  const blocking = suggestions.rules.filter((r) => r.severity === "blocking");
-  const nonblocking = suggestions.rules.filter((r) => r.severity === "non-blocking");
+  const blocking = suggestions?.rules.filter((r) => r.severity === "blocking") ?? [];
+  const nonblocking = suggestions?.rules.filter((r) => r.severity === "non-blocking") ?? [];
 
   const handleAnalyze = async () => {
     if (!onAnalyze) return;
@@ -72,7 +72,7 @@ export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: Sugg
         </div>
       )}
 
-      {suggestions.llm_analysis ? (
+      {suggestions?.llm_analysis ? (
         <div className="mt-3">
           <button
             onClick={() => setExpanded(!expanded)}

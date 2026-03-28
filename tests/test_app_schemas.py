@@ -3,6 +3,12 @@ import pytest
 from pydantic import ValidationError
 
 from d4bl.app.schemas import QueryRequest, ResearchRequest
+from d4bl.app.schemas import (
+    CompareRequest,
+    EvalRunItem,
+    SuggestionItem,
+    AnalyzeResponse,
+)
 
 
 class TestResearchRequest:
@@ -41,14 +47,6 @@ class TestQueryRequest:
     def test_whitespace_only_question_rejected(self):
         with pytest.raises(ValidationError):
             QueryRequest(question="   ")
-
-
-from d4bl.app.schemas import (
-    CompareRequest,
-    EvalRunItem,
-    SuggestionItem,
-    AnalyzeResponse,
-)
 
 
 class TestCompareRequestModelFields:

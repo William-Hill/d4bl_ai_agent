@@ -155,8 +155,8 @@ function PipelineModelSelect({
           const info = models.find((m) => m.model === model);
           if (info?.type === 'finetuned') {
             onChange({
-              parser: models.find((m) => m.type === 'finetuned' && m.task === 'query_parser')?.model ?? model,
-              explainer: models.find((m) => m.type === 'finetuned' && m.task === 'explainer')?.model ?? model,
+              parser: models.find((m) => m.type === 'finetuned' && m.task === 'query_parser' && m.version === info.version)?.model ?? model,
+              explainer: models.find((m) => m.type === 'finetuned' && m.task === 'explainer' && m.version === info.version)?.model ?? model,
             });
           } else {
             onChange({ parser: model, explainer: model });
@@ -170,7 +170,7 @@ function PipelineModelSelect({
         {hasFt && (
           <optgroup label="Fine-Tuned">
             {ftVersions.map((v) => (
-              <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned')?.model ?? ''}>
+              <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned' && m.version === v)?.model ?? ''}>
                 D4BL {v ?? 'latest'}
               </option>
             ))}

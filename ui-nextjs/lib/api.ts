@@ -262,7 +262,7 @@ export interface CompareModelsParams {
 }
 
 export interface EvalRunItem {
-  id: string | null;
+  id: string;
   model_name: string;
   model_version: string;
   base_model_name: string;

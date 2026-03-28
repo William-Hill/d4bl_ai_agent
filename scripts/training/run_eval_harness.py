@@ -297,6 +297,7 @@ def _make_engine_and_session():
 async def persist_results(results: list[EvalRunResult]) -> None:
     """Save eval results to the model_eval_runs database table."""
     from d4bl.infra.database import ModelEvalRun
+    from scripts.training.suggestions import generate_suggestions
 
     engine, session_factory = _make_engine_and_session()
 
@@ -314,6 +315,7 @@ async def persist_results(results: list[EvalRunResult]) -> None:
                     blocking_failures=[
                         asdict(f) for f in r.ship_decision.blocking_failures
                     ] or None,
+                    suggestions=generate_suggestions(r.task, r.metrics).to_dict(),
                 )
                 session.add(run)
             await session.commit()
@@ -354,6 +356,9 @@ async def _analyze_existing_run(run_id_or_latest: str, task: str | None) -> None
                 return
 
             suggestions = generate_suggestions(run.task, run.metrics or {})
+            existing = run.suggestions or {}
+            if existing.get("llm_analysis"):
+                suggestions.llm_analysis = existing["llm_analysis"]
             run.suggestions = suggestions.to_dict()
             await session.commit()
 

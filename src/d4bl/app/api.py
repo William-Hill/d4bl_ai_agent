@@ -701,6 +701,8 @@ async def analyze_eval_run(
     """
     from scripts.training.suggestions import generate_suggestions
 
+    parse_job_uuid(run_id)
+
     result = await db.execute(
         select(ModelEvalRun).where(ModelEvalRun.id == run_id)
     )
@@ -716,10 +718,12 @@ async def analyze_eval_run(
     if existing.get("llm_analysis") and not force:
         suggestions_result.llm_analysis = existing["llm_analysis"]
 
-    run.suggestions = suggestions_result.to_dict()
-    await db.commit()
+    new_suggestions = suggestions_result.to_dict()
+    if run.suggestions != new_suggestions or force:
+        run.suggestions = new_suggestions
+        await db.commit()
 
-    return {"run_id": str(run.id), "suggestions": run.suggestions}
+    return {"run_id": str(run.id), "suggestions": run.suggestions or new_suggestions}
 
 
 @app.post("/api/compare", response_model=CompareResponse)
