@@ -35,10 +35,16 @@ from scripts.training.config import (
 )
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
+    ENTITY_TYPE_TEMPLATES,
+    ORG_NAMES,
+    POLICY_NAMES,
     REGISTERS,
+    STUDENT_EVALUATOR_SYSTEMS,
     build_evaluator_prompt,
     build_explainer_prompt,
+    build_perturbation_prompt,
     build_query_parser_prompt,
+    build_tiered_model_output_prompt,
 )
 
 # ---------------------------------------------------------------------------
@@ -217,6 +223,115 @@ def format_as_chatml(system: str, user: str, assistant: str) -> dict:
             {"role": "assistant", "content": assistant},
         ]
     }
+
+
+def build_hallucination_pair(
+    seed_row: dict,
+    factual_response: str,
+    hallucinated_response: str,
+) -> tuple[dict, dict]:
+    """Build a (FACTUAL, HALLUCINATED) pair for hallucination detection training.
+
+    Returns:
+        Tuple of (factual_pair, hallucinated_pair) in ChatML format.
+    """
+    system = STUDENT_EVALUATOR_SYSTEMS["hallucination"]
+    context = json.dumps(seed_row, ensure_ascii=False, default=str)
+
+    factual_pair = format_as_chatml(
+        system=system,
+        user=f"Context:\n{context}\n\nModel output:\n{factual_response}",
+        assistant=json.dumps({"label": "FACTUAL"}),
+    )
+    hallucinated_pair = format_as_chatml(
+        system=system,
+        user=f"Context:\n{context}\n\nModel output:\n{hallucinated_response}",
+        assistant=json.dumps({"label": "HALLUCINATED"}),
+    )
+    return factual_pair, hallucinated_pair
+
+
+def build_evaluator_v2_pair(
+    subtask: str,
+    seed_row: dict,
+    model_output: str,
+    judgment: dict,
+) -> dict:
+    """Build a single evaluator training pair for relevance/bias/equity_framing.
+
+    Args:
+        subtask: One of "relevance", "bias", "equity_framing".
+        seed_row: Source data row dict.
+        model_output: The model response being evaluated.
+        judgment: The expected evaluator judgment dict.
+
+    Returns:
+        ChatML-formatted training pair.
+    """
+    system = STUDENT_EVALUATOR_SYSTEMS[subtask]
+    context = json.dumps(seed_row, ensure_ascii=False, default=str)
+    return format_as_chatml(
+        system=system,
+        user=f"Context:\n{context}\n\nModel output:\n{model_output}",
+        assistant=json.dumps(judgment, ensure_ascii=False),
+    )
+
+
+_TEMPORAL_EVENTS = (
+    "the 2008 recession", "COVID-19", "the Affordable Care Act",
+    "the 2020 census", "Hurricane Katrina", "the Great Migration",
+)
+
+
+def generate_query_parser_questions_v2(
+    seed_rows: list[dict],
+    count: int,
+    entity_type: str,
+) -> list[dict]:
+    """Generate questions for a specific entity type using v2 templates.
+
+    Args:
+        seed_rows: Seed data rows for template variable extraction.
+        count: Number of questions to generate.
+        entity_type: Key into ENTITY_TYPE_TEMPLATES.
+
+    Returns:
+        List of dicts with "question", "entity_type", and "seed_data" keys.
+    """
+    if count == 0:
+        return []
+
+    templates = ENTITY_TYPE_TEMPLATES[entity_type]
+    results: list[dict] = []
+
+    for i in range(count):
+        row = seed_rows[i % len(seed_rows)]
+        template = templates[i % len(templates)]
+        vars_ = _extract_template_vars(row)
+        # Add entity-type-specific variables
+        vars_["org"] = ORG_NAMES[i % len(ORG_NAMES)]
+        vars_["org2"] = ORG_NAMES[(i + 1) % len(ORG_NAMES)]
+        vars_["policy"] = POLICY_NAMES[i % len(POLICY_NAMES)]
+        vars_["county"] = row.get("county_name", row.get("geography_name", "Cook County"))
+        vars_["county2"] = "Harris County"
+        vars_["city"] = row.get("city", "Chicago")
+        vars_["event"] = _TEMPORAL_EVENTS[i % len(_TEMPORAL_EVENTS)]
+        vars_["year2"] = str(int(vars_["year"]) + 3)
+        vars_["metric2"] = "unemployment"
+        vars_["metric3"] = "incarceration"
+        vars_["state2"] = "California"
+        vars_["demographic"] = "families"
+        try:
+            question = template.format(**vars_)
+        except KeyError:
+            question = template.format_map(vars_)
+        results.append({
+            "question": question,
+            "entity_type": entity_type,
+            "seed_data": row,
+        })
+
+    return results
 
 
 def write_pairs_jsonl(
