@@ -54,6 +54,9 @@ docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up
 
 # Add Crawl4AI
 docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
+
+# Add SearXNG search
+docker compose -f docker-compose.base.yml -f docker-compose.searxng.yml up --build
 ```
 
 ### Frontend
@@ -97,7 +100,8 @@ User Browser → Next.js Frontend (3000)
     │  Ingestion Scripts (run_ingestion) │
     │  CDC, Census, EPA, FBI, HUD, BLS, │
     │  USDA, DOE, BJS, Police Violence, │
-    │  OpenStates                        │
+    │  OpenStates, RSS, News, Web,      │
+    │  County Health, USASpending, Vera  │
     └─────────────────────────────────────┘
               ↓
     External Services:
@@ -113,7 +117,7 @@ User Browser → Next.js Frontend (3000)
 - **`src/d4bl/app/`** - FastAPI application: `api.py` (REST/WebSocket endpoints, lifespan manager), `schemas.py` (Pydantic models), `websocket_manager.py` (connection state)
 - **`src/d4bl/agents/`** - CrewAI agents: `crew.py` (8 agent definitions), `tools/crawl_tools/` (modular crawl providers)
 - **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`, `DataSource`, `IngestionRun`, `DataLineage`, `KeywordMonitor`), `vector_store.py` (Supabase pgvector)
-- **`scripts/ingestion/`** - Standalone ingestion scripts: one per data source (CDC, Census ACS, Census Decennial, EPA, FBI, BLS, HUD, USDA, DOE, Police Violence, BJS), orchestrated by `scripts/run_ingestion.py`
+- **`scripts/ingestion/`** - Standalone ingestion scripts: one per data source (CDC, Census ACS, Census Decennial, EPA, FBI, BLS, HUD, USDA, DOE, Police Violence, BJS, RSS Feeds, News Search, Web Scrape, County Health Rankings, USASpending, Vera Incarceration), orchestrated by `scripts/run_ingestion.py`
 - **`src/d4bl/query/`** - NL query engine: `parser.py` (intent extraction), `structured.py` (DB search), `fusion.py` (result merging + LLM synthesis), `engine.py` (orchestrator)
 - **`src/d4bl/evals/`** - Evaluation runner: `runner.py` (batch LLM evaluations on completed research jobs)
 - **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluators: hallucination, bias, relevance, quality)
@@ -188,5 +192,6 @@ To promote a user to admin: use the admin UI, `PATCH /api/admin/users/{id}` with
 | Backend API | 8000 |
 | Ollama | 11434 |
 | PostgreSQL | 5432 |
+| SearXNG | 8080 |
 | Langfuse Web | 3001 |
 | ClickHouse | 8123 |
