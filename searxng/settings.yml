@@ -14,7 +14,7 @@ search:
 server:
   port: 8080
   bind_address: "0.0.0.0"
-  secret_key: "d4bl-searxng-secret-change-in-prod"
+  # secret_key injected via SEARXNG_SECRET_KEY env var in docker-compose
 
 engines:
   - name: google
