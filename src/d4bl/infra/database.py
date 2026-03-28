@@ -122,7 +122,8 @@ class ModelEvalRun(Base):
     metrics = Column(JSONB, nullable=False)
     ship_decision = Column(String(20), nullable=False)
     blocking_failures = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
+    suggestions = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
 
     def to_dict(self):
         return {
@@ -135,6 +136,7 @@ class ModelEvalRun(Base):
             "metrics": self.metrics,
             "ship_decision": self.ship_decision,
             "blocking_failures": self.blocking_failures,
+            "suggestions": self.suggestions,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

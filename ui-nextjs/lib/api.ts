@@ -228,7 +228,41 @@ export interface CompareResponse {
   prompt: string;
 }
 
+export interface SuggestionRule {
+  metric: string;
+  severity: string;
+  current: number;
+  target: number;
+  suggestion: string;
+  category: string;
+}
+
+export interface Suggestions {
+  rules: SuggestionRule[];
+  llm_analysis: string | null;
+  generated_at: string;
+}
+
+export interface ModelInfo {
+  provider: string;
+  model: string;
+  model_string: string;
+  is_default: boolean;
+  task: string;
+  type: "base" | "finetuned";
+  version: string | null;
+}
+
+export interface CompareModelsParams {
+  prompt: string;
+  pipeline_a_parser?: string;
+  pipeline_a_explainer?: string;
+  pipeline_b_parser?: string;
+  pipeline_b_explainer?: string;
+}
+
 export interface EvalRunItem {
+  id: string;
   model_name: string;
   model_version: string;
   base_model_name: string;
@@ -237,18 +271,20 @@ export interface EvalRunItem {
   ship_decision: string;
   blocking_failures: Record<string, unknown>[] | null;
   created_at: string | null;
+  suggestions: Suggestions | null;
 }
 
 export interface EvalRunsResponse {
   runs: EvalRunItem[];
 }
 
-export async function compareModels(prompt: string): Promise<CompareResponse> {
+export async function compareModels(params: CompareModelsParams | string): Promise<CompareResponse> {
+  const body = typeof params === 'string' ? { prompt: params } : params;
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE}/api/compare`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify(body),
   });
 
   handle401(response);
@@ -273,4 +309,28 @@ export async function getEvalRuns(task?: string): Promise<EvalRunsResponse> {
   }
 
   return response.json();
+}
+
+export async function analyzeFailures(runId: string, force = false): Promise<{ run_id: string; suggestions: Suggestions }> {
+  const url = `${API_BASE}/api/eval-runs/${runId}/analyze${force ? '?force=true' : ''}`;
+  const headers = await getAuthHeaders();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+  });
+
+  handle401(response);
+
+  if (!response.ok) {
+    throw new Error('Failed to analyze eval run');
+  }
+
+  return response.json();
+}
+
+export async function getModels(): Promise<ModelInfo[]> {
+  const response = await fetch(`${API_BASE}/api/models`);
+  if (!response.ok) throw new Error(`Failed to fetch models: ${response.status}`);
+  const data = await response.json();
+  return data.models ?? data;
 }

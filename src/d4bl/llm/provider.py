@@ -118,6 +118,7 @@ def get_available_models() -> list[dict]:
     """Return available models based on current configuration.
 
     Includes the default model plus any configured task-specific models.
+    Each model includes type ('base' or 'finetuned') and version (if available).
     """
     settings = get_settings()
     current_model_string = build_llm_model_string(
@@ -130,22 +131,36 @@ def get_available_models() -> list[dict]:
             "model_string": current_model_string,
             "is_default": True,
             "task": "general",
+            "type": "base",
+            "version": None,
         }
     ]
 
     from d4bl.llm.ollama_client import TASK_MODEL_ATTRS
+
+    VERSION_ATTRS = {
+        "query_parser": "query_parser_model_version",
+        "explainer": "explainer_model_version",
+    }
 
     seen = {settings.llm_model}
     for task, attr in TASK_MODEL_ATTRS.items():
         model_name = getattr(settings, attr, "")
         if model_name and model_name not in seen:
             seen.add(model_name)
+            version_raw = (
+                getattr(settings, VERSION_ATTRS.get(task, ""), "")
+                if task in VERSION_ATTRS
+                else ""
+            )
             models.append({
                 "provider": settings.llm_provider,
                 "model": model_name,
                 "model_string": build_llm_model_string(settings.llm_provider, model_name),
                 "is_default": False,
                 "task": task,
+                "type": "finetuned",
+                "version": version_raw or None,
             })
 
     return models
