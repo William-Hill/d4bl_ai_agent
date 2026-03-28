@@ -230,6 +230,15 @@ def format_as_chatml(system: str, user: str, assistant: str) -> dict:
     }
 
 
+def format_eval_user_message(context: str, model_output: str) -> str:
+    """Format a (context, model_output) pair into the evaluator user message format.
+
+    This format is load-bearing: ``apply_swap_augmentation`` in prepare_dataset.py
+    parses it by splitting on the same separators.
+    """
+    return f"Context:\n{context}\n\nModel output:\n{model_output}"
+
+
 def build_hallucination_pair(
     seed_row: dict,
     factual_response: str,
@@ -245,12 +254,12 @@ def build_hallucination_pair(
 
     factual_pair = format_as_chatml(
         system=system,
-        user=f"Context:\n{context}\n\nModel output:\n{factual_response}",
+        user=format_eval_user_message(context, factual_response),
         assistant=json.dumps({"label": "FACTUAL"}),
     )
     hallucinated_pair = format_as_chatml(
         system=system,
-        user=f"Context:\n{context}\n\nModel output:\n{hallucinated_response}",
+        user=format_eval_user_message(context, hallucinated_response),
         assistant=json.dumps({"label": "HALLUCINATED"}),
     )
     return factual_pair, hallucinated_pair
@@ -277,7 +286,7 @@ def build_evaluator_v2_pair(
     context = json.dumps(seed_row, ensure_ascii=False, default=str)
     return format_as_chatml(
         system=system,
-        user=f"Context:\n{context}\n\nModel output:\n{model_output}",
+        user=format_eval_user_message(context, model_output),
         assistant=json.dumps(judgment, ensure_ascii=False),
     )
 
@@ -510,7 +519,6 @@ def generate_query_parser_pairs_v2(
         seed_rows = _load_seed_rows(conn)
     random.shuffle(seed_rows)
 
-    entity_types = list(ENTITY_TYPE_TEMPLATES.keys())
     # Distribute count across entity types per spec targets
     type_counts = {
         "organization": 50,
@@ -520,6 +528,10 @@ def generate_query_parser_pairs_v2(
         "temporal": 30,
         "adversarial_json": 50,
     }
+    # Validate type_counts keys match ENTITY_TYPE_TEMPLATES
+    assert set(type_counts) == set(ENTITY_TYPE_TEMPLATES), (
+        f"type_counts keys {set(type_counts)} != ENTITY_TYPE_TEMPLATES keys {set(ENTITY_TYPE_TEMPLATES)}"
+    )
     # Scale if total count differs from 300
     total_specified = sum(type_counts.values())
     if count != total_specified:

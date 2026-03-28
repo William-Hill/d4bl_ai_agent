@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import pytest
+
 from scripts.training.prompts import (
-    STUDENT_EVALUATOR_HALLUCINATION_SYSTEM,
-    STUDENT_EVALUATOR_RELEVANCE_SYSTEM,
+    ENTITY_TYPE_SEED_TABLES,
+    ENTITY_TYPE_TEMPLATES,
+    ORG_NAMES,
+    PERTURBATION_TYPES,
+    POLICY_NAMES,
+    QUALITY_TIERS,
     STUDENT_EVALUATOR_BIAS_SYSTEM,
     STUDENT_EVALUATOR_EQUITY_FRAMING_SYSTEM,
+    STUDENT_EVALUATOR_HALLUCINATION_SYSTEM,
+    STUDENT_EVALUATOR_RELEVANCE_SYSTEM,
     STUDENT_EVALUATOR_SYSTEMS,
+    build_perturbation_prompt,
+    build_tiered_model_output_prompt,
 )
 
 
@@ -35,14 +45,6 @@ class TestPerSubtaskStudentPrompts:
     def test_systems_dict_has_all_four_subtasks(self):
         expected_keys = {"hallucination", "relevance", "bias", "equity_framing"}
         assert set(STUDENT_EVALUATOR_SYSTEMS.keys()) == expected_keys
-
-
-from scripts.training.prompts import (
-    build_perturbation_prompt,
-    build_tiered_model_output_prompt,
-    PERTURBATION_TYPES,
-    QUALITY_TIERS,
-)
 
 
 class TestPerturbationPrompt:
@@ -74,7 +76,6 @@ class TestPerturbationPrompt:
         assert set(PERTURBATION_TYPES) == expected
 
     def test_raises_on_unknown_perturbation_type(self):
-        import pytest
         with pytest.raises(ValueError, match="Unknown perturbation type"):
             build_perturbation_prompt("{}", "resp", "made_up_type")
 
@@ -92,7 +93,6 @@ class TestTieredModelOutputPrompt:
         assert set(QUALITY_TIERS) == expected
 
     def test_raises_on_unknown_tier(self):
-        import pytest
         with pytest.raises(ValueError, match="Unknown quality tier"):
             build_tiered_model_output_prompt({}, "legendary")
 
@@ -109,14 +109,6 @@ class TestTieredModelOutputPrompt:
             quality_tier="poor",
         )
         assert "vague" in result.lower() or "generic" in result.lower()
-
-
-from scripts.training.prompts import (
-    ENTITY_TYPE_TEMPLATES,
-    ENTITY_TYPE_SEED_TABLES,
-    ORG_NAMES,
-    POLICY_NAMES,
-)
 
 
 class TestEntityTypeTemplates:

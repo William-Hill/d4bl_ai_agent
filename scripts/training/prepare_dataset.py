@@ -243,11 +243,7 @@ def apply_swap_augmentation(pairs: list[dict[str, Any]]) -> list[dict[str, Any]]
     separator = "\n\nModel output:\n"
 
     for pair in pairs:
-        user_content = ""
-        for msg in pair.get("messages", []):
-            if msg.get("role") == "user":
-                user_content = msg.get("content", "")
-                break
+        user_content = _get_user_text(pair)
 
         if "Context:\n" not in user_content or separator not in user_content:
             continue
