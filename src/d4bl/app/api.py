@@ -27,7 +27,6 @@ from starlette.requests import Request
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.cache import explore_cache
 from d4bl.app.data_routes import router as data_router
-from d4bl.app.schedule_routes import router as schedule_router
 from d4bl.app.explore_helpers import (
     FIPS_TO_STATE_NAME,
     build_response_from_summary,
@@ -36,6 +35,7 @@ from d4bl.app.explore_helpers import (
     distinct_values,
 )
 from d4bl.app.explore_insights import router as explore_insights_router
+from d4bl.app.schedule_routes import router as schedule_router
 from d4bl.app.schemas import (
     CompareRequest,
     CompareResponse,

@@ -1,13 +1,10 @@
 """Tests for RSS feed ingestion."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 from scripts.ingestion.ingest_rss_feeds import (
-    parse_rss_feed,
     parse_atom_feed,
     parse_feed,
+    parse_rss_feed,
 )
-
 
 SAMPLE_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">

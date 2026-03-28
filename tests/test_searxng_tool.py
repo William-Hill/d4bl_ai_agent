@@ -1,8 +1,8 @@
 """Tests for SearXNG search tool."""
 
-import pytest
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from d4bl.agents.tools.crawl_tools.searxng import SearXNGSearchTool
 
 

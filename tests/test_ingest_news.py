@@ -1,10 +1,10 @@
 """Tests for news search ingestion."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from scripts.ingestion.ingest_news_search import (
-    search_news,
     deduplicate_urls,
+    search_news,
 )
 
 

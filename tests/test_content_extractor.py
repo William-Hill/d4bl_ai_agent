@@ -1,12 +1,12 @@
 """Tests for the content extraction library."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from scripts.ingestion.lib.content_extractor import (
     ExtractedContent,
-    extract_from_html,
     detect_content_type,
     extract,
+    extract_from_html,
 )
 
 
