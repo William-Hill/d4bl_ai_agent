@@ -429,6 +429,121 @@ def train_domain_adapter(
     return summary
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Phase 2: Task-Specific Adapters
+# ──────────────────────────────────────────────────────────────────────
+
+def train_task_adapter(
+    adapter_name: str,
+    base_model_dir: str,
+    train_dataset: Dataset,
+    val_dataset: Dataset,
+    output_dir: Path,
+    cfg: dict,
+    use_bf16: bool,
+    phase_num: int,
+    total_phases: int,
+) -> dict:
+    """Train a single task-specific LoRA adapter on the domain-merged base."""
+    phase_start = time.monotonic()
+    label = {
+        "parser": "2a: Query Parser",
+        "explainer": "2b: Data Explainer",
+        "evaluator": "2c: Evaluator",
+    }[adapter_name]
+
+    print(f"\n[{phase_num}/{total_phases}] Phase {label} Adapter")
+    print(f"      Dataset: {len(train_dataset)} train / {len(val_dataset)} val")
+    print(f"      LoRA: r={cfg['r']}, {len(cfg['target_modules'])} modules, {cfg['epochs']} epochs")
+
+    # Load domain-merged base
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=base_model_dir,
+        max_seq_length=cfg["max_seq_length"],
+        dtype=None,
+        load_in_4bit=True,
+    )
+
+    # Attach task LoRA
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=cfg["r"],
+        target_modules=cfg["target_modules"],
+        lora_alpha=cfg["lora_alpha"],
+        lora_dropout=0,
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=42,
+    )
+    model.print_trainable_parameters()
+
+    # Convert messages -> text using chat template
+    train_text = format_and_tokenize(train_dataset, tokenizer)
+    val_text = format_and_tokenize(val_dataset, tokenizer)
+    print(f"      Formatted: {len(train_text)} train, {len(val_text)} val")
+
+    # Train
+    callback = TelemetryCallback(label, phase_num, total_phases)
+    trainer = SFTTrainer(
+        model=model,
+        processing_class=tokenizer,
+        train_dataset=train_text,
+        eval_dataset=val_text,
+        callbacks=[callback],
+        args=SFTConfig(
+            output_dir=str(output_dir / cfg["checkpoint_subdir"]),
+            max_length=cfg["max_seq_length"],
+            dataset_text_field="text",
+            packing=False,
+            per_device_train_batch_size=cfg["batch_size"],
+            gradient_accumulation_steps=cfg["grad_accum"],
+            warmup_steps=cfg["warmup_steps"],
+            num_train_epochs=cfg["epochs"],
+            learning_rate=cfg["lr"],
+            fp16=not use_bf16,
+            bf16=use_bf16,
+            logging_steps=5,
+            optim="adamw_8bit",
+            seed=42,
+            eval_strategy="steps",
+            eval_steps=cfg["eval_steps"],
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            save_steps=cfg["save_steps"],
+            save_total_limit=3,
+            report_to="none",
+        ),
+    )
+
+    print("      Training...")
+    train_result = trainer.train()
+    duration = time.monotonic() - phase_start
+
+    # Save adapter weights
+    adapter_dir = output_dir / cfg["output_subdir"]
+    model.save_pretrained(str(adapter_dir))
+    tokenizer.save_pretrained(str(adapter_dir))
+    print(f"      \u2713 Saved to {cfg['output_subdir']}/ ({_format_duration(duration)})")
+
+    summary = callback.get_summary()
+    summary.update({
+        "phase": adapter_name,
+        "dataset_size_train": len(train_dataset),
+        "dataset_size_val": len(val_dataset),
+        "lora": {
+            "r": cfg["r"],
+            "target_modules": cfg["target_modules"],
+            "alpha": cfg["lora_alpha"],
+        },
+        "training_loss": train_result.training_loss,
+        "start": _now_utc(),
+        "duration_seconds": round(duration, 1),
+    })
+
+    free_vram(model, trainer)
+    return summary
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
