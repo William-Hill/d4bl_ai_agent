@@ -7,11 +7,10 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from apscheduler.triggers.cron import CronTrigger
 
 from d4bl.app.auth import CurrentUser, require_admin
 from d4bl.infra.database import (
@@ -25,6 +24,18 @@ from d4bl.services.ingestion_runner import resolve_source, run_ingestion_task
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin"])
+
+# Strong references to prevent background tasks from being GC'd.
+_background_tasks: set = set()
+
+
+def _log_task_exception(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from background tasks."""
+    _background_tasks.discard(task)
+    if not task.cancelled() and task.exception():
+        logger.error(
+            "Background task failed: %s", task.exception(), exc_info=task.exception()
+        )
 
 
 @router.get("/api/admin/schedules")
@@ -146,9 +157,11 @@ async def trigger_schedule(
     db.add(run)
     await db.commit()
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         run_ingestion_task(run_id, module_name, async_session_maker)
     )
+    _background_tasks.add(task)
+    task.add_done_callback(_log_task_exception)
 
     return {
         "status": "triggered",

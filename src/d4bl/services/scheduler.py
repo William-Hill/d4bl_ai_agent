@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
@@ -89,6 +90,7 @@ async def load_and_register_schedules(
     )
     schedules = result.scalars().all()
 
+    registered = 0
     for sched in schedules:
         try:
             trigger = parse_cron(sched.cron_expression)
@@ -105,12 +107,13 @@ async def load_and_register_schedules(
                 sched.source_key,
                 sched.cron_expression,
             )
+            registered += 1
         except Exception:
             logger.exception(
                 "Failed to register schedule for %s", sched.source_key
             )
 
-    return len(schedules)
+    return registered
 
 
 async def update_schedule_status(

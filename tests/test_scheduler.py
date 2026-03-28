@@ -1,7 +1,15 @@
 """Tests for ingestion scheduling."""
 
 import pytest
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from d4bl.infra.database import IngestionSchedule
+from d4bl.services.scheduler import (
+    DEFAULT_SCHEDULES,
+    build_scheduler,
+    parse_cron,
+)
 
 
 def test_ingestion_schedule_model_exists():
@@ -32,14 +40,6 @@ def test_ingestion_schedule_to_dict():
     assert d["enabled"] is True
 
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from d4bl.services.scheduler import (
-    DEFAULT_SCHEDULES,
-    parse_cron,
-    build_scheduler,
-)
-
-
 def test_default_schedules_has_expected_sources():
     """DEFAULT_SCHEDULES covers all existing ingestion sources."""
     expected = {"cdc", "census_acs", "census_decennial", "epa", "bls", "fbi",
@@ -49,14 +49,12 @@ def test_default_schedules_has_expected_sources():
 
 def test_parse_cron_valid():
     """parse_cron returns a CronTrigger for valid expressions."""
-    from apscheduler.triggers.cron import CronTrigger
     result = parse_cron("0 6 * * 1")
     assert isinstance(result, CronTrigger)
 
 
 def test_parse_cron_all_stars():
     """parse_cron handles all-star expression."""
-    from apscheduler.triggers.cron import CronTrigger
     result = parse_cron("* * * * *")
     assert isinstance(result, CronTrigger)
 
@@ -69,6 +67,5 @@ def test_parse_cron_invalid_raises():
 
 def test_build_scheduler_returns_async_scheduler():
     """build_scheduler returns an AsyncIOScheduler instance."""
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
     scheduler = build_scheduler()
     assert isinstance(scheduler, AsyncIOScheduler)

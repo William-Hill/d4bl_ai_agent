@@ -271,7 +271,7 @@ class IngestionRun(Base):
     data_source_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("data_sources.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     status = Column(
         String(50),

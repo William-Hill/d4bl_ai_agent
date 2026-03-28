@@ -62,7 +62,7 @@ def make_record_id(*parts: str) -> str:
 
 
 def get_db_connection() -> psycopg2.extensions.connection:
-    """Get a psycopg2 connection from DATABASE_URL env var."""
+    """Get a psycopg2 connection from DATABASE_URL env var (falls back to DAGSTER_POSTGRES_URL)."""
     db_url = os.environ.get("DATABASE_URL") or os.environ.get("DAGSTER_POSTGRES_URL")
     if not db_url:
         print("Error: Set DATABASE_URL env var", file=sys.stderr)
