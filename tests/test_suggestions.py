@@ -1,9 +1,7 @@
 """Tests for the post-eval suggestion engine."""
 from __future__ import annotations
 
-import pytest
-
-from scripts.training.suggestions import generate_suggestions, Suggestion
+from scripts.training.suggestions import generate_suggestions
 
 
 class TestGenerateSuggestions:
