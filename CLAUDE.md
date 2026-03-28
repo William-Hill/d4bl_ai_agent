@@ -43,16 +43,6 @@ python scripts/run_ingestion.py --dry-run
 python scripts/run_ingestion.py --sources census --year 2022
 ```
 
-### Dagster (Local Dev Only)
-
-```bash
-# Optional: Dagster is available for local development but is not deployed to production
-(cd dagster && dagster dev -p 3003)
-
-# Or via Docker Compose overlay (from repo root)
-docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
-```
-
 ### Docker
 
 ```bash
@@ -65,9 +55,6 @@ docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up
 # Add Crawl4AI or Firecrawl
 docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
 docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up --build
-
-# Add Dagster pipelines (local dev only)
-docker compose -f docker-compose.base.yml -f docker-compose.dagster.yml up --build
 ```
 
 ### Frontend
@@ -128,7 +115,6 @@ User Browser → Next.js Frontend (3000)
 - **`src/d4bl/agents/`** - CrewAI agents: `crew.py` (8 agent definitions), `tools/crawl_tools/` (modular crawl providers)
 - **`src/d4bl/infra/`** - Database layer: `database.py` (SQLAlchemy models: `ResearchJob`, `EvaluationResult`, `CensusIndicator`, `PolicyBill`, `DataSource`, `IngestionRun`, `DataLineage`, `KeywordMonitor`), `vector_store.py` (Supabase pgvector)
 - **`scripts/ingestion/`** - Standalone ingestion scripts: one per data source (CDC, Census ACS, Census Decennial, EPA, FBI, BLS, HUD, USDA, DOE, Police Violence, BJS), orchestrated by `scripts/run_ingestion.py`
-- **`dagster/`** - Dagster pipelines (local dev only, not deployed): `d4bl_pipelines/assets/`, `quality/lineage.py`, `resources/`
 - **`src/d4bl/query/`** - NL query engine: `parser.py` (intent extraction), `structured.py` (DB search), `fusion.py` (result merging + LLM synthesis), `engine.py` (orchestrator)
 - **`src/d4bl/evals/`** - Evaluation runner: `runner.py` (batch LLM evaluations on completed research jobs)
 - **`src/d4bl/services/`** - Business logic: `research_runner.py` (job execution), `error_handling.py` (retry logic), `langfuse/` (evaluators: hallucination, bias, relevance, quality)
@@ -159,7 +145,6 @@ CRAWL4AI_BASE_URL=http://crawl4ai:11235
 LANGFUSE_HOST=http://localhost:3002
 CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres
-DAGSTER_GRAPHQL_URL=http://localhost:3003/graphql  # Dagster (local dev only)
 ```
 
 ## Authentication
@@ -202,7 +187,6 @@ To promote a user to admin: use the admin UI, `PATCH /api/admin/users/{id}` with
 |---------|------|
 | Frontend | 3000 |
 | Backend API | 8000 |
-| Dagster Webserver (local dev only) | 3003 |
 | Ollama | 11434 |
 | PostgreSQL | 5432 |
 | Langfuse Web | 3001 |

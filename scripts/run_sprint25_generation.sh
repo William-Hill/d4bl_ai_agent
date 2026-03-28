@@ -29,7 +29,7 @@ echo "============================================================"
 echo ""
 echo "Config:"
 python -c "from scripts.training.config import PAIRS_PER_TASK, EVALUATOR_PAIRS_PER_SUBTASK; print(f'  PAIRS_PER_TASK={PAIRS_PER_TASK}'); print(f'  EVALUATOR_PAIRS_PER_SUBTASK={EVALUATOR_PAIRS_PER_SUBTASK}')"
-echo "  DB: remote Supabase (via DAGSTER_POSTGRES_URL)"
+echo "  DB: remote Supabase (via DATABASE_URL)"
 echo "  Model: claude-sonnet-4-20250514"
 echo ""
 
