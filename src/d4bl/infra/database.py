@@ -123,7 +123,7 @@ class ModelEvalRun(Base):
     ship_decision = Column(String(20), nullable=False)
     blocking_failures = Column(JSONB, nullable=True)
     suggestions = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
 
     def to_dict(self):
         return {
