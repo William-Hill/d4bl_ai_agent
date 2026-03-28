@@ -130,6 +130,57 @@ function PipelinePanel({
   );
 }
 
+function PipelineModelSelect({
+  label,
+  value,
+  models,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  models: ModelInfo[];
+  onChange: (next: { parser: string; explainer: string }) => void;
+}) {
+  const baseModels = models.filter((m) => m.type === 'base');
+  const ftVersions = [...new Set(models.filter((m) => m.type === 'finetuned').map((m) => m.version))];
+  const hasFt = ftVersions.length > 0;
+
+  return (
+    <div className="flex-1">
+      <label className="block text-[10px] text-gray-500 uppercase tracking-widest mb-1">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => {
+          const model = e.target.value;
+          const info = models.find((m) => m.model === model);
+          if (info?.type === 'finetuned') {
+            onChange({
+              parser: models.find((m) => m.type === 'finetuned' && m.task === 'query_parser')?.model ?? model,
+              explainer: models.find((m) => m.type === 'finetuned' && m.task === 'explainer')?.model ?? model,
+            });
+          } else {
+            onChange({ parser: model, explainer: model });
+          }
+        }}
+        className="w-full bg-[#292929] border border-[#404040] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50"
+      >
+        {baseModels.map((m) => (
+          <option key={m.model} value={m.model}>{m.model}</option>
+        ))}
+        {hasFt && (
+          <optgroup label="Fine-Tuned">
+            {ftVersions.map((v) => (
+              <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned')?.model ?? ''}>
+                D4BL {v ?? 'latest'}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+    </div>
+  );
+}
+
 export default function ModelComparisonPlayground() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -183,71 +234,9 @@ export default function ModelComparisonPlayground() {
       {/* Model Selector */}
       {models.length > 0 && (
         <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <label className="block text-[10px] text-gray-500 uppercase tracking-widest mb-1">Pipeline A</label>
-            <select
-              value={pipelineA.parser}
-              onChange={(e) => {
-                const model = e.target.value;
-                const info = models.find((m) => m.model === model);
-                if (info?.type === 'finetuned') {
-                  setPipelineA({
-                    parser: models.find((m) => m.type === 'finetuned' && m.task === 'query_parser')?.model ?? model,
-                    explainer: models.find((m) => m.type === 'finetuned' && m.task === 'explainer')?.model ?? model,
-                  });
-                } else {
-                  setPipelineA({ parser: model, explainer: model });
-                }
-              }}
-              className="w-full bg-[#292929] border border-[#404040] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50"
-            >
-              {models.filter((m) => m.type === 'base').map((m) => (
-                <option key={m.model} value={m.model}>{m.model}</option>
-              ))}
-              {models.some((m) => m.type === 'finetuned') && (
-                <optgroup label="Fine-Tuned">
-                  {[...new Set(models.filter((m) => m.type === 'finetuned').map((m) => m.version))].map((v) => (
-                    <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned')?.model ?? ''}>
-                      D4BL {v ?? 'latest'}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </div>
+          <PipelineModelSelect label="Pipeline A" value={pipelineA.parser} models={models} onChange={setPipelineA} />
           <span className="text-gray-500 font-bold mt-5">vs</span>
-          <div className="flex-1">
-            <label className="block text-[10px] text-gray-500 uppercase tracking-widest mb-1">Pipeline B</label>
-            <select
-              value={pipelineB.parser}
-              onChange={(e) => {
-                const model = e.target.value;
-                const info = models.find((m) => m.model === model);
-                if (info?.type === 'finetuned') {
-                  setPipelineB({
-                    parser: models.find((m) => m.type === 'finetuned' && m.task === 'query_parser')?.model ?? model,
-                    explainer: models.find((m) => m.type === 'finetuned' && m.task === 'explainer')?.model ?? model,
-                  });
-                } else {
-                  setPipelineB({ parser: model, explainer: model });
-                }
-              }}
-              className="w-full bg-[#292929] border border-[#404040] rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#00ff32]/50"
-            >
-              {models.filter((m) => m.type === 'base').map((m) => (
-                <option key={m.model} value={m.model}>{m.model}</option>
-              ))}
-              {models.some((m) => m.type === 'finetuned') && (
-                <optgroup label="Fine-Tuned">
-                  {[...new Set(models.filter((m) => m.type === 'finetuned').map((m) => m.version))].map((v) => (
-                    <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned')?.model ?? ''}>
-                      D4BL {v ?? 'latest'}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </div>
+          <PipelineModelSelect label="Pipeline B" value={pipelineB.parser} models={models} onChange={setPipelineB} />
         </div>
       )}
       {/* Pipeline diagram */}

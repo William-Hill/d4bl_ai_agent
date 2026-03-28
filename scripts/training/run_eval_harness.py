@@ -274,20 +274,31 @@ def detect_regressions(
     return alerts
 
 
-async def persist_results(results: list[EvalRunResult]) -> None:
-    """Save eval results to the model_eval_runs database table."""
+def _print_suggestions(suggestions) -> None:
+    """Print suggestion rules to stdout."""
+    for s in suggestions.rules:
+        icon = "BLOCK" if s.severity == "blocking" else "WARN"
+        print(f"  [{icon}] {s.metric}: {s.current:.2f} -> {s.target:.2f}")
+        print(f"         {s.suggestion}")
+    if not suggestions.rules:
+        print("  All metrics pass -- no suggestions.")
+
+
+def _make_engine_and_session():
+    """Create an async engine + session factory from settings."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from d4bl.infra.database import ModelEvalRun
-    from d4bl.settings import get_settings
+    from d4bl.infra.database import get_database_url
 
-    settings = get_settings()
-    db_url = (
-        f"postgresql+asyncpg://{settings.postgres_user}:{settings.postgres_password}"
-        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
-    )
-    engine = create_async_engine(db_url)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    engine = create_async_engine(get_database_url())
+    return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def persist_results(results: list[EvalRunResult]) -> None:
+    """Save eval results to the model_eval_runs database table."""
+    from d4bl.infra.database import ModelEvalRun
+
+    engine, session_factory = _make_engine_and_session()
 
     try:
         async with session_factory() as session:
@@ -317,20 +328,12 @@ async def persist_results(results: list[EvalRunResult]) -> None:
 async def _analyze_existing_run(run_id_or_latest: str, task: str | None) -> None:
     """Load an existing eval run from DB, generate suggestions, update the row."""
     from sqlalchemy import desc as sa_desc
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.future import select
 
     from d4bl.infra.database import ModelEvalRun
-    from d4bl.settings import get_settings
     from scripts.training.suggestions import generate_suggestions
 
-    settings = get_settings()
-    db_url = (
-        f"postgresql+asyncpg://{settings.postgres_user}:{settings.postgres_password}"
-        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
-    )
-    engine = create_async_engine(db_url)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    engine, session_factory = _make_engine_and_session()
 
     try:
         async with session_factory() as session:
@@ -355,18 +358,13 @@ async def _analyze_existing_run(run_id_or_latest: str, task: str | None) -> None
             await session.commit()
 
             print(f"Updated suggestions for run {run.id} ({run.task})")
-            for s in suggestions.rules:
-                icon = "BLOCK" if s.severity == "blocking" else "WARN"
-                print(f"  [{icon}] {s.metric}: {s.current:.2f} -> {s.target:.2f}")
-                print(f"         {s.suggestion}")
-            if not suggestions.rules:
-                print("  All metrics pass -- no suggestions.")
+            _print_suggestions(suggestions)
     finally:
         await engine.dispose()
 
 
 async def main(args: argparse.Namespace) -> int:
-    if hasattr(args, 'analyze_existing') and args.analyze_existing:
+    if args.analyze_existing:
         await _analyze_existing_run(args.analyze_existing, args.task)
         return 0
 
@@ -415,7 +413,6 @@ async def main(args: argparse.Namespace) -> int:
     if args.persist:
         await persist_results(results)
 
-    # Print suggestions for each task
     from scripts.training.suggestions import generate_suggestions
     print("\n" + "=" * 60)
     print("POST-EVAL SUGGESTIONS")
@@ -423,12 +420,7 @@ async def main(args: argparse.Namespace) -> int:
     for result in results:
         suggestions = generate_suggestions(result.task, result.metrics)
         print(f"\n--- {result.task} ---")
-        for s in suggestions.rules:
-            icon = "BLOCK" if s.severity == "blocking" else "WARN"
-            print(f"  [{icon}] {s.metric}: {s.current:.2f} -> {s.target:.2f}")
-            print(f"         {s.suggestion}")
-        if not suggestions.rules:
-            print("  All metrics pass -- no suggestions.")
+        _print_suggestions(suggestions)
         if args.analyze:
             print("  [LLM analysis coming soon -- requires Claude API key]")
 

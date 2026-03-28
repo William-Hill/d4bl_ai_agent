@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 
 interface Tab {
   id: string;
@@ -14,18 +14,21 @@ interface LearnTabsProps {
 }
 
 export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsProps) {
-  const tabIds = tabs.map((t) => t.id);
+  const tabIds = useMemo(() => tabs.map((t) => t.id), [tabs]);
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return defaultTab;
     const hash = window.location.hash.replace("#", "");
     return tabIds.includes(hash) ? hash : defaultTab;
   });
+  // Track which tabs have been visited so we mount lazily but keep mounted
+  const [mounted, setMounted] = useState<Set<string>>(() => new Set([activeTab]));
 
   useEffect(() => {
     const onHashChange = () => {
       const h = window.location.hash.replace("#", "");
       if (h && tabIds.includes(h)) {
         setActiveTab(h);
+        setMounted((prev) => (prev.has(h) ? prev : new Set([...prev, h])));
       }
     };
     window.addEventListener("hashchange", onHashChange);
@@ -34,6 +37,7 @@ export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsPro
 
   const handleTabClick = (id: string) => {
     setActiveTab(id);
+    setMounted((prev) => (prev.has(id) ? prev : new Set([...prev, id])));
     window.history.replaceState(null, "", `#${id}`);
   };
 
@@ -55,11 +59,13 @@ export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsPro
         ))}
       </div>
 
-      {tabs.map((tab) => (
-        <div key={tab.id} className={activeTab === tab.id ? "block" : "hidden"}>
-          {tab.content}
-        </div>
-      ))}
+      {tabs.map((tab) =>
+        mounted.has(tab.id) ? (
+          <div key={tab.id} className={activeTab === tab.id ? "block" : "hidden"}>
+            {tab.content}
+          </div>
+        ) : null
+      )}
     </div>
   );
 }

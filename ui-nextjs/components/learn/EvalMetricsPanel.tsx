@@ -127,7 +127,9 @@ export default function EvalMetricsPanel() {
     try {
       const data = await getEvalRuns();
       setRuns(data.runs);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to refresh eval runs:', err);
+    }
   };
 
   useEffect(() => {

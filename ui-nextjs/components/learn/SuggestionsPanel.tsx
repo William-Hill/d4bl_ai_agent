@@ -1,21 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-interface SuggestionRule {
-  metric: string;
-  severity: string;
-  current: number;
-  target: number;
-  suggestion: string;
-  category: string;
-}
-
-interface Suggestions {
-  rules: SuggestionRule[];
-  llm_analysis: string | null;
-  generated_at: string;
-}
+import type { Suggestions } from "@/lib/api";
 
 interface SuggestionsPanelProps {
   suggestions: Suggestions | null;
