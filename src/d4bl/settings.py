@@ -61,6 +61,10 @@ class Settings:
     explainer_model: str = field(init=False)
     evaluator_model: str = field(init=False)
 
+    # -- Fine-tuned model version labels (display only) --
+    query_parser_model_version: str = field(init=False)
+    explainer_model_version: str = field(init=False)
+
     # -- Supabase Auth --
     supabase_url: str | None = field(init=False)
     supabase_jwt_secret: str | None = field(init=False)
@@ -151,6 +155,10 @@ class Settings:
         _set("query_parser_model", os.getenv("QUERY_PARSER_MODEL", ""))
         _set("explainer_model", os.getenv("EXPLAINER_MODEL", ""))
         _set("evaluator_model", os.getenv("EVALUATOR_MODEL", ""))
+
+        # Fine-tuned model versions
+        _set("query_parser_model_version", os.getenv("QUERY_PARSER_MODEL_VERSION", ""))
+        _set("explainer_model_version", os.getenv("EXPLAINER_MODEL_VERSION", ""))
 
         # Supabase Auth
         _set("supabase_url", os.getenv("SUPABASE_URL"))

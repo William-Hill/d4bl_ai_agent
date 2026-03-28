@@ -115,3 +115,57 @@ class TestGetLlmForTask:
         result = get_llm_for_task("evaluator")
         assert result is sentinel
 
+
+class TestGetAvailableModelsTypeVersion:
+    @patch("d4bl.llm.provider.get_settings")
+    def test_default_model_has_base_type(self, mock_get_settings) -> None:
+        from d4bl.llm.provider import get_available_models
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "ollama"
+        mock_settings.llm_model = "mistral"
+        mock_settings.query_parser_model = ""
+        mock_settings.explainer_model = ""
+        mock_settings.evaluator_model = ""
+        mock_get_settings.return_value = mock_settings
+
+        models = get_available_models()
+        default = next(m for m in models if m["is_default"])
+        assert default["type"] == "base"
+        assert default["version"] is None
+
+    @patch("d4bl.llm.provider.get_settings")
+    def test_finetuned_model_has_type_and_version(self, mock_get_settings) -> None:
+        from d4bl.llm.provider import get_available_models
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "ollama"
+        mock_settings.llm_model = "mistral"
+        mock_settings.query_parser_model = "d4bl-query-parser"
+        mock_settings.explainer_model = "d4bl-explainer"
+        mock_settings.evaluator_model = ""
+        mock_settings.query_parser_model_version = "v1.0"
+        mock_settings.explainer_model_version = "v1.0"
+        mock_get_settings.return_value = mock_settings
+
+        models = get_available_models()
+        parser = next(m for m in models if m["task"] == "query_parser")
+        assert parser["type"] == "finetuned"
+        assert parser["version"] == "v1.0"
+
+    @patch("d4bl.llm.provider.get_settings")
+    def test_finetuned_without_version_returns_none(self, mock_get_settings) -> None:
+        from d4bl.llm.provider import get_available_models
+        mock_settings = MagicMock()
+        mock_settings.llm_provider = "ollama"
+        mock_settings.llm_model = "mistral"
+        mock_settings.query_parser_model = "d4bl-query-parser"
+        mock_settings.explainer_model = ""
+        mock_settings.evaluator_model = ""
+        mock_settings.query_parser_model_version = ""
+        mock_settings.explainer_model_version = ""
+        mock_get_settings.return_value = mock_settings
+
+        models = get_available_models()
+        parser = next(m for m in models if m["task"] == "query_parser")
+        assert parser["type"] == "finetuned"
+        assert parser["version"] is None
+
