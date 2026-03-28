@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { compareModels, CompareResponse, PipelinePath, ModelInfo, getModels } from '@/lib/api';
 
 const STEP_LABELS: Record<string, string> = {
@@ -141,14 +141,16 @@ function PipelineModelSelect({
   models: ModelInfo[];
   onChange: (next: { parser: string; explainer: string }) => void;
 }) {
+  const selectId = useId();
   const baseModels = models.filter((m) => m.type === 'base');
   const ftVersions = [...new Set(models.filter((m) => m.type === 'finetuned').map((m) => m.version))];
   const hasFt = ftVersions.length > 0;
 
   return (
     <div className="flex-1">
-      <label className="block text-[10px] text-gray-500 uppercase tracking-widest mb-1">{label}</label>
+      <label htmlFor={selectId} className="block text-[10px] text-gray-500 uppercase tracking-widest mb-1">{label}</label>
       <select
+        id={selectId}
         value={value}
         onChange={(e) => {
           const model = e.target.value;
@@ -170,7 +172,7 @@ function PipelineModelSelect({
         {hasFt && (
           <optgroup label="Fine-Tuned">
             {ftVersions.map((v) => (
-              <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned' && m.version === v)?.model ?? ''}>
+              <option key={`ft-${v}`} value={models.find((m) => m.type === 'finetuned' && m.task === 'query_parser' && m.version === v)?.model ?? models.find((m) => m.type === 'finetuned' && m.version === v)?.model ?? ''}>
                 D4BL {v ?? 'latest'}
               </option>
             ))}
@@ -199,7 +201,7 @@ export default function ModelComparisonPlayground() {
       // Find latest fine-tuned version and select both models from it
       const ftModels = m.filter((x) => x.type === 'finetuned');
       const latestVersion = ftModels[0]?.version ?? null;
-      if (latestVersion) {
+      if (ftModels.length > 0) {
         const ftParser = ftModels.find((x) => x.task === 'query_parser' && x.version === latestVersion)?.model ?? defaultBase;
         const ftExplainer = ftModels.find((x) => x.task === 'explainer' && x.version === latestVersion)?.model ?? defaultBase;
         setPipelineB({ parser: ftParser, explainer: ftExplainer });

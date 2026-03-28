@@ -79,6 +79,8 @@ export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: Sugg
       {suggestions?.llm_analysis ? (
         <div className="mt-3">
           <button
+            type="button"
+            aria-expanded={expanded}
             onClick={() => setExpanded(!expanded)}
             className="text-sm text-[#00ff32] hover:text-[#00cc28] font-medium"
           >
@@ -93,6 +95,7 @@ export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: Sugg
       ) : onAnalyze ? (
         <>
           <button
+            type="button"
             onClick={handleAnalyze}
             disabled={analyzing}
             className="mt-2 text-sm bg-[#00ff32]/10 border border-[#00ff32]/30 hover:bg-[#00ff32]/20 disabled:opacity-50 text-[#00ff32] px-4 py-2 rounded transition-colors"

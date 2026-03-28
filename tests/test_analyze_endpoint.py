@@ -41,7 +41,16 @@ class TestAnalyzeEndpoint:
         mock_run.task = "query_parser"
         mock_run.metrics = {"entity_f1": 0.72}
         mock_run.suggestions = {
-            "rules": [{"metric": "entity_f1", "severity": "blocking", "current": 0.72, "target": 0.80, "suggestion": "Add diverse entities", "category": "training_data"}],
+            "rules": [
+                {
+                    "metric": "entity_f1",
+                    "severity": "blocking",
+                    "current": 0.72,
+                    "target": 0.80,
+                    "suggestion": "Add diverse entities",
+                    "category": "training_data",
+                }
+            ],
             "llm_analysis": "Previously analyzed",
             "generated_at": "2026-03-27T00:00:00Z",
         }
