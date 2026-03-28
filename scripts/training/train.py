@@ -922,6 +922,11 @@ def main(argv: list[str] | None = None) -> None:
     }
 
     # Setup
+    if not torch.cuda.is_available():
+        print("\nERROR: CUDA is not available. This script requires a GPU.")
+        print("Run on a machine with a CUDA-capable GPU (e.g., Colab with T4/A100).")
+        sys.exit(1)
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
     use_bf16 = torch.cuda.is_bf16_supported()
     device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
