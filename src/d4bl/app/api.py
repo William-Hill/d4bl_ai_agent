@@ -671,6 +671,7 @@ async def get_eval_runs(
         d = row.to_dict()
         unique_runs.append(
             EvalRunItem(
+                id=str(d["id"]),
                 model_name=d["model_name"],
                 model_version=d["model_version"],
                 base_model_name=d["base_model_name"],
@@ -679,10 +680,46 @@ async def get_eval_runs(
                 ship_decision=d["ship_decision"],
                 blocking_failures=d.get("blocking_failures"),
                 created_at=str(d.get("created_at", "")),
+                suggestions=d.get("suggestions"),
             )
         )
 
     return EvalRunsResponse(runs=unique_runs)
+
+
+@app.post("/api/eval-runs/{run_id}/analyze")
+async def analyze_eval_run(
+    run_id: str,
+    force: bool = False,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate or return suggestions for an eval run.
+
+    Idempotent: returns existing LLM analysis unless ?force=true.
+    Rules-based suggestions are always (re)generated from current metrics.
+    """
+    from scripts.training.suggestions import generate_suggestions
+
+    result = await db.execute(
+        select(ModelEvalRun).where(ModelEvalRun.id == run_id)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+
+    # Always regenerate rules-based suggestions from current metrics
+    suggestions_result = generate_suggestions(run.task, run.metrics or {})
+
+    # Preserve existing LLM analysis unless force=true
+    existing = run.suggestions or {}
+    if existing.get("llm_analysis") and not force:
+        suggestions_result.llm_analysis = existing["llm_analysis"]
+
+    run.suggestions = suggestions_result.to_dict()
+    await db.commit()
+
+    return {"run_id": str(run.id), "suggestions": run.suggestions}
 
 
 @app.post("/api/compare", response_model=CompareResponse)
