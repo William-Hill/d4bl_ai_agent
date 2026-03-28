@@ -11,13 +11,8 @@ import time
 
 import requests
 from crewai.tools import BaseTool
-from crewai_tools import FirecrawlSearchTool
 from pydantic import BaseModel, Field, field_validator
 
-from d4bl.agents.tools.crawl_tools.firecrawl import (
-    FIRECRAWL_SDK_AVAILABLE,
-    SelfHostedFirecrawlSearchTool,
-)
 from d4bl.agents.tools.crawl_tools.pdf_extraction import (
     PDF_EXTRACTION_AVAILABLE,
     extract_pdf_client_side,
@@ -435,7 +430,6 @@ class Crawl4AISearchTool(BaseTool):
                 if attempt < max_retries - 1:
                     time.sleep(wait_time)
                     continue
-                return self._try_firecrawl_fallback(query, urls, str(e))
 
             except requests.exceptions.Timeout as e:
                 last_error = e
@@ -443,7 +437,6 @@ class Crawl4AISearchTool(BaseTool):
                 if attempt < max_retries - 1:
                     time.sleep((attempt + 1) * 2)
                     continue
-                return self._try_firecrawl_fallback(query, urls, f"Timeout: {str(e)}")
 
             except Exception as e:  # pragma: no cover - defensive
                 last_error = e
@@ -463,101 +456,4 @@ class Crawl4AISearchTool(BaseTool):
             indent=2,
         )
 
-    def _try_firecrawl_fallback(self, query: str, urls: list[str], error: str) -> str:
-        """Try Firecrawl as fallback when Crawl4AI fails."""
-        try:
-            firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
-            firecrawl_base_url = os.getenv("FIRECRAWL_BASE_URL")
-
-            # Check if self-hosted or cloud Firecrawl is configured
-            if not firecrawl_base_url and not firecrawl_api_key:
-                logger.warning("Firecrawl not configured for fallback")
-                return json.dumps(
-                    {
-                        "error": f"Crawl4AI failed: {error}",
-                        "query": query,
-                        "urls": urls,
-                        "fallback": "Firecrawl not configured (set FIRECRAWL_API_KEY or FIRECRAWL_BASE_URL)",
-                    },
-                    indent=2,
-                )
-
-            logger.info("Attempting Firecrawl fallback...")
-
-            # Use self-hosted if base URL is set, otherwise use cloud
-            if firecrawl_base_url:
-                logger.info("Using self-hosted Firecrawl for fallback: %s", firecrawl_base_url)
-                if not FIRECRAWL_SDK_AVAILABLE:
-                    logger.warning("firecrawl-py SDK not available, using direct HTTP")
-                    # Use direct HTTP call
-                    try:
-                        search_url = f"{firecrawl_base_url.rstrip('/')}/v0/search"
-                        headers = {"Content-Type": "application/json"}
-                        if firecrawl_api_key:
-                            headers["Authorization"] = f"Bearer {firecrawl_api_key}"
-
-                        payload = {"query": query, "pageOptions": {"maxResults": 5}}
-                        response = requests.post(search_url, json=payload, headers=headers, timeout=60)
-
-                        if response.status_code == 200:
-                            result = response.json()
-                            logger.info("Self-hosted Firecrawl fallback succeeded")
-                            return json.dumps(
-                                {
-                                    "query": query,
-                                    "urls_attempted": urls,
-                                    "fallback_used": "Firecrawl (self-hosted)",
-                                    "original_error": error,
-                                    "results": result,
-                                },
-                                indent=2,
-                            )
-                    except Exception as http_error:
-                        logger.error("Self-hosted Firecrawl HTTP fallback failed: %s", http_error)
-                else:
-                    # Use SDK
-                    firecrawl_tool = SelfHostedFirecrawlSearchTool(
-                        base_url=firecrawl_base_url,
-                        api_key=firecrawl_api_key,
-                    )
-                    result = firecrawl_tool._run(query=query)
-                    logger.info("Self-hosted Firecrawl fallback succeeded")
-                    return json.dumps(
-                        {
-                            "query": query,
-                            "urls_attempted": urls,
-                            "fallback_used": "Firecrawl (self-hosted)",
-                            "original_error": error,
-                            "results": result,
-                        },
-                        indent=2,
-                    )
-            else:
-                # Use cloud Firecrawl
-                firecrawl_tool = FirecrawlSearchTool(api_key=firecrawl_api_key)
-                result = firecrawl_tool._run(query=query)
-                logger.info("Firecrawl (cloud) fallback succeeded")
-                return json.dumps(
-                    {
-                        "query": query,
-                        "urls_attempted": urls,
-                        "fallback_used": "Firecrawl (cloud)",
-                        "original_error": error,
-                        "results": result,
-                    },
-                    indent=2,
-                )
-
-        except Exception as fallback_error:  # pragma: no cover - defensive
-            logger.error("Firecrawl fallback also failed: %s", str(fallback_error))
-            return json.dumps(
-                {
-                    "error": f"Crawl4AI failed: {error}",
-                    "fallback_error": str(fallback_error),
-                    "query": query,
-                    "urls": urls,
-                    "status": "complete_failure",
-                },
-                indent=2,
-            )
 

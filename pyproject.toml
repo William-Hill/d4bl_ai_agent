@@ -6,7 +6,6 @@ authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
     "crewai[tools]==1.5.0",
-    "firecrawl-py>=4.8.0",
     "python-dotenv>=1.0.0",
     "litellm>=1.0.0",
     "PyJWT>=2.8.0",

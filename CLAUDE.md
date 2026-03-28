@@ -52,9 +52,8 @@ docker compose -f docker-compose.base.yml up --build
 # Add Langfuse observability
 docker compose -f docker-compose.base.yml -f docker-compose.observability.yml up --build
 
-# Add Crawl4AI or Firecrawl
+# Add Crawl4AI
 docker compose -f docker-compose.base.yml -f docker-compose.crawl.yml up --build
-docker compose -f docker-compose.base.yml -f docker-compose.firecrawl.yml up --build
 ```
 
 ### Frontend
@@ -103,7 +102,7 @@ User Browser → Next.js Frontend (3000)
               ↓
     External Services:
     - Ollama LLM (localhost:11434)
-    - Firecrawl/Crawl4AI (web crawling)
+    - SearXNG (search) + Crawl4AI (JS rendering/crawling)
     - PostgreSQL (job storage + data lineage)
     - Supabase (vector storage)
     - Langfuse (observability)
@@ -138,10 +137,10 @@ All configuration via environment variables. Key settings in `src/d4bl/settings.
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434
-CRAWL_PROVIDER=firecrawl|crawl4ai
-FIRECRAWL_API_KEY=...
-FIRECRAWL_BASE_URL=http://firecrawl-api:3002
+CRAWL_PROVIDER=crawl4ai
 CRAWL4AI_BASE_URL=http://crawl4ai:11235
+SEARXNG_BASE_URL=http://searxng:8080
+SEARCH_PROVIDER=searxng
 LANGFUSE_HOST=http://localhost:3002
 CORS_ALLOWED_ORIGINS=http://localhost:3000  # Comma-separated (use * for local dev only)
 POSTGRES_HOST=localhost|postgres

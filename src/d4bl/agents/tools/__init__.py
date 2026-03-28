@@ -1,11 +1,9 @@
 from d4bl.agents.tools.crawl_tools import (
     Crawl4AISearchTool,
-    FirecrawlSearchWrapper,
-    SelfHostedFirecrawlSearchTool,
+    SearXNGSearchTool,
 )
 
 __all__ = [
     "Crawl4AISearchTool",
-    "FirecrawlSearchWrapper",
-    "SelfHostedFirecrawlSearchTool",
+    "SearXNGSearchTool",
 ]

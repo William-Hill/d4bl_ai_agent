@@ -18,8 +18,8 @@ PROBLEMATIC_DOMAINS: frozenset[str] = frozenset({
 })
 
 
-class FirecrawlSearchWrapperInput(BaseModel):
-    """Input schema for Firecrawl Search Wrapper tool."""
+class SearchWrapperInput(BaseModel):
+    """Input schema for search wrapper tools."""
 
     query: str | dict = Field(
         ..., description="The search query as a plain text string. Example: 'data science trends 2025'"
@@ -53,8 +53,7 @@ class FirecrawlSearchWrapperInput(BaseModel):
 def filter_problematic_urls(result: dict) -> dict:
     """Filter out URLs that are likely paywalled, require auth, or timed out.
     
-    This is a shared helper function used by both FirecrawlSearchWrapper
-    and SelfHostedFirecrawlSearchTool to filter problematic URLs.
+    This is a shared helper function used by crawl tools to filter problematic URLs.
     """
     if not isinstance(result, dict):
         return result
