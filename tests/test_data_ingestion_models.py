@@ -56,7 +56,6 @@ def test_ingestion_run_create():
     run = IngestionRun(
         id=uuid.uuid4(),
         data_source_id=source_id,
-        dagster_run_id="dagster-run-abc123",
         status="running",
         trigger_type="manual",
         triggered_by=user_id,
@@ -64,7 +63,6 @@ def test_ingestion_run_create():
 
     assert run.data_source_id == source_id
     assert run.status == "running"
-    assert run.dagster_run_id == "dagster-run-abc123"
     assert run.trigger_type == "manual"
 
     d = run.to_dict()

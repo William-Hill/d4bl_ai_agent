@@ -13,7 +13,7 @@ import sys
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -27,6 +27,7 @@ from starlette.requests import Request
 from d4bl.app.auth import CurrentUser, get_current_user, require_admin
 from d4bl.app.cache import explore_cache
 from d4bl.app.data_routes import router as data_router
+from d4bl.app.schedule_routes import router as schedule_router
 from d4bl.app.explore_helpers import (
     FIPS_TO_STATE_NAME,
     build_response_from_summary,
@@ -74,6 +75,7 @@ from d4bl.infra.database import (
     PoliceViolenceIncident,
     PolicyBill,
     ResearchJob,
+    async_session_maker,
     close_db,
     create_tables,
     get_db,
@@ -84,6 +86,12 @@ from d4bl.llm import get_available_models
 from d4bl.llm.ollama_client import model_for_task, ollama_generate
 from d4bl.query.engine import QueryEngine
 from d4bl.services.research_runner import run_research_job
+from d4bl.services.scheduler import (
+    build_scheduler,
+    load_and_register_schedules,
+    seed_default_schedules,
+    update_schedule_status,
+)
 from d4bl.settings import get_settings
 
 _EVAL_PROMPT_TEMPLATE = """\
@@ -404,6 +412,43 @@ def get_query_engine() -> QueryEngine:
     return QueryEngine()
 
 
+# --- Scheduler ---
+_scheduler = None
+
+
+async def _run_scheduled_ingestion(source_key: str) -> None:
+    """Callback invoked by APScheduler when a cron job fires."""
+    from d4bl.services.ingestion_runner import resolve_source, run_ingestion_task
+
+    logger.info("Scheduled ingestion triggered: %s", source_key)
+
+    module_name = resolve_source(source_key)
+    if not module_name:
+        logger.error("No script registered for source: %s", source_key)
+        return
+
+    run_id = uuid4()
+    async with async_session_maker() as session:
+        run = IngestionRun(
+            id=run_id,
+            status="pending",
+            trigger_type="scheduled",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(run)
+        await session.commit()
+
+    try:
+        await run_ingestion_task(run_id, module_name, async_session_maker)
+        status = "ok"
+    except Exception:
+        logger.exception("Scheduled ingestion failed: %s", source_key)
+        status = "error"
+
+    async with async_session_maker() as session:
+        await update_schedule_status(session, source_key, status)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown logic."""
@@ -438,7 +483,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("Could not check Langfuse availability: %s", e)
 
+    # --- Scheduler startup ---
+    global _scheduler
+    try:
+        _scheduler = build_scheduler()
+        async with async_session_maker() as session:
+            await seed_default_schedules(session)
+            count = await load_and_register_schedules(
+                _scheduler, session, _run_scheduled_ingestion
+            )
+        _scheduler.start()
+        logger.info("Scheduler started with %d schedules", count)
+    except Exception as e:
+        logger.warning("Scheduler startup failed: %s", e)
+        _scheduler = None
+
     yield  # --- App runs here ---
+
+    if _scheduler:
+        try:
+            if _scheduler.running:
+                _scheduler.shutdown(wait=False)
+                logger.info("Scheduler stopped")
+        finally:
+            _scheduler = None
 
     # --- Shutdown ---
     await close_db()
@@ -458,6 +526,7 @@ app.add_middleware(
 
 app.include_router(data_router)
 app.include_router(explore_insights_router)
+app.include_router(schedule_router)
 
 # ---------------------------------------------------------------------------
 # Admin ingestion: track background subprocess jobs

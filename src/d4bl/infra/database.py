@@ -271,9 +271,8 @@ class IngestionRun(Base):
     data_source_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("data_sources.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
-    dagster_run_id = Column(String(255), nullable=True)
     status = Column(
         String(50),
         nullable=False,
@@ -302,7 +301,6 @@ class IngestionRun(Base):
         return {
             "id": str(self.id),
             "data_source_id": str(self.data_source_id),
-            "dagster_run_id": self.dagster_run_id,
             "status": self.status,
             "triggered_by": str(self.triggered_by) if self.triggered_by else None,
             "trigger_type": self.trigger_type,
@@ -792,6 +790,37 @@ class EvictionData(Base):
                         name="uq_eviction_data_key"),
         Index("ix_eviction_data_state_year", "state_fips", "year"),
     )
+
+
+class IngestionSchedule(Base):
+    """Cron schedules for automated ingestion runs."""
+
+    __tablename__ = "ingestion_schedules"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_key = Column(String(50), nullable=False, unique=True)
+    cron_expression = Column(String(100), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_status = Column(
+        String(20),
+        nullable=True,
+        comment="ok|error|running",
+    )
+    created_at = Column(DateTime(timezone=True), default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id) if self.id else None,
+            "source_key": self.source_key,
+            "cron_expression": self.cron_expression,
+            "enabled": self.enabled,
+            "last_run_at": self.last_run_at.isoformat() if self.last_run_at else None,
+            "last_status": self.last_status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 # Database connection setup

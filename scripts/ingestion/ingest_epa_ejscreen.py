@@ -4,7 +4,7 @@ Self-contained script that fetches state-level EJ screening indicators
 from the EPA EJScreen REST API and upserts into epa_environmental_justice.
 
 Env vars:
-    DAGSTER_POSTGRES_URL   - PostgreSQL connection URL (required)
+    DATABASE_URL           - PostgreSQL connection URL (required)
     EPA_EJSCREEN_YEAR      - Data year (default: 2024)
 """
 

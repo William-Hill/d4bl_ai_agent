@@ -47,7 +47,7 @@ def main():
             print("  Stage 1: Extract corpus from DB")
         if args.stage in ("distill", "all"):
             print(f"  Stage 2: Generate training pairs (task={args.task})")
-            print("  Requires: ANTHROPIC_API_KEY, DAGSTER_POSTGRES_URL")
+            print("  Requires: ANTHROPIC_API_KEY, DATABASE_URL")
         if args.stage in ("prepare", "all"):
             print(f"  Stage 3: Filter, dedup, split (task={args.task})")
         return

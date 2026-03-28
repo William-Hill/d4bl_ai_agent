@@ -5,7 +5,7 @@ Self-contained script that fetches race-disaggregated indicators
 state and county level, and upserts into the census_indicators table.
 
 Env vars:
-    DAGSTER_POSTGRES_URL  - PostgreSQL connection URL (required)
+    DATABASE_URL          - PostgreSQL connection URL (required)
     CENSUS_API_KEY        - Census API key (optional, higher rate limits)
     ACS_YEAR              - Data year (default: 2022)
 """

@@ -5,10 +5,10 @@ website and upserts tract-level food access indicators into the
 usda_food_access table.
 
 Usage:
-    DAGSTER_POSTGRES_URL=postgresql://... python scripts/ingestion/ingest_usda_food.py
+    DATABASE_URL=postgresql://... python scripts/ingestion/ingest_usda_food.py
 
 Environment variables:
-    DAGSTER_POSTGRES_URL   - PostgreSQL connection URL (required)
+    DATABASE_URL           - PostgreSQL connection URL (required)
     USDA_FOOD_ACCESS_YEAR  - Atlas year (default: 2019)
 """
 

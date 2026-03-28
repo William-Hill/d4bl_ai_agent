@@ -4,10 +4,10 @@ Fetches police violence incident data from the Mapping Police Violence
 dataset (Excel/CSV) and upserts into the police_violence_incidents table.
 
 Usage:
-    DAGSTER_POSTGRES_URL=postgresql://... python scripts/ingestion/ingest_police_violence.py
+    DATABASE_URL=postgresql://... python scripts/ingestion/ingest_police_violence.py
 
 Environment variables:
-    DAGSTER_POSTGRES_URL  - PostgreSQL connection URL (required)
+    DATABASE_URL          - PostgreSQL connection URL (required)
     MPV_DATA_URL          - Override download URL
                             (default: https://mappingpoliceviolence.us/s/MPVDatasetDownload.xlsx)
 """

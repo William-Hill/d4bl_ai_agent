@@ -4,7 +4,7 @@ Fetches population counts by race at county and tract level from the
 Census Bureau API and upserts into the census_demographics table.
 
 Env vars:
-    DAGSTER_POSTGRES_URL       - PostgreSQL connection URL (required)
+    DATABASE_URL               - PostgreSQL connection URL (required)
     CENSUS_API_KEY             - Census API key (optional, higher rate limits)
     CENSUS_DECENNIAL_YEAR      - Data year (default: 2020)
 """
