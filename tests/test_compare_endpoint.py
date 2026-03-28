@@ -153,3 +153,85 @@ class TestCompareEndpoint:
         assert "not configured" in resp.json()["detail"].lower()
 
         test_app.dependency_overrides.clear()
+
+
+class TestCompareEndpointWithModels:
+    @pytest.mark.asyncio
+    async def test_compare_with_explicit_models(self):
+        from d4bl.app.api import app
+        from d4bl.app.schemas import PipelinePath, PipelineStep
+
+        test_app = _override_auth(app)
+
+        baseline_path = PipelinePath(
+            label="Pipeline A",
+            steps=[
+                PipelineStep(step="parse", model_name="mistral", output="{}", latency_seconds=1.0),
+                PipelineStep(step="search", model_name="database", output="Found 0", latency_seconds=0.1),
+                PipelineStep(step="synthesize", model_name="mistral", output="Answer", latency_seconds=2.0),
+            ],
+            final_answer="Answer",
+            total_latency_seconds=3.1,
+        )
+        finetuned_path = PipelinePath(
+            label="Pipeline B",
+            steps=[
+                PipelineStep(step="parse", model_name="d4bl-query-parser", output="{}", latency_seconds=0.5),
+                PipelineStep(step="search", model_name="database", output="Found 0", latency_seconds=0.1),
+                PipelineStep(step="synthesize", model_name="d4bl-explainer", output="Answer", latency_seconds=1.5),
+            ],
+            final_answer="Answer",
+            total_latency_seconds=2.1,
+        )
+
+        async def mock_run_pipeline(**kwargs):
+            if kwargs.get("label") == "Pipeline A":
+                return baseline_path
+            return finetuned_path
+
+        with (
+            patch("d4bl.app.api._run_pipeline", side_effect=mock_run_pipeline),
+            patch("d4bl.app.api.get_available_models", return_value=[
+                {"model": "mistral", "type": "base"},
+                {"model": "d4bl-query-parser", "type": "finetuned"},
+                {"model": "d4bl-explainer", "type": "finetuned"},
+            ]),
+        ):
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/compare", json={
+                    "prompt": "What is poverty rate?",
+                    "pipeline_a_parser": "mistral",
+                    "pipeline_a_explainer": "mistral",
+                    "pipeline_b_parser": "d4bl-query-parser",
+                    "pipeline_b_explainer": "d4bl-explainer",
+                })
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["baseline"]["label"] == "Pipeline A"
+        assert data["finetuned"]["label"] == "Pipeline B"
+        test_app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_compare_rejects_unknown_model(self):
+        from d4bl.app.api import app
+
+        test_app = _override_auth(app)
+
+        with patch("d4bl.app.api.get_available_models", return_value=[
+            {"model": "mistral", "type": "base"},
+        ]):
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/compare", json={
+                    "prompt": "test",
+                    "pipeline_a_parser": "nonexistent-model",
+                    "pipeline_a_explainer": "mistral",
+                    "pipeline_b_parser": "mistral",
+                    "pipeline_b_explainer": "mistral",
+                })
+
+        assert resp.status_code == 400
+        assert "nonexistent-model" in resp.json()["detail"]
+        test_app.dependency_overrides.clear()

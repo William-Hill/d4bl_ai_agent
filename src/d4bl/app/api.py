@@ -699,34 +699,66 @@ async def compare_models_endpoint(
     - Evaluate step uses the same judge model (d4bl-evaluator) for both paths
     """
     settings = get_settings()
-    base_model = settings.ollama_model
-    parser_model = model_for_task("query_parser")
-    explainer_model = model_for_task("explainer")
     evaluator_model = model_for_task("evaluator")
-
-    if base_model == parser_model and base_model == explainer_model:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Fine-tuned models not configured. "
-                "Set QUERY_PARSER_MODEL and EXPLAINER_MODEL environment variables."
-            ),
-        )
-
-    # Warn if only partially configured — one adapter missing means one
-    # pipeline step quietly uses the base model under the "Fine-Tuned" label.
-    if base_model == parser_model or base_model == explainer_model:
-        partial = []
-        if base_model == parser_model:
-            partial.append("QUERY_PARSER_MODEL")
-        if base_model == explainer_model:
-            partial.append("EXPLAINER_MODEL")
-        logger.warning(
-            "Partially configured fine-tuned pipeline: %s not set, using base model",
-            ", ".join(partial),
-        )
-
     base_url = settings.ollama_base_url
+
+    # Resolve pipeline models: explicit request fields take priority over defaults
+    has_explicit_models = any([
+        request.pipeline_a_parser,
+        request.pipeline_a_explainer,
+        request.pipeline_b_parser,
+        request.pipeline_b_explainer,
+    ])
+
+    if has_explicit_models:
+        # Validate all specified models exist in Ollama
+        available = {m["model"] for m in get_available_models()}
+        pipeline_a_parser = request.pipeline_a_parser or settings.ollama_model
+        pipeline_a_explainer = request.pipeline_a_explainer or settings.ollama_model
+        pipeline_b_parser = request.pipeline_b_parser or settings.ollama_model
+        pipeline_b_explainer = request.pipeline_b_explainer or settings.ollama_model
+
+        requested = {pipeline_a_parser, pipeline_a_explainer, pipeline_b_parser, pipeline_b_explainer}
+        unknown = requested - available
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown models: {', '.join(sorted(unknown))}",
+            )
+        label_a = "Pipeline A"
+        label_b = "Pipeline B"
+    else:
+        # Original behavior: base model vs fine-tuned models
+        base_model = settings.ollama_model
+        parser_model = model_for_task("query_parser")
+        explainer_model = model_for_task("explainer")
+
+        if base_model == parser_model and base_model == explainer_model:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Fine-tuned models not configured. "
+                    "Set QUERY_PARSER_MODEL and EXPLAINER_MODEL environment variables."
+                ),
+            )
+
+        if base_model == parser_model or base_model == explainer_model:
+            partial = []
+            if base_model == parser_model:
+                partial.append("QUERY_PARSER_MODEL")
+            if base_model == explainer_model:
+                partial.append("EXPLAINER_MODEL")
+            logger.warning(
+                "Partially configured fine-tuned pipeline: %s not set, using base model",
+                ", ".join(partial),
+            )
+
+        pipeline_a_parser = base_model
+        pipeline_a_explainer = base_model
+        pipeline_b_parser = parser_model
+        pipeline_b_explainer = explainer_model
+        label_a = "Base Model"
+        label_b = "Fine-Tuned"
 
     # Each pipeline needs its own AsyncSession — SQLAlchemy AsyncSession
     # is not safe for concurrent use from multiple asyncio tasks.
@@ -750,10 +782,10 @@ async def compare_models_endpoint(
             )
 
     baseline_task = asyncio.create_task(
-        _run_with_session("Base Model", base_model, base_model)
+        _run_with_session(label_a, pipeline_a_parser, pipeline_a_explainer)
     )
     finetuned_task = asyncio.create_task(
-        _run_with_session("Fine-Tuned", parser_model, explainer_model)
+        _run_with_session(label_b, pipeline_b_parser, pipeline_b_explainer)
     )
 
     try:
