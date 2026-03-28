@@ -10,7 +10,7 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 
-from scripts.ingestion.constants import STATE_ABBREV_TO_NAME, STATE_FIPS  # noqa: F401
+from ingestion.constants import STATE_ABBREV_TO_NAME, STATE_FIPS  # noqa: F401
 
 # Load .env file if python-dotenv is installed and .env exists.
 # In the cloud, real env vars are used and .env is absent — this is a no-op.

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -26,47 +25,45 @@ from ingestion.helpers import (
     upsert_batch,
     make_record_id,
     safe_float,
+    safe_int,
 )
 
 DATA_URL = (
     "https://raw.githubusercontent.com/vera-institute/incarceration-trends/"
-    "master/incarceration_trends.csv"
+    "main/incarceration_trends_county.csv"
 )
 
-RACE_COLUMNS = [
-    "black_jail_pop",
-    "white_jail_pop",
-    "latinx_jail_pop",
-    "aapi_jail_pop",
-    "native_jail_pop",
-    "other_race_jail_pop",
-    "black_prison_pop",
-    "white_prison_pop",
-    "latinx_prison_pop",
-    "aapi_prison_pop",
-    "native_prison_pop",
-    "other_race_prison_pop",
-    "total_jail_pop",
-    "total_prison_pop",
-    "total_pop",
-    "black_pop_15to64",
-    "white_pop_15to64",
-    "latinx_pop_15to64",
-]
+# Map CSV columns to (race, facility_type) pairs for pivoting wide → long
+RACE_FACILITY_MAP = {
+    "black_jail_pop": ("black", "jail"),
+    "white_jail_pop": ("white", "jail"),
+    "latinx_jail_pop": ("latinx", "jail"),
+    "aapi_jail_pop": ("aapi", "jail"),
+    "native_jail_pop": ("native", "jail"),
+    "other_race_jail_pop": ("other", "jail"),
+    "black_prison_pop": ("black", "prison"),
+    "white_prison_pop": ("white", "prison"),
+    "latinx_prison_pop": ("latinx", "prison"),
+    "aapi_prison_pop": ("aapi", "prison"),
+    "native_prison_pop": ("native", "prison"),
+    "other_race_prison_pop": ("other", "prison"),
+    "total_jail_pop": ("total", "jail"),
+    "total_prison_pop": ("total", "prison"),
+}
 
 UPSERT_SQL = """
-    INSERT INTO ingested_records
-        (id, source_type, source_key, external_id, title, url, content,
-         metadata, ingested_at)
+    INSERT INTO vera_incarceration
+        (id, fips, state, county_name, year, urbanicity, facility_type,
+         race, population, total_pop, rate_per_100k)
     VALUES
-        (CAST(%(id)s AS UUID), %(source_type)s, %(source_key)s, %(external_id)s,
-         %(title)s, %(url)s, %(content)s,
-         CAST(%(metadata)s AS JSONB), %(ingested_at)s)
-    ON CONFLICT (source_type, external_id)
+        (CAST(%(id)s AS UUID), %(fips)s, %(state)s, %(county_name)s,
+         %(year)s, %(urbanicity)s, %(facility_type)s,
+         %(race)s, %(population)s, %(total_pop)s, %(rate_per_100k)s)
+    ON CONFLICT (id)
     DO UPDATE SET
-        content = EXCLUDED.content,
-        metadata = EXCLUDED.metadata,
-        ingested_at = EXCLUDED.ingested_at
+        population = EXCLUDED.population,
+        total_pop = EXCLUDED.total_pop,
+        rate_per_100k = EXCLUDED.rate_per_100k
 """
 
 
@@ -76,7 +73,6 @@ def main() -> int:
     conn.autocommit = False
 
     records_ingested = 0
-    now = datetime.now(timezone.utc).isoformat()
 
     with httpx.Client(timeout=120, follow_redirects=True) as client:
         print("Downloading Vera Institute incarceration trends CSV...")
@@ -92,41 +88,47 @@ def main() -> int:
 
         for row in reader:
             fips = row.get("fips", "").strip()
-            year = row.get("year", "").strip()
+            year_str = row.get("year", "").strip()
             county = row.get("county_name", "").strip()
             state = row.get("state", "").strip()
+            urbanicity = row.get("urbanicity", "").strip()
 
-            if not fips or not year:
+            if not fips or not year_str:
                 continue
 
-            measures = {}
-            for col in RACE_COLUMNS:
-                val = safe_float(row.get(col))
-                if val is not None:
-                    measures[col] = val
-
-            if not measures:
+            year = safe_int(year_str)
+            if year is None:
                 continue
 
-            record_id = make_record_id("vera", year, fips)
-            batch.append({
-                "id": str(record_id),
-                "source_type": "vera_incarceration",
-                "source_key": "vera",
-                "external_id": f"vera-{year}-{fips}",
-                "title": f"{county}, {state} - Incarceration Trends {year}",
-                "url": "https://github.com/vera-institute/incarceration-trends",
-                "content": json.dumps(measures),
-                "metadata": json.dumps({
+            total_pop = safe_int(row.get("total_pop"))
+
+            # Pivot wide columns into one row per race/facility_type
+            for col, (race, facility_type) in RACE_FACILITY_MAP.items():
+                population = safe_int(safe_float(row.get(col)))
+                if population is None or population == 0:
+                    continue
+
+                # Compute rate per 100k if we have total_pop
+                rate = None
+                if total_pop and total_pop > 0:
+                    rate = round(population / total_pop * 100_000, 2)
+
+                record_id = make_record_id(
+                    "vera", str(year), fips, race, facility_type
+                )
+                batch.append({
+                    "id": str(record_id),
                     "fips": fips,
-                    "county": county,
                     "state": state,
+                    "county_name": county,
                     "year": year,
-                    "urbanicity": row.get("urbanicity", ""),
-                    "region": row.get("region", ""),
-                }),
-                "ingested_at": now,
-            })
+                    "urbanicity": urbanicity,
+                    "facility_type": facility_type,
+                    "race": race,
+                    "population": population,
+                    "total_pop": total_pop,
+                    "rate_per_100k": rate,
+                })
 
             if len(batch) >= 1000:
                 count = upsert_batch(conn, UPSERT_SQL, batch)
@@ -138,7 +140,7 @@ def main() -> int:
             records_ingested += count
 
     conn.close()
-    print(f"Vera Incarceration: {records_ingested} county-year records ingested")
+    print(f"Vera Incarceration: {records_ingested} records ingested")
     return records_ingested
 
 
