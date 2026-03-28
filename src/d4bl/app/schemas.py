@@ -497,6 +497,10 @@ class CompareRequest(BaseModel):
     """Request to compare base vs fine-tuned model pipelines end-to-end."""
 
     prompt: str
+    pipeline_a_parser: str | None = None
+    pipeline_a_explainer: str | None = None
+    pipeline_b_parser: str | None = None
+    pipeline_b_explainer: str | None = None
 
     @field_validator("prompt")
     @classmethod
@@ -520,6 +524,7 @@ class CompareResponse(BaseModel):
 class EvalRunItem(BaseModel):
     """A single model evaluation run result."""
 
+    id: str | None = None
     model_name: str
     model_version: str
     base_model_name: str
@@ -528,10 +533,29 @@ class EvalRunItem(BaseModel):
     ship_decision: str
     blocking_failures: list[dict] | None = None  # CriterionFailure dicts from eval harness
     created_at: str | None = None
+    suggestions: dict | None = None
 
 
 class EvalRunsResponse(BaseModel):
     """Collection of eval run results."""
 
     runs: list[EvalRunItem]
+
+
+class SuggestionItem(BaseModel):
+    """A single improvement suggestion from post-eval analysis."""
+
+    metric: str
+    severity: str
+    current: float
+    target: float
+    suggestion: str
+    category: str = "training_data"
+
+
+class AnalyzeResponse(BaseModel):
+    """Response from the eval run analysis endpoint."""
+
+    run_id: str
+    suggestions: dict
 
