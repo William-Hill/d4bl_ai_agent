@@ -97,10 +97,11 @@ class Settings:
             os.getenv("CRAWL4AI_BASE_URL", "http://crawl4ai:11235").rstrip("/"),
         )
         _set("crawl4ai_api_key", os.getenv("CRAWL4AI_API_KEY"))
+
         # Search provider
         _set(
             "searxng_base_url",
-            os.getenv("SEARXNG_BASE_URL", "http://searxng:8080"),
+            os.getenv("SEARXNG_BASE_URL", "http://searxng:8080").rstrip("/"),
         )
         _set(
             "search_provider",
