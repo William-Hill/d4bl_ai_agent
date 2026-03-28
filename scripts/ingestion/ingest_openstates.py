@@ -4,11 +4,11 @@ Fetches state policy bills from the OpenStates REST API v3
 for D4BL focus subjects and upserts into the policy_bills table.
 
 Usage:
-    DAGSTER_POSTGRES_URL=postgresql://... OPENSTATES_API_KEY=... \
+    DATABASE_URL=postgresql://... OPENSTATES_API_KEY=... \
         python scripts/ingestion/ingest_openstates.py
 
 Environment variables:
-    DAGSTER_POSTGRES_URL   - PostgreSQL connection URL (required)
+    DATABASE_URL           - PostgreSQL connection URL (required)
     OPENSTATES_API_KEY     - OpenStates API key (required)
     OPENSTATES_STATE       - Filter to a single state slug (optional)
     OPENSTATES_SESSION     - Filter to a specific legislative session (optional)

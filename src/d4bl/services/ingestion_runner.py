@@ -1,6 +1,6 @@
 """Ingestion runner — executes ingestion scripts as async background tasks.
 
-Replaces the Dagster-based trigger with direct in-process script execution.
+Executes ingestion scripts as direct in-process async background tasks.
 """
 
 from __future__ import annotations

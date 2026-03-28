@@ -5,10 +5,10 @@ disaggregated by race from the DOE Office for Civil Rights bulk CSV
 download and upserts into the doe_civil_rights table.
 
 Usage:
-    DAGSTER_POSTGRES_URL=postgresql://... python scripts/ingestion/ingest_doe_education.py
+    DATABASE_URL=postgresql://... python scripts/ingestion/ingest_doe_education.py
 
 Environment variables:
-    DAGSTER_POSTGRES_URL  - PostgreSQL connection URL (required)
+    DATABASE_URL          - PostgreSQL connection URL (required)
     CRDC_SCHOOL_YEAR      - School year string (default: 2020-2021)
     CRDC_DOWNLOAD_URL     - Override download URL (default: CRDC bulk ZIP)
 """

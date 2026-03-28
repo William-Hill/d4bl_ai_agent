@@ -9,7 +9,7 @@ Significant underreporting exists, especially from smaller or under-resourced
 departments, which can skew racial and geographic breakdowns.
 
 Env vars:
-    DAGSTER_POSTGRES_URL  - PostgreSQL connection URL (required)
+    DATABASE_URL          - PostgreSQL connection URL (required)
     FBI_API_KEY           - FBI CDE API key (falls back to DATA_GOV_API_KEY)
 """
 

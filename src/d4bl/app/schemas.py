@@ -243,7 +243,6 @@ class DataSourceResponse(BaseModel):
 class IngestionRunResponse(BaseModel):
     id: str
     data_source_id: str
-    dagster_run_id: str | None
     status: str
     triggered_by: str | None
     trigger_type: str

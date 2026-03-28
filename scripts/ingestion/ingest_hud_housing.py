@@ -6,7 +6,7 @@ FMR values serve as a housing affordability proxy for equity analysis.
 Requires HUD_API_TOKEN env var (register at https://www.huduser.gov/hudapi/public/register).
 
 Usage:
-    DAGSTER_POSTGRES_URL=postgresql://... HUD_API_TOKEN=... python scripts/ingestion/ingest_hud_housing.py
+    DATABASE_URL=postgresql://... HUD_API_TOKEN=... python scripts/ingestion/ingest_hud_housing.py
 """
 
 import os

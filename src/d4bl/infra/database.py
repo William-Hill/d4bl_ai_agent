@@ -273,7 +273,6 @@ class IngestionRun(Base):
         ForeignKey("data_sources.id", ondelete="CASCADE"),
         nullable=False,
     )
-    dagster_run_id = Column(String(255), nullable=True)
     status = Column(
         String(50),
         nullable=False,
@@ -302,7 +301,6 @@ class IngestionRun(Base):
         return {
             "id": str(self.id),
             "data_source_id": str(self.data_source_id),
-            "dagster_run_id": self.dagster_run_id,
             "status": self.status,
             "triggered_by": str(self.triggered_by) if self.triggered_by else None,
             "trigger_type": self.trigger_type,

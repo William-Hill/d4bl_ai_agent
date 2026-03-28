@@ -5,7 +5,7 @@ parses CSV files for prisoner populations, imprisonment rates,
 admissions, and releases, and upserts into bjs_incarceration table.
 
 Env vars:
-    DAGSTER_POSTGRES_URL  - PostgreSQL connection URL (required)
+    DATABASE_URL          - PostgreSQL connection URL (required)
     BJS_YEAR              - Publication data year (default: 2023)
 """
 
