@@ -29,6 +29,7 @@ from typing import IO, Any, Union
 from scripts.training.config import (
     DISTILLATION_MODEL,
     EVALUATOR_PAIRS_PER_SUBTASK,
+    EVALUATOR_V2_PAIRS_PER_SUBTASK,
     PAIRS_DIR,
     PAIRS_PER_TASK,
     write_jsonl,
@@ -37,7 +38,9 @@ from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
     ENTITY_TYPE_TEMPLATES,
     ORG_NAMES,
+    PERTURBATION_TYPES,
     POLICY_NAMES,
+    QUALITY_TIERS,
     REGISTERS,
     STUDENT_EVALUATOR_SYSTEMS,
     build_evaluator_prompt,
@@ -332,6 +335,148 @@ def generate_query_parser_questions_v2(
         })
 
     return results
+
+
+def _generate_factual_response(seed_row: dict) -> str | None:
+    """Call Claude to generate a grounded narrative from a seed row."""
+    data_str = json.dumps(seed_row, ensure_ascii=False, default=str)
+    prompt = (
+        f"Write a 2-4 sentence factual summary of the following data. "
+        f"Ground every claim in the provided data. Do not add information "
+        f"not present in the data.\n\nData:\n{data_str}"
+    )
+    try:
+        return _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+    except Exception as exc:
+        print(f"[warn] Factual response generation failed: {exc}", flush=True)
+        return None
+
+
+def _perturb_to_hallucination(
+    seed_row: dict,
+    factual_response: str,
+    perturbation_type: str,
+) -> str | None:
+    """Call Claude to create a hallucinated version of a factual response."""
+    context = json.dumps(seed_row, ensure_ascii=False, default=str)
+    prompt = build_perturbation_prompt(context, factual_response, perturbation_type)
+    try:
+        return _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+    except Exception as exc:
+        print(f"[warn] Perturbation failed: {exc}", flush=True)
+        return None
+
+
+def _generate_tiered_model_output(seed_row: dict, quality_tier: str) -> str | None:
+    """Call Claude to generate a model output at a specific quality tier."""
+    prompt = build_tiered_model_output_prompt(seed_row, quality_tier)
+    try:
+        return _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+    except Exception as exc:
+        print(f"[warn] Tiered output generation failed ({quality_tier}): {exc}", flush=True)
+        return None
+
+
+def generate_evaluator_pairs_v2(
+    conn: Any,
+    count_per_subtask: int = EVALUATOR_V2_PAIRS_PER_SUBTASK,
+    outfile: Path | None = None,
+) -> list[dict]:
+    """Generate v2 evaluator training pairs using perturbation-based hallucinations.
+
+    Hallucination subtask uses a three-step factual->perturb->format pipeline.
+    Relevance, bias, equity_framing use tiered quality model outputs.
+
+    Args:
+        conn: A live psycopg2 connection.
+        count_per_subtask: Number of pairs per subtask before dedup.
+        outfile: Optional output path for incremental writes.
+
+    Returns:
+        A shuffled list of ChatML pair dicts.
+    """
+    seed_rows = _load_seed_rows(conn, limit=400)
+    all_pairs: list[dict] = []
+    call_count = 0
+
+    # --- Hallucination subtask: perturbation pipeline ---
+    print("[evaluator_v2/hallucination] Starting perturbation pipeline...", flush=True)
+    hall_count = count_per_subtask // 2  # Each generates 2 pairs (factual + hallucinated)
+    perturbation_types = list(PERTURBATION_TYPES)
+
+    for idx in range(hall_count):
+        if call_count > 0 and call_count % 25 == 0:
+            time.sleep(1)
+
+        row = seed_rows[idx % len(seed_rows)]
+        ptype = perturbation_types[idx % len(perturbation_types)]
+
+        factual = _generate_factual_response(row)
+        call_count += 1
+        if not factual:
+            continue
+
+        hallucinated = _perturb_to_hallucination(row, factual, ptype)
+        call_count += 1
+        if not hallucinated:
+            continue
+
+        factual_pair, hall_pair = build_hallucination_pair(row, factual, hallucinated)
+        all_pairs.extend([factual_pair, hall_pair])
+        print(
+            f"[evaluator_v2/hallucination] {len(all_pairs)} pairs "
+            f"({idx + 1}/{hall_count} seeds)", flush=True,
+        )
+
+    # --- Relevance, bias, equity_framing: tiered quality outputs ---
+    non_hall_subtasks = ["relevance", "bias", "equity_framing"]
+
+    for subtask in non_hall_subtasks:
+        print(f"[evaluator_v2/{subtask}] Starting tiered generation...", flush=True)
+        for idx in range(count_per_subtask):
+            if call_count > 0 and call_count % 25 == 0:
+                time.sleep(1)
+
+            row = seed_rows[idx % len(seed_rows)]
+            tier = QUALITY_TIERS[idx % len(QUALITY_TIERS)]
+
+            model_output = _generate_tiered_model_output(row, tier)
+            call_count += 1
+            if not model_output:
+                continue
+
+            teacher_prompt = build_evaluator_prompt(
+                task=subtask,
+                context=json.dumps(row, ensure_ascii=False, default=str),
+                model_output=model_output,
+            )
+            try:
+                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+            except Exception as exc:
+                print(f"[warn] Evaluator judgment failed for {subtask}: {exc}", flush=True)
+                call_count += 1
+                continue
+            call_count += 1
+
+            validated = _validate_json(response_text)
+            if validated is None:
+                print(f"[warn] Invalid JSON for {subtask} pair {idx}, skipping.", flush=True)
+                continue
+
+            pair = build_evaluator_v2_pair(subtask, row, model_output, validated)
+            all_pairs.append(pair)
+            print(
+                f"[evaluator_v2/{subtask}] {len(all_pairs)} total pairs", flush=True,
+            )
+
+    random.shuffle(all_pairs)
+
+    if outfile is not None:
+        write_jsonl(all_pairs, outfile)
+        print(f"[evaluator_v2] Saved {len(all_pairs)} pairs to {outfile}", flush=True)
+
+    _print_cost_summary()
+    return all_pairs
 
 
 def write_pairs_jsonl(
@@ -820,6 +965,10 @@ def main(task: str) -> None:
                 conn, count_per_subtask=EVALUATOR_PAIRS_PER_SUBTASK,
                 outfile=PAIRS_DIR / "evaluator.jsonl",
             ),
+            "evaluator_v2": lambda: generate_evaluator_pairs_v2(
+                conn, count_per_subtask=EVALUATOR_V2_PAIRS_PER_SUBTASK,
+                outfile=PAIRS_DIR / "evaluator_v2.jsonl",
+            ),
         }
 
         if task == "all":
@@ -851,7 +1000,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--task",
-        choices=["query_parser", "explainer", "evaluator", "all"],
+        choices=["query_parser", "explainer", "evaluator", "evaluator_v2", "query_parser_v2", "all"],
         required=True,
         help="Which task to generate pairs for (use 'all' to run all tasks).",
     )
