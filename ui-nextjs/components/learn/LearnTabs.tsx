@@ -27,9 +27,8 @@ export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsPro
       }
     };
 
-    // Read hash on mount (client-only) via microtask to satisfy lint rule
-    const initialHash = window.location.hash.replace("#", "");
-    queueMicrotask(() => applyHash(initialHash));
+    // Read hash on mount (client-only)
+    applyHash(window.location.hash.replace("#", ""));
 
     const onHashChange = () => {
       applyHash(window.location.hash.replace("#", ""));
@@ -46,10 +45,14 @@ export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsPro
 
   return (
     <div>
-      <div className="flex border-b border-[#404040] mb-8">
+      <div role="tablist" className="flex border-b border-[#404040] mb-8">
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            id={`tab-${tab.id}`}
+            aria-controls={`panel-${tab.id}`}
             onClick={() => handleTabClick(tab.id)}
             className={`px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === tab.id
@@ -64,7 +67,13 @@ export default function LearnTabs({ tabs, defaultTab = "compare" }: LearnTabsPro
 
       {tabs.map((tab) =>
         mounted.has(tab.id) ? (
-          <div key={tab.id} className={activeTab === tab.id ? "block" : "hidden"}>
+          <div
+            key={tab.id}
+            role="tabpanel"
+            aria-labelledby={`tab-${tab.id}`}
+            id={`panel-${tab.id}`}
+            className={activeTab === tab.id ? "block" : "hidden"}
+          >
             {tab.content}
           </div>
         ) : null

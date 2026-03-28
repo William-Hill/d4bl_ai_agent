@@ -195,10 +195,17 @@ export default function ModelComparisonPlayground() {
     getModels().then((m) => {
       setModels(m);
       const defaultBase = m.find((x) => x.is_default)?.model ?? '';
-      const ftParser = m.find((x) => x.type === 'finetuned' && x.task === 'query_parser')?.model ?? defaultBase;
-      const ftExplainer = m.find((x) => x.type === 'finetuned' && x.task === 'explainer')?.model ?? defaultBase;
       setPipelineA({ parser: defaultBase, explainer: defaultBase });
-      setPipelineB({ parser: ftParser, explainer: ftExplainer });
+      // Find latest fine-tuned version and select both models from it
+      const ftModels = m.filter((x) => x.type === 'finetuned');
+      const latestVersion = ftModels[0]?.version ?? null;
+      if (latestVersion) {
+        const ftParser = ftModels.find((x) => x.task === 'query_parser' && x.version === latestVersion)?.model ?? defaultBase;
+        const ftExplainer = ftModels.find((x) => x.task === 'explainer' && x.version === latestVersion)?.model ?? defaultBase;
+        setPipelineB({ parser: ftParser, explainer: ftExplainer });
+      } else {
+        setPipelineB({ parser: defaultBase, explainer: defaultBase });
+      }
     }).catch(() => {});
   }, []);
 
@@ -209,14 +216,20 @@ export default function ModelComparisonPlayground() {
     setError(null);
     setResult(null);
 
+    const modelsReady = pipelineA.parser && pipelineA.explainer && pipelineB.parser && pipelineB.explainer;
+
     try {
-      const data = await compareModels({
-        prompt: queryText,
-        pipeline_a_parser: pipelineA.parser,
-        pipeline_a_explainer: pipelineA.explainer,
-        pipeline_b_parser: pipelineB.parser,
-        pipeline_b_explainer: pipelineB.explainer,
-      });
+      const data = await compareModels(
+        modelsReady
+          ? {
+              prompt: queryText,
+              pipeline_a_parser: pipelineA.parser,
+              pipeline_a_explainer: pipelineA.explainer,
+              pipeline_b_parser: pipelineB.parser,
+              pipeline_b_explainer: pipelineB.explainer,
+            }
+          : queryText
+      );
       if (requestIdRef.current !== currentRequestId) return;
       setResult(data);
     } catch (err: unknown) {

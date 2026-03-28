@@ -11,6 +11,7 @@ interface SuggestionsPanelProps {
 
 export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: SuggestionsPanelProps) {
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   if (!suggestions && !onAnalyze) {
@@ -23,8 +24,11 @@ export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: Sugg
   const handleAnalyze = async () => {
     if (!onAnalyze) return;
     setAnalyzing(true);
+    setAnalyzeError(null);
     try {
       await onAnalyze(runId);
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {
       setAnalyzing(false);
     }
@@ -87,13 +91,18 @@ export default function SuggestionsPanel({ suggestions, runId, onAnalyze }: Sugg
           )}
         </div>
       ) : onAnalyze ? (
-        <button
-          onClick={handleAnalyze}
-          disabled={analyzing}
-          className="mt-2 text-sm bg-[#00ff32]/10 border border-[#00ff32]/30 hover:bg-[#00ff32]/20 disabled:opacity-50 text-[#00ff32] px-4 py-2 rounded transition-colors"
-        >
-          {analyzing ? "Analyzing..." : "Analyze Failures (Coming Soon)"}
-        </button>
+        <>
+          <button
+            onClick={handleAnalyze}
+            disabled={analyzing}
+            className="mt-2 text-sm bg-[#00ff32]/10 border border-[#00ff32]/30 hover:bg-[#00ff32]/20 disabled:opacity-50 text-[#00ff32] px-4 py-2 rounded transition-colors"
+          >
+            {analyzing ? "Analyzing..." : "Analyze Failures (Coming Soon)"}
+          </button>
+          {analyzeError && (
+            <p className="mt-1 text-xs text-red-400">{analyzeError}</p>
+          )}
+        </>
       ) : null}
     </div>
   );

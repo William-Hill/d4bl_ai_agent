@@ -52,16 +52,16 @@ class TestAnalyzeEndpoint:
             yield mock_session
 
         test_app.dependency_overrides[get_db] = mock_get_db
-
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
-            resp = await client.post(f"/api/eval-runs/{run_id}/analyze")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["suggestions"]["llm_analysis"] == "Previously analyzed"
-
-        test_app.dependency_overrides.clear()
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=test_app), base_url="http://test"
+            ) as client:
+                resp = await client.post(f"/api/eval-runs/{run_id}/analyze")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["suggestions"]["llm_analysis"] == "Previously analyzed"
+        finally:
+            test_app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_returns_404_for_unknown_run(self):
@@ -77,14 +77,14 @@ class TestAnalyzeEndpoint:
             yield mock_session
 
         test_app.dependency_overrides[get_db] = mock_get_db
-
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
-            resp = await client.post(f"/api/eval-runs/{run_id}/analyze")
-            assert resp.status_code == 404
-
-        test_app.dependency_overrides.clear()
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=test_app), base_url="http://test"
+            ) as client:
+                resp = await client.post(f"/api/eval-runs/{run_id}/analyze")
+                assert resp.status_code == 404
+        finally:
+            test_app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_force_regenerates_analysis(self):
@@ -111,16 +111,16 @@ class TestAnalyzeEndpoint:
             yield mock_session
 
         test_app.dependency_overrides[get_db] = mock_get_db
-
-        async with AsyncClient(
-            transport=ASGITransport(app=test_app), base_url="http://test"
-        ) as client:
-            resp = await client.post(f"/api/eval-runs/{run_id}/analyze?force=true")
-            assert resp.status_code == 200
-            data = resp.json()
-            # force=true clears old LLM analysis (LLM integration deferred)
-            assert data["suggestions"]["llm_analysis"] is None
-            # Rules still generated
-            assert any(r["metric"] == "entity_f1" for r in data["suggestions"]["rules"])
-
-        test_app.dependency_overrides.clear()
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=test_app), base_url="http://test"
+            ) as client:
+                resp = await client.post(f"/api/eval-runs/{run_id}/analyze?force=true")
+                assert resp.status_code == 200
+                data = resp.json()
+                # force=true clears old LLM analysis (LLM integration deferred)
+                assert data["suggestions"]["llm_analysis"] is None
+                # Rules still generated
+                assert any(r["metric"] == "entity_f1" for r in data["suggestions"]["rules"])
+        finally:
+            test_app.dependency_overrides.clear()
