@@ -104,6 +104,176 @@ ADAPTER_CONFIGS = {
 }
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Utilities
+# ──────────────────────────────────────────────────────────────────────
+
+def _get_hf_token() -> str | None:
+    """Read HF_TOKEN from environment. Returns None if not set."""
+    import os
+    token = os.environ.get("HF_TOKEN")
+    if not token:
+        print("  Warning: HF_TOKEN not set. Model downloads may fail for gated models.")
+    return token
+
+
+def _format_duration(seconds: float) -> str:
+    """Format seconds into human-readable duration."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    if minutes < 60:
+        return f"{minutes}m {secs:02d}s"
+    hours = int(minutes // 60)
+    mins = minutes % 60
+    return f"{hours}h {mins:02d}m"
+
+
+def _now_utc() -> str:
+    """ISO 8601 UTC timestamp."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def print_banner(args: argparse.Namespace, device_name: str, precision: str) -> None:
+    """Print the startup banner."""
+    print("\n" + "\u2550" * 54)
+    print("  D4BL Training Pipeline")
+    print(f"  Model:     {args.model}")
+    print(f"  Device:    CUDA ({device_name})")
+    print(f"  Precision: {precision}")
+    print(f"  Output:    {args.output_dir}")
+    print(f"  Phases:    {', '.join(args.phases)}")
+    if args.force:
+        print("  Mode:      FORCE (ignoring checkpoints)")
+    print("\u2550" * 54)
+
+
+def print_completion_banner(output_dir: Path, total_seconds: float) -> None:
+    """Print the completion banner."""
+    gguf_dir = output_dir / "gguf"
+    gguf_count = sum(1 for d in gguf_dir.iterdir() if d.is_dir()) if gguf_dir.exists() else 0
+    print("\n" + "\u2550" * 54)
+    print(f"  \u2713 Complete \u2014 {gguf_count} GGUF files in {gguf_dir}")
+    print(f"  Total time: {_format_duration(total_seconds)}")
+    print(f"  Report: {output_dir / 'training_report.md'}")
+    print("  Next: python -m scripts.training.register_models")
+    print("\u2550" * 54 + "\n")
+
+
+def validate_data_dir(data_dir: Path, phases: list[str]) -> None:
+    """Validate that required training data files exist.
+
+    Only checks files needed by the requested phases.
+    """
+    needed: list[str] = []
+    if "domain" in phases:
+        needed.append("corpus_pretrain.jsonl")
+    for adapter_name in ["parser", "explainer", "evaluator"]:
+        if adapter_name in phases:
+            cfg = ADAPTER_CONFIGS[adapter_name]
+            needed.append(cfg["train_file"])
+            needed.append(cfg["val_file"])
+
+    missing = [f for f in needed if not (data_dir / f).exists()]
+    if missing:
+        print(f"\nERROR: Missing training data files in {data_dir}:")
+        for f in missing:
+            print(f"  - {f}")
+        print("\nRun the training data pipeline first:")
+        print("  python -m scripts.training.prepare_dataset")
+        sys.exit(1)
+    print(f"\n  Data directory: {data_dir} ({len(needed)} files validated)")
+
+
+def check_phase_complete(path: Path, phase_type: str) -> bool:
+    """Check if a phase has already completed by looking for output artifacts."""
+    if phase_type == "domain":
+        return (path / "config.json").exists()
+    elif phase_type == "adapter":
+        return (path / "adapter_config.json").exists()
+    elif phase_type == "gguf":
+        if not path.exists():
+            return False
+        return any(f.suffix == ".gguf" for f in path.iterdir())
+    return False
+
+
+def load_jsonl(path: Path, require_text: bool = False) -> list[dict]:
+    """Read a JSONL file into a list of dicts."""
+    records = []
+    with open(path, encoding="utf-8") as fh:
+        for line_no, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                raise ValueError(f"{path}:{line_no}: expected JSON object")
+            if require_text and ("text" not in record or not isinstance(record["text"], str)):
+                raise ValueError(f"{path}:{line_no}: missing or invalid 'text' field")
+            records.append(record)
+    return records
+
+
+def load_dataset_from_jsonl(path: Path, require_text: bool = False) -> Dataset:
+    """Load a JSONL file as a HuggingFace Dataset."""
+    records = load_jsonl(path, require_text=require_text)
+    return Dataset.from_list(records)
+
+
+def format_and_tokenize(dataset: Dataset, tokenizer) -> Dataset:
+    """Convert messages-format dataset to plain text using the model's chat template.
+
+    Falls back to manual ChatML if the tokenizer lacks a chat template.
+    """
+    formatted = []
+    for record in dataset:
+        msgs = record["messages"]
+        try:
+            text = tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=False
+            )
+        except (AttributeError, TypeError, KeyError, ValueError):
+            parts = []
+            for msg in msgs:
+                parts.append(f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>")
+            text = "\n".join(parts) + "\n"
+        formatted.append({"text": text})
+    return Dataset.from_list(formatted)
+
+
+def load_training_data(data_dir: Path, phases: list[str]) -> dict[str, Dataset]:
+    """Load all training datasets needed by the requested phases."""
+    datasets: dict[str, Dataset] = {}
+
+    if "domain" in phases:
+        datasets["corpus"] = load_dataset_from_jsonl(
+            data_dir / "corpus_pretrain.jsonl", require_text=True
+        )
+        print(f"  corpus_pretrain       : {len(datasets['corpus']):>5} passages")
+
+    for adapter_name in ["parser", "explainer", "evaluator"]:
+        if adapter_name not in phases:
+            continue
+        cfg = ADAPTER_CONFIGS[adapter_name]
+        train_ds = load_dataset_from_jsonl(data_dir / cfg["train_file"])
+        val_ds = load_dataset_from_jsonl(data_dir / cfg["val_file"])
+        datasets[f"{adapter_name}_train"] = train_ds
+        datasets[f"{adapter_name}_val"] = val_ds
+        print(f"  {adapter_name:<22}: {len(train_ds):>5} train / {len(val_ds):>5} val")
+
+    return datasets
+
+
+def free_vram(*objects) -> None:
+    """Delete objects and free CUDA memory."""
+    for obj in objects:
+        del obj
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
