@@ -797,8 +797,18 @@ def _load_seed_rows(conn: Any, limit: int = 200) -> list[dict]:
         "year": 2022,
         "value": 35400.0,
     }
+    seed_tables = (
+        "census_indicators",
+        "cdc_health_outcomes",
+        "census_demographics",
+        "policy_bills",
+        "bjs_incarceration",
+        "vera_incarceration",
+        "police_violence_incidents",
+        "epa_environmental_justice",
+    )
     rows: list[dict] = []
-    for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
+    for table in seed_tables:
         try:
             rows.extend(_fetch_seed_data(conn, table, limit=limit))
         except Exception:  # noqa: BLE001
