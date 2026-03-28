@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 from scripts.training.prepare_dataset import (
-    load_and_merge_pairs,
     apply_swap_augmentation,
+    load_and_merge_pairs,
 )
 
 

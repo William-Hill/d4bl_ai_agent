@@ -37,7 +37,6 @@ from scripts.training.config import (
 )
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
-    ENTITY_TYPE_SEED_TABLES,
     ENTITY_TYPE_TEMPLATES,
     ORG_NAMES,
     PERTURBATION_TYPES,
@@ -1102,7 +1101,7 @@ def main(task: str) -> None:
             tasks_to_run = [task]
         else:
             raise ValueError(
-                f"Unknown task: {task!r}. Must be one of: query_parser, explainer, evaluator, all"
+                f"Unknown task: {task!r}. Must be one of: {', '.join(_TASK_MAP.keys())}, all"
             )
 
         for t in tasks_to_run:

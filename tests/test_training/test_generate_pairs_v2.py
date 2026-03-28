@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 from scripts.training.generate_training_pairs import (
-    build_hallucination_pair,
     build_evaluator_v2_pair,
+    build_hallucination_pair,
     generate_query_parser_questions_v2,
 )
 from scripts.training.prompts import STUDENT_EVALUATOR_SYSTEMS
