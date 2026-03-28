@@ -332,6 +332,103 @@ class TelemetryCallback(TrainerCallback):
         }
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Phase 1: Domain Adaptation
+# ──────────────────────────────────────────────────────────────────────
+
+def train_domain_adapter(
+    model_name: str,
+    corpus_dataset: Dataset,
+    output_dir: Path,
+    use_bf16: bool,
+) -> dict:
+    """Phase 1: Domain-adaptive LoRA pre-training, then merge into base weights."""
+    phase_start = time.monotonic()
+    print(f"\n      Phase 1: Domain Adaptation")
+    print(f"      Dataset: {len(corpus_dataset)} passages")
+    print(f"      LoRA: r=16, all layers + embeddings, 1 epoch")
+
+    # Load base model in 4-bit
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=model_name,
+        max_seq_length=2048,
+        dtype=None,
+        load_in_4bit=True,
+    )
+    print("      Base model loaded.")
+
+    # Attach domain LoRA
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=16,
+        target_modules=[
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+            "embed_tokens", "lm_head",
+        ],
+        lora_alpha=32,
+        lora_dropout=0,
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=42,
+    )
+    model.print_trainable_parameters()
+
+    # Train
+    callback = TelemetryCallback("Domain Adaptation", 1, 5)
+    trainer = SFTTrainer(
+        model=model,
+        processing_class=tokenizer,
+        train_dataset=corpus_dataset,
+        callbacks=[callback],
+        args=SFTConfig(
+            output_dir=str(output_dir / "phase1_checkpoints"),
+            max_length=2048,
+            dataset_text_field="text",
+            per_device_train_batch_size=4,
+            gradient_accumulation_steps=4,
+            warmup_steps=50,
+            num_train_epochs=1,
+            learning_rate=2e-4,
+            fp16=not use_bf16,
+            bf16=use_bf16,
+            logging_steps=10,
+            optim="adamw_8bit",
+            seed=42,
+            save_steps=500,
+            save_total_limit=2,
+            report_to="none",
+        ),
+    )
+
+    print("      Training...")
+    train_result = trainer.train()
+    duration = time.monotonic() - phase_start
+
+    # Merge LoRA into base weights
+    domain_merged_dir = str(output_dir / "domain_merged")
+    print("      Merging domain LoRA into base weights...")
+    model.save_pretrained_merged(
+        domain_merged_dir,
+        tokenizer,
+        save_method="merged_16bit",
+    )
+    print(f"      \u2713 Saved to domain_merged/ ({_format_duration(duration)})")
+
+    summary = callback.get_summary()
+    summary.update({
+        "phase": "domain",
+        "dataset_size": len(corpus_dataset),
+        "lora": {"r": 16, "target_modules": "all + embeddings", "alpha": 32},
+        "training_loss": train_result.training_loss,
+        "start": _now_utc(),
+        "duration_seconds": round(duration, 1),
+    })
+
+    free_vram(model, trainer)
+    return summary
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
