@@ -11,9 +11,16 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apscheduler.triggers.cron import CronTrigger
+
 from d4bl.app.auth import CurrentUser, require_admin
-from d4bl.infra.database import IngestionRun, IngestionSchedule, get_db
-from d4bl.services.scheduler import parse_cron
+from d4bl.infra.database import (
+    IngestionRun,
+    IngestionSchedule,
+    async_session_maker,
+    get_db,
+)
+from d4bl.services.ingestion_runner import resolve_source, run_ingestion_task
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +35,7 @@ async def list_schedules(
     """List all ingestion schedules."""
     result = await db.execute(select(IngestionSchedule))
     schedules = result.scalars().all()
-    return [
-        {
-            "id": str(s.id),
-            "source_key": s.source_key,
-            "cron_expression": s.cron_expression,
-            "enabled": s.enabled,
-            "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
-            "last_status": s.last_status,
-            "created_at": s.created_at.isoformat() if s.created_at else None,
-            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-        }
-        for s in schedules
-    ]
+    return [s.to_dict() for s in schedules]
 
 
 @router.post("/api/admin/schedules")
@@ -63,9 +58,8 @@ async def create_or_update_schedule(
             detail="source_key and cron_expression are required",
         )
 
-    # Validate cron expression
     try:
-        parse_cron(cron_expression)
+        CronTrigger.from_crontab(cron_expression)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -135,8 +129,6 @@ async def trigger_schedule(
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
 
-    from d4bl.services.ingestion_runner import resolve_source
-
     module_name = resolve_source(schedule.source_key)
     if not module_name:
         raise HTTPException(
@@ -144,14 +136,11 @@ async def trigger_schedule(
             detail=f"No ingestion script for source: {schedule.source_key}",
         )
 
-    from d4bl.infra.database import async_session_maker
-    from d4bl.services.ingestion_runner import run_ingestion_task
-
     run_id = uuid4()
     run = IngestionRun(
         id=run_id,
         status="pending",
-        trigger_type="scheduled",
+        trigger_type="manual",
         started_at=datetime.now(timezone.utc),
     )
     db.add(run)

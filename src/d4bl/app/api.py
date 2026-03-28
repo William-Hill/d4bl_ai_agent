@@ -500,10 +500,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield  # --- App runs here ---
 
-    # --- Scheduler shutdown ---
-    if _scheduler and _scheduler.running:
-        _scheduler.shutdown(wait=False)
-        logger.info("Scheduler stopped")
+    if _scheduler:
+        try:
+            if _scheduler.running:
+                _scheduler.shutdown(wait=False)
+                logger.info("Scheduler stopped")
+        finally:
+            _scheduler = None
 
     # --- Shutdown ---
     await close_db()

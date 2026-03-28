@@ -48,32 +48,22 @@ def test_default_schedules_has_expected_sources():
 
 
 def test_parse_cron_valid():
-    """parse_cron splits a 5-field cron string into APScheduler kwargs."""
+    """parse_cron returns a CronTrigger for valid expressions."""
+    from apscheduler.triggers.cron import CronTrigger
     result = parse_cron("0 6 * * 1")
-    assert result == {
-        "minute": "0",
-        "hour": "6",
-        "day": "*/1",
-        "month": "*",
-        "day_of_week": "1",
-    }
+    assert isinstance(result, CronTrigger)
 
 
 def test_parse_cron_all_stars():
     """parse_cron handles all-star expression."""
+    from apscheduler.triggers.cron import CronTrigger
     result = parse_cron("* * * * *")
-    assert result == {
-        "minute": "*",
-        "hour": "*",
-        "day": "*/1",
-        "month": "*",
-        "day_of_week": "*",
-    }
+    assert isinstance(result, CronTrigger)
 
 
 def test_parse_cron_invalid_raises():
     """parse_cron raises ValueError for malformed expressions."""
-    with pytest.raises(ValueError, match="5 fields"):
+    with pytest.raises(ValueError):
         parse_cron("0 6 *")
 
 

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from uuid import UUID
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
@@ -36,29 +34,13 @@ DEFAULT_SCHEDULES: dict[str, str] = {
 }
 
 
-def parse_cron(expression: str) -> dict[str, str]:
-    """Parse a 5-field cron expression into APScheduler CronTrigger kwargs.
+def parse_cron(expression: str) -> CronTrigger:
+    """Validate and parse a 5-field cron expression into a CronTrigger.
 
-    Fields: minute hour day month day_of_week
+    Delegates to APScheduler's built-in crontab parser.
+    Raises ValueError for invalid expressions.
     """
-    parts = expression.strip().split()
-    if len(parts) != 5:
-        raise ValueError(
-            f"Cron expression must have 5 fields, got {len(parts)}: "
-            f"'{expression}'"
-        )
-    minute, hour, day, month, day_of_week = parts
-    # APScheduler interprets day="*" as "unset" which defaults to last-used;
-    # use "*/1" to explicitly mean "every day".
-    if day == "*":
-        day = "*/1"
-    return {
-        "minute": minute,
-        "hour": hour,
-        "day": day,
-        "month": month,
-        "day_of_week": day_of_week,
-    }
+    return CronTrigger.from_crontab(expression)
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -109,8 +91,7 @@ async def load_and_register_schedules(
 
     for sched in schedules:
         try:
-            cron_kwargs = parse_cron(sched.cron_expression)
-            trigger = CronTrigger(**cron_kwargs)
+            trigger = parse_cron(sched.cron_expression)
             scheduler.add_job(
                 run_job_func,
                 trigger=trigger,
