@@ -32,10 +32,12 @@ from scripts.training.config import (
     EVALUATOR_V2_PAIRS_PER_SUBTASK,
     PAIRS_DIR,
     PAIRS_PER_TASK,
+    PARSER_V2_ENTITY_PAIRS,
     write_jsonl,
 )
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
+    ENTITY_TYPE_SEED_TABLES,
     ENTITY_TYPE_TEMPLATES,
     ORG_NAMES,
     PERTURBATION_TYPES,
@@ -477,6 +479,103 @@ def generate_evaluator_pairs_v2(
 
     _print_cost_summary()
     return all_pairs
+
+
+def generate_query_parser_pairs_v2(
+    conn: Any,
+    count: int = PARSER_V2_ENTITY_PAIRS,
+    outfile: Path | None = None,
+) -> list[dict]:
+    """Generate v2 query parser pairs targeting diverse entity types.
+
+    Generates questions across 6 entity type categories using expanded seed
+    tables and new templates.
+
+    Args:
+        conn: A live psycopg2 connection.
+        count: Total number of pairs to generate across all entity types.
+        outfile: Optional output path for incremental writes.
+
+    Returns:
+        A list of ChatML pair dicts.
+    """
+    # Load expanded seed data including new tables
+    seed_rows: list[dict] = []
+    for table in list(_ALLOWED_SEED_TABLES):
+        try:
+            seed_rows.extend(_fetch_seed_data(conn, table, limit=100))
+        except Exception:
+            continue
+    if not seed_rows:
+        seed_rows = _load_seed_rows(conn)
+    random.shuffle(seed_rows)
+
+    entity_types = list(ENTITY_TYPE_TEMPLATES.keys())
+    # Distribute count across entity types per spec targets
+    type_counts = {
+        "organization": 50,
+        "policy": 50,
+        "sub_state_geography": 80,
+        "intersectional": 40,
+        "temporal": 30,
+        "adversarial_json": 50,
+    }
+    # Scale if total count differs from 300
+    total_specified = sum(type_counts.values())
+    if count != total_specified:
+        scale = count / total_specified
+        type_counts = {k: max(1, round(v * scale)) for k, v in type_counts.items()}
+
+    data_sources = list(_ALLOWED_SEED_TABLES)
+    pairs: list[dict] = []
+
+    fh = None
+    if outfile is not None:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        fh = outfile.open("w", encoding="utf-8")
+
+    try:
+        for entity_type, type_count in type_counts.items():
+            questions = generate_query_parser_questions_v2(
+                seed_rows, count=type_count, entity_type=entity_type,
+            )
+            for idx, q in enumerate(questions):
+                if idx > 0 and idx % 25 == 0:
+                    time.sleep(1)
+
+                teacher_prompt = build_query_parser_prompt(
+                    question=q["question"],
+                    data_sources=data_sources,
+                    question_style="adversarial" if entity_type == "adversarial_json" else "standard",
+                )
+                try:
+                    response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+                except Exception as exc:
+                    print(f"[warn] Claude call failed for {entity_type} pair {idx}: {exc}", flush=True)
+                    continue
+
+                validated = _validate_json(response_text)
+                if validated is None:
+                    print(f"[warn] Invalid JSON for {entity_type} pair {idx}, skipping.", flush=True)
+                    continue
+
+                pair = format_as_chatml(
+                    system=_STUDENT_QUERY_PARSER_SYSTEM,
+                    user=q["question"],
+                    assistant=json.dumps(validated, ensure_ascii=False),
+                )
+                pairs.append(pair)
+                if fh is not None:
+                    fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+                    fh.flush()
+                print(f"[query_parser_v2/{entity_type}] {len(pairs)} total pairs", flush=True)
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[query_parser_v2] Saved {len(pairs)} pairs to {outfile}", flush=True)
+
+    _print_cost_summary()
+    return pairs
 
 
 def write_pairs_jsonl(
@@ -968,6 +1067,10 @@ def main(task: str) -> None:
             "evaluator_v2": lambda: generate_evaluator_pairs_v2(
                 conn, count_per_subtask=EVALUATOR_V2_PAIRS_PER_SUBTASK,
                 outfile=PAIRS_DIR / "evaluator_v2.jsonl",
+            ),
+            "query_parser_v2": lambda: generate_query_parser_pairs_v2(
+                conn, count=PARSER_V2_ENTITY_PAIRS,
+                outfile=PAIRS_DIR / "query_parser_v2.jsonl",
             ),
         }
 
