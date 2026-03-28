@@ -383,7 +383,9 @@ def train_domain_adapter(
     )
 
     print("      Training...")
-    train_result = trainer.train()
+    checkpoint_dir = output_dir / "phase1_checkpoints"
+    resume = str(checkpoint_dir) if checkpoint_dir.exists() and any(checkpoint_dir.iterdir()) else None
+    train_result = trainer.train(resume_from_checkpoint=resume)
     duration = time.monotonic() - phase_start
 
     # Merge LoRA into base weights
@@ -495,7 +497,9 @@ def train_task_adapter(
     )
 
     print("      Training...")
-    train_result = trainer.train()
+    checkpoint_dir = output_dir / cfg["checkpoint_subdir"]
+    resume = str(checkpoint_dir) if checkpoint_dir.exists() and any(checkpoint_dir.iterdir()) else None
+    train_result = trainer.train(resume_from_checkpoint=resume)
     duration = time.monotonic() - phase_start
 
     # Save adapter weights
@@ -743,7 +747,13 @@ def generate_report(output_dir: Path, telemetry: dict) -> None:
             status = "\u2713"
 
         overfit = checks.get("overfit", {})
-        overfit_str = overfit.get("message", "\u2014").split(" ")[0] if "overfit" in checks else "\u2014"
+        if "overfit" in checks:
+            # Extract the ratio number from "eval/train ratio 1.12 (< 1.5)"
+            msg = overfit.get("message", "")
+            parts = msg.split("ratio ")
+            overfit_str = parts[1].split(" ")[0] if len(parts) > 1 else "\u2014"
+        else:
+            overfit_str = "\u2014"
 
         duration_str = _format_duration(p.get("duration_seconds", 0))
         lines.append(f"| {label} | {train_str} | {eval_str} | {overfit_str} | {duration_str} | {status} |")
@@ -753,7 +763,11 @@ def generate_report(output_dir: Path, telemetry: dict) -> None:
     # Health check summary
     lines.append("## Health Checks\n")
     total_phases_trained = len(phases)
-    passed = total_phases_trained - total_fails
+    phases_with_failures = sum(
+        1 for p in phases.values()
+        if any(c["status"] == "fail" for c in p.get("health_checks", {}).values())
+    )
+    passed = total_phases_trained - phases_with_failures
     lines.append(f"- {passed}/{total_phases_trained} phases passed all checks")
     if total_warnings:
         lines.append(f"- {total_warnings} warning(s) across all phases")
@@ -851,7 +865,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("/content/d4bl_training"),
+        default=Path("d4bl_training"),
         help="Root output directory for checkpoints, adapters, GGUFs",
     )
     parser.add_argument(
@@ -954,9 +968,16 @@ def main(argv: list[str] | None = None) -> None:
             telemetry["phases"]["domain"]["health_checks"] = checks
 
     # Phase 2: Task-specific adapters
-    for adapter_name in ["parser", "explainer", "evaluator"]:
-        if adapter_name not in args.phases:
-            continue
+    phase2_adapters = [a for a in ["parser", "explainer", "evaluator"] if a in args.phases]
+    if phase2_adapters:
+        domain_merged_path = args.output_dir / "domain_merged"
+        if not check_phase_complete(domain_merged_path, "domain"):
+            print(f"\n  ERROR: {domain_merged_path} not found.")
+            print("  Phase 2 adapters require a completed Phase 1 (domain adaptation).")
+            print("  Run with --phases domain first, or include 'domain' in --phases.")
+            sys.exit(1)
+
+    for adapter_name in phase2_adapters:
         phase_num += 1
         cfg = ADAPTER_CONFIGS[adapter_name]
         adapter_dir = args.output_dir / cfg["output_subdir"]
@@ -991,12 +1012,16 @@ def main(argv: list[str] | None = None) -> None:
         phase_num += 1
         print(f"\n[{phase_num}/{total_phases}] Phase 3: GGUF Export")
         for adapter_name, cfg in ADAPTER_CONFIGS.items():
+            adapter_path = args.output_dir / cfg["output_subdir"]
+            if not check_phase_complete(adapter_path, "adapter"):
+                print(f"      \u2014 {cfg['gguf_name']}: adapter not found at {adapter_path}, skipping")
+                continue
             gguf_subdir = args.output_dir / "gguf" / f"{cfg['gguf_name']}-{args.quantize}"
             if not args.force and check_phase_complete(gguf_subdir, "gguf"):
                 print(f"      \u2713 {cfg['gguf_name']} already exported \u2014 skipping")
             else:
                 export_info = export_gguf(
-                    adapter_dir=args.output_dir / cfg["output_subdir"],
+                    adapter_dir=adapter_path,
                     output_dir=args.output_dir,
                     gguf_name=cfg["gguf_name"],
                     quantize=args.quantize,
