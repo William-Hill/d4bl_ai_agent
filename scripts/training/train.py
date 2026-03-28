@@ -544,6 +544,52 @@ def train_task_adapter(
     return summary
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Phase 3: GGUF Export
+# ──────────────────────────────────────────────────────────────────────
+
+def export_gguf(
+    adapter_dir: Path,
+    output_dir: Path,
+    gguf_name: str,
+    quantize: str,
+    max_seq_length: int,
+) -> dict:
+    """Export a single adapter to GGUF format."""
+    export_start = time.monotonic()
+    gguf_subdir = output_dir / "gguf" / f"{gguf_name}-{quantize}"
+    gguf_subdir.mkdir(parents=True, exist_ok=True)
+
+    print(f"      Exporting {gguf_name}...", end=" ", flush=True)
+
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=str(adapter_dir),
+        max_seq_length=max_seq_length,
+        load_in_4bit=True,
+    )
+    model.save_pretrained_gguf(
+        str(gguf_subdir),
+        tokenizer,
+        quantization_method=quantize,
+    )
+
+    # Find the .gguf file and report size
+    gguf_files = list(gguf_subdir.glob("*.gguf"))
+    size_bytes = sum(f.stat().st_size for f in gguf_files)
+    size_gb = size_bytes / (1024 ** 3)
+    duration = time.monotonic() - export_start
+
+    print(f"done ({size_gb:.1f} GB, {_format_duration(duration)})")
+
+    free_vram(model, tokenizer)
+    return {
+        "gguf_name": gguf_name,
+        "path": str(gguf_subdir),
+        "size_bytes": size_bytes,
+        "duration_seconds": round(duration, 1),
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
