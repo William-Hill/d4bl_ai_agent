@@ -55,7 +55,7 @@ def fetch_state_spending(client: httpx.Client, state_fips: str) -> list[dict]:
         "geo_layer_filters": [state_fips],
         "filters": {
             "time_period": [
-                {"start_date": f"{FISCAL_YEAR}-01-01", "end_date": f"{FISCAL_YEAR}-12-31"}
+                {"start_date": f"{int(FISCAL_YEAR)-1}-10-01", "end_date": f"{FISCAL_YEAR}-09-30"}
             ]
         },
     }
@@ -77,7 +77,7 @@ def main() -> int:
     now = datetime.now(timezone.utc).isoformat()
 
     with httpx.Client(timeout=60) as client:
-        for state_name, state_fips in STATE_FIPS.items():
+        for state_fips, state_name in STATE_FIPS.items():
             print(f"  Fetching spending for {state_name} ({state_fips})...")
             results = fetch_state_spending(client, state_fips)
 

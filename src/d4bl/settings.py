@@ -107,7 +107,7 @@ class Settings:
         )
         _set(
             "search_provider",
-            os.getenv("SEARCH_PROVIDER", "searxng"),
+            os.getenv("SEARCH_PROVIDER", "searxng").lower(),
         )
 
         # Langfuse / OTLP

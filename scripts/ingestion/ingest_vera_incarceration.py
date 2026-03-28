@@ -84,6 +84,7 @@ def main() -> int:
 
         if response.status_code != 200:
             print(f"Failed to download: HTTP {response.status_code}")
+            conn.close()
             return 0
 
         reader = csv.DictReader(io.StringIO(response.text))

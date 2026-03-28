@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlparse
 
 import httpx
 from crewai.tools import BaseTool
@@ -49,7 +50,14 @@ class SearXNGSearchTool(BaseTool):
 
     def _is_problematic_url(self, url: str) -> bool:
         """Return True if the URL belongs to a known problematic domain."""
-        return bool(url and any(domain in url.lower() for domain in PROBLEMATIC_DOMAINS))
+        if not url:
+            return False
+        hostname = urlparse(url).hostname or ""
+        hostname = hostname.lower()
+        return any(
+            hostname == domain or hostname.endswith("." + domain)
+            for domain in PROBLEMATIC_DOMAINS
+        )
 
     def _run(self, query: str) -> str:
         """Execute a search query against SearXNG.
