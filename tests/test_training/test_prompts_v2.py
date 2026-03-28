@@ -109,3 +109,64 @@ class TestTieredModelOutputPrompt:
             quality_tier="poor",
         )
         assert "vague" in result.lower() or "generic" in result.lower()
+
+
+from scripts.training.prompts import (
+    ENTITY_TYPE_TEMPLATES,
+    ENTITY_TYPE_SEED_TABLES,
+    ORG_NAMES,
+    POLICY_NAMES,
+)
+
+
+class TestEntityTypeTemplates:
+    def test_all_six_entity_types_defined(self):
+        expected = {
+            "organization",
+            "policy",
+            "sub_state_geography",
+            "intersectional",
+            "temporal",
+            "adversarial_json",
+        }
+        assert set(ENTITY_TYPE_TEMPLATES.keys()) == expected
+
+    def test_each_type_has_at_least_two_templates(self):
+        for entity_type, templates in ENTITY_TYPE_TEMPLATES.items():
+            assert len(templates) >= 2, f"{entity_type} has < 2 templates"
+
+    def test_organization_templates_contain_org_placeholder(self):
+        for template in ENTITY_TYPE_TEMPLATES["organization"]:
+            assert "{org}" in template
+
+    def test_policy_templates_contain_policy_placeholder(self):
+        for template in ENTITY_TYPE_TEMPLATES["policy"]:
+            assert "{policy}" in template
+
+    def test_sub_state_templates_contain_county_or_city(self):
+        for template in ENTITY_TYPE_TEMPLATES["sub_state_geography"]:
+            assert "{county}" in template or "{city}" in template
+
+    def test_temporal_templates_contain_event_or_policy(self):
+        for template in ENTITY_TYPE_TEMPLATES["temporal"]:
+            assert "{event}" in template or "{policy}" in template
+
+    def test_org_names_is_non_empty_tuple(self):
+        assert isinstance(ORG_NAMES, tuple)
+        assert len(ORG_NAMES) >= 8
+
+    def test_policy_names_is_non_empty_tuple(self):
+        assert isinstance(POLICY_NAMES, tuple)
+        assert len(POLICY_NAMES) >= 6
+
+
+class TestEntityTypeSeedTables:
+    def test_has_five_new_tables(self):
+        expected = {
+            "policy_bills",
+            "bjs_incarceration",
+            "vera_incarceration",
+            "police_violence_incidents",
+            "epa_environmental_justice",
+        }
+        assert expected.issubset(set(ENTITY_TYPE_SEED_TABLES))

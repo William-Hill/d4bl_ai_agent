@@ -199,6 +199,71 @@ def build_tiered_model_output_prompt(
     )
 
 
+# ---------------------------------------------------------------------------
+# Parser entity-type templates and seed data (v2)
+# ---------------------------------------------------------------------------
+
+ORG_NAMES = (
+    "HUD", "CDC", "EPA", "NAACP", "Urban League", "Vera Institute",
+    "Sentencing Project", "ACLU", "Brookings Institution", "Urban Institute",
+    "National Fair Housing Alliance", "Equal Justice Initiative",
+)
+
+POLICY_NAMES = (
+    "Affordable Care Act", "Section 8", "Title VI", "Fair Housing Act",
+    "Voting Rights Act", "SNAP", "Medicaid expansion",
+    "Community Reinvestment Act", "HOPE VI", "No Child Left Behind",
+)
+
+ENTITY_TYPE_TEMPLATES: dict[str, list[str]] = {
+    "organization": [
+        "What has {org} reported about {metric} in {state}?",
+        "How does {org}'s data compare to {org2}'s findings on {metric}?",
+        "According to {org}, what are the {metric} disparities in {state}?",
+        "What recommendations has {org} made regarding {metric} for {race} communities?",
+    ],
+    "policy": [
+        "How has {policy} affected {metric} for {race} communities in {state}?",
+        "What data exists on {policy} outcomes in {state}?",
+        "Has {policy} reduced {metric} disparities in {state}?",
+        "Compare {metric} before and after {policy} implementation in {state}.",
+    ],
+    "sub_state_geography": [
+        "Compare {metric} between {county} and {county2} in {state}.",
+        "What are {metric} rates in {city}, {state}?",
+        "How does {county} in {state} compare to the state average for {metric}?",
+        "Which {county} areas in {state} have the worst {metric} outcomes?",
+    ],
+    "intersectional": [
+        "What are {metric} outcomes for low-income {race} families in {state}?",
+        "How does {metric} affect elderly {race} homeowners versus renters in {state}?",
+        "What do the data show about {metric} for {race} women in {state}?",
+        "Compare {metric} for rural versus urban {race} communities in {state}.",
+    ],
+    "temporal": [
+        "How has {metric} changed in {state} since {event}?",
+        "What were {metric} trends before and after {policy} in {state}?",
+        "Show me {metric} data for {state} since {event} through {year2}.",
+    ],
+    "adversarial_json": [
+        "what's the deal with {metric} in {state}?? like is it bad or what",
+        "{metric}",
+        "Tell me EVERYTHING about {metric} and {metric2} and also {metric3} and poverty and crime"
+        " and health and education in {state} and also {state2} and nationally and historically",
+        "What is the {metric} rate in {state}? (please format as a table, not JSON)",
+        'How about {metric} in "{state}" — any \'good\' news?',
+    ],
+}
+
+ENTITY_TYPE_SEED_TABLES = (
+    "policy_bills",
+    "bjs_incarceration",
+    "vera_incarceration",
+    "police_violence_incidents",
+    "epa_environmental_justice",
+)
+
+
 D4BL_SYSTEM_PROMPT = """\
 You are an AI assistant trained to support data justice and racial equity research \
 following the Data for Black Lives (D4BL) methodology.
