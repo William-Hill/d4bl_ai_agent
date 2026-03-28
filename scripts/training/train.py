@@ -704,6 +704,158 @@ def print_health_checks(
         print(f"      {icon} {name.capitalize()}: {check['message']}")
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Report Generation
+# ──────────────────────────────────────────────────────────────────────
+
+def generate_report(output_dir: Path, telemetry: dict) -> None:
+    """Write training_report.md and training_telemetry.json."""
+    config = telemetry["config"]
+    phases = telemetry["phases"]
+    exports = telemetry["exports"]
+    total_time = telemetry.get("total_duration_seconds", 0)
+
+    # ── Markdown report ──
+    lines: list[str] = []
+    lines.append(f"# D4BL Training Report \u2014 {_now_utc()}\n")
+
+    lines.append("## Configuration\n")
+    lines.append(f"- **Model:** {config['model']}")
+    lines.append(f"- **Device:** {config.get('device', 'unknown')}")
+    lines.append(f"- **Precision:** {config.get('precision', 'unknown')}")
+    lines.append(f"- **Quantization:** {config['quantize']}")
+    lines.append(f"- **Data directory:** {config['data_dir']}")
+    lines.append("")
+
+    # Summary table
+    lines.append("## Summary\n")
+    lines.append("| Phase | Train Loss | Eval Loss | Overfit Ratio | Duration | Status |")
+    lines.append("|-------|-----------|-----------|---------------|----------|--------|")
+
+    phase_labels = {
+        "domain": "Domain Adaptation",
+        "parser": "Query Parser",
+        "explainer": "Data Explainer",
+        "evaluator": "Evaluator",
+    }
+    total_warnings = 0
+    total_fails = 0
+    for name, label in phase_labels.items():
+        if name not in phases:
+            continue
+        p = phases[name]
+        train_loss = p.get("final_train_loss") or p.get("training_loss")
+        eval_loss = p.get("final_eval_loss")
+        train_str = f"{train_loss:.3f}" if train_loss is not None else "\u2014"
+        eval_str = f"{eval_loss:.3f}" if eval_loss is not None else "\u2014"
+
+        checks = p.get("health_checks", {})
+        n_warn = sum(1 for c in checks.values() if c["status"] == "warn")
+        n_fail = sum(1 for c in checks.values() if c["status"] == "fail")
+        total_warnings += n_warn
+        total_fails += n_fail
+        if n_fail > 0:
+            status = "\u2717 FAIL"
+        elif n_warn > 0:
+            status = f"\u26a0 {n_warn} warn"
+        else:
+            status = "\u2713"
+
+        overfit = checks.get("overfit", {})
+        overfit_str = overfit.get("message", "\u2014").split(" ")[0] if "overfit" in checks else "\u2014"
+
+        duration_str = _format_duration(p.get("duration_seconds", 0))
+        lines.append(f"| {label} | {train_str} | {eval_str} | {overfit_str} | {duration_str} | {status} |")
+
+    lines.append("")
+
+    # Health check summary
+    lines.append("## Health Checks\n")
+    total_phases_trained = len(phases)
+    passed = total_phases_trained - total_fails
+    lines.append(f"- {passed}/{total_phases_trained} phases passed all checks")
+    if total_warnings:
+        lines.append(f"- {total_warnings} warning(s) across all phases")
+    if total_fails:
+        lines.append(f"- {total_fails} FAILURE(s) \u2014 review per-phase details below")
+    lines.append("")
+
+    # Per-phase details
+    lines.append("## Per-Phase Details\n")
+    for name, label in phase_labels.items():
+        if name not in phases:
+            continue
+        p = phases[name]
+        lines.append(f"### {label}\n")
+
+        ds_size = p.get("dataset_size") or p.get("dataset_size_train")
+        if ds_size:
+            val_size = p.get("dataset_size_val")
+            if val_size:
+                lines.append(f"- **Dataset:** {ds_size} train / {val_size} val")
+            else:
+                lines.append(f"- **Dataset:** {ds_size} passages")
+
+        lora = p.get("lora", {})
+        if lora:
+            lines.append(f"- **LoRA:** r={lora.get('r')}, alpha={lora.get('alpha')}, modules={lora.get('target_modules')}")
+
+        train_loss = p.get("training_loss")
+        if train_loss is not None:
+            lines.append(f"- **Final training loss:** {train_loss:.4f}")
+
+        initial_eval = p.get("initial_eval_loss")
+        final_eval = p.get("final_eval_loss")
+        if initial_eval is not None and final_eval is not None:
+            lines.append(f"- **Eval loss:** {initial_eval:.3f} \u2192 {final_eval:.3f}")
+
+        best = p.get("best_eval_loss")
+        if best is not None:
+            lines.append(f"- **Best eval loss:** {best:.4f}")
+
+        eval_ckpts = p.get("eval_checkpoints", [])
+        if eval_ckpts:
+            ckpt_strs = [f"{l:.3f}" for l in eval_ckpts]
+            lines.append(f"- **Eval checkpoints:** [{', '.join(ckpt_strs)}]")
+
+        duration = p.get("duration_seconds", 0)
+        lines.append(f"- **Duration:** {_format_duration(duration)}")
+
+        checks = p.get("health_checks", {})
+        if checks:
+            status_icons = {"pass": "\u2713", "warn": "\u26a0", "fail": "\u2717"}
+            lines.append("- **Health:**")
+            for check_name, check in checks.items():
+                icon = status_icons.get(check["status"], "?")
+                lines.append(f"  - {icon} {check_name}: {check['message']}")
+        lines.append("")
+
+    # GGUF exports
+    if exports:
+        lines.append("## GGUF Exports\n")
+        lines.append("| Model | Path | Size |")
+        lines.append("|-------|------|------|")
+        for name, info in exports.items():
+            size_gb = info["size_bytes"] / (1024 ** 3)
+            lines.append(f"| {info['gguf_name']} | `{info['path']}` | {size_gb:.1f} GB |")
+        lines.append("")
+
+    lines.append(f"## Total Training Time: {_format_duration(total_time)}\n")
+
+    # Write report
+    report_path = output_dir / "training_report.md"
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"\n  Report written to: {report_path}")
+
+    # ── JSON telemetry ──
+    telemetry_path = output_dir / "training_telemetry.json"
+    telemetry_path.write_text(
+        json.dumps(telemetry, indent=2, default=str),
+        encoding="utf-8",
+    )
+    print(f"  Telemetry written to: {telemetry_path}")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
