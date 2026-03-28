@@ -27,21 +27,21 @@ from transformers import TrainerCallback
 from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel
 
+from scripts.training.config import FINAL_DIR
+
 # ──────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────
 
 ALL_PHASES = ["domain", "parser", "explainer", "evaluator", "export"]
 
-REQUIRED_DATA_FILES = [
-    "corpus_pretrain.jsonl",
-    "query_parser_train.jsonl",
-    "query_parser_val.jsonl",
-    "explainer_train.jsonl",
-    "explainer_val.jsonl",
-    "evaluator_train.jsonl",
-    "evaluator_val.jsonl",
-]
+ADAPTER_LABELS = {
+    "parser": "2a: Query Parser",
+    "explainer": "2b: Data Explainer",
+    "evaluator": "2c: Evaluator",
+}
+
+STATUS_ICONS = {"pass": "\u2713", "warn": "\u26a0", "fail": "\u2717"}
 
 ADAPTER_CONFIGS = {
     "parser": {
@@ -243,33 +243,13 @@ def format_and_tokenize(dataset: Dataset, tokenizer) -> Dataset:
     return Dataset.from_list(formatted)
 
 
-def load_training_data(data_dir: Path, phases: list[str]) -> dict[str, Dataset]:
-    """Load all training datasets needed by the requested phases."""
-    datasets: dict[str, Dataset] = {}
 
-    if "domain" in phases:
-        datasets["corpus"] = load_dataset_from_jsonl(
-            data_dir / "corpus_pretrain.jsonl", require_text=True
-        )
-        print(f"  corpus_pretrain       : {len(datasets['corpus']):>5} passages")
+def free_vram() -> None:
+    """Run garbage collection and flush CUDA memory cache.
 
-    for adapter_name in ["parser", "explainer", "evaluator"]:
-        if adapter_name not in phases:
-            continue
-        cfg = ADAPTER_CONFIGS[adapter_name]
-        train_ds = load_dataset_from_jsonl(data_dir / cfg["train_file"])
-        val_ds = load_dataset_from_jsonl(data_dir / cfg["val_file"])
-        datasets[f"{adapter_name}_train"] = train_ds
-        datasets[f"{adapter_name}_val"] = val_ds
-        print(f"  {adapter_name:<22}: {len(train_ds):>5} train / {len(val_ds):>5} val")
-
-    return datasets
-
-
-def free_vram(*objects) -> None:
-    """Delete objects and free CUDA memory."""
-    for obj in objects:
-        del obj
+    Callers must `del` their own model/trainer references before calling
+    this, since Python cannot unbind a caller's local variables.
+    """
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -343,6 +323,7 @@ def train_domain_adapter(
     use_bf16: bool,
 ) -> dict:
     """Phase 1: Domain-adaptive LoRA pre-training, then merge into base weights."""
+    start_timestamp = _now_utc()
     phase_start = time.monotonic()
     print(f"\n      Phase 1: Domain Adaptation")
     print(f"      Dataset: {len(corpus_dataset)} passages")
@@ -421,11 +402,12 @@ def train_domain_adapter(
         "dataset_size": len(corpus_dataset),
         "lora": {"r": 16, "target_modules": "all + embeddings", "alpha": 32},
         "training_loss": train_result.training_loss,
-        "start": _now_utc(),
+        "start": start_timestamp,
         "duration_seconds": round(duration, 1),
     })
 
-    free_vram(model, trainer)
+    del model, trainer
+    free_vram()
     return summary
 
 
@@ -445,12 +427,9 @@ def train_task_adapter(
     total_phases: int,
 ) -> dict:
     """Train a single task-specific LoRA adapter on the domain-merged base."""
+    start_timestamp = _now_utc()
     phase_start = time.monotonic()
-    label = {
-        "parser": "2a: Query Parser",
-        "explainer": "2b: Data Explainer",
-        "evaluator": "2c: Evaluator",
-    }[adapter_name]
+    label = ADAPTER_LABELS[adapter_name]
 
     print(f"\n[{phase_num}/{total_phases}] Phase {label} Adapter")
     print(f"      Dataset: {len(train_dataset)} train / {len(val_dataset)} val")
@@ -536,11 +515,12 @@ def train_task_adapter(
             "alpha": cfg["lora_alpha"],
         },
         "training_loss": train_result.training_loss,
-        "start": _now_utc(),
+        "start": start_timestamp,
         "duration_seconds": round(duration, 1),
     })
 
-    free_vram(model, trainer)
+    del model, trainer
+    free_vram()
     return summary
 
 
@@ -581,7 +561,8 @@ def export_gguf(
 
     print(f"done ({size_gb:.1f} GB, {_format_duration(duration)})")
 
-    free_vram(model, tokenizer)
+    del model, tokenizer
+    free_vram()
     return {
         "gguf_name": gguf_name,
         "path": str(gguf_subdir),
@@ -698,7 +679,7 @@ def print_health_checks(
 ) -> None:
     """Print health check results inline."""
     print(f"\n      {label} \u2014 Health Check")
-    status_icons = {"pass": "\u2713", "warn": "\u26a0", "fail": "\u2717"}
+    status_icons = STATUS_ICONS
     for name, check in checks.items():
         icon = status_icons.get(check["status"], "?")
         print(f"      {icon} {name.capitalize()}: {check['message']}")
@@ -823,7 +804,7 @@ def generate_report(output_dir: Path, telemetry: dict) -> None:
 
         checks = p.get("health_checks", {})
         if checks:
-            status_icons = {"pass": "\u2713", "warn": "\u26a0", "fail": "\u2717"}
+            status_icons = STATUS_ICONS
             lines.append("- **Health:**")
             for check_name, check in checks.items():
                 icon = status_icons.get(check["status"], "?")
@@ -864,7 +845,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path("scripts/training_data/final"),
+        default=FINAL_DIR,
         help="Directory containing the 7 JSONL training data files",
     )
     parser.add_argument(
@@ -945,9 +926,6 @@ def main(argv: list[str] | None = None) -> None:
     # Validate data directory
     validate_data_dir(args.data_dir, args.phases)
 
-    # Load training data
-    datasets = load_training_data(args.data_dir, args.phases)
-
     phase_num = 0
     total_phases = len(args.phases)
 
@@ -959,12 +937,17 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n[{phase_num}/{total_phases}] Phase 1: Domain Adaptation")
             print(f"      \u2713 {domain_dir} exists \u2014 skipping")
         else:
+            corpus = load_dataset_from_jsonl(
+                args.data_dir / "corpus_pretrain.jsonl", require_text=True
+            )
+            print(f"      Loaded {len(corpus)} passages")
             stats = train_domain_adapter(
                 model_name=args.model,
-                corpus_dataset=datasets["corpus"],
+                corpus_dataset=corpus,
                 output_dir=args.output_dir,
                 use_bf16=use_bf16,
             )
+            del corpus
             telemetry["phases"]["domain"] = stats
             checks = run_health_checks("domain", stats)
             print_health_checks(phase_num, total_phases, "Domain Adaptation", checks)
@@ -977,24 +960,27 @@ def main(argv: list[str] | None = None) -> None:
         phase_num += 1
         cfg = ADAPTER_CONFIGS[adapter_name]
         adapter_dir = args.output_dir / cfg["output_subdir"]
-        label = {"parser": "2a: Query Parser", "explainer": "2b: Data Explainer", "evaluator": "2c: Evaluator"}[adapter_name]
+        label = ADAPTER_LABELS[adapter_name]
 
         if not args.force and check_phase_complete(adapter_dir, "adapter"):
             print(f"\n[{phase_num}/{total_phases}] Phase {label} Adapter")
             print(f"      \u2713 {adapter_dir} exists \u2014 skipping")
         else:
+            train_ds = load_dataset_from_jsonl(args.data_dir / cfg["train_file"])
+            val_ds = load_dataset_from_jsonl(args.data_dir / cfg["val_file"])
             domain_merged = str(args.output_dir / "domain_merged")
             stats = train_task_adapter(
                 adapter_name=adapter_name,
                 base_model_dir=domain_merged,
-                train_dataset=datasets[f"{adapter_name}_train"],
-                val_dataset=datasets[f"{adapter_name}_val"],
+                train_dataset=train_ds,
+                val_dataset=val_ds,
                 output_dir=args.output_dir,
                 cfg=cfg,
                 use_bf16=use_bf16,
                 phase_num=phase_num,
                 total_phases=total_phases,
             )
+            del train_ds, val_ds
             telemetry["phases"][adapter_name] = stats
             checks = run_health_checks(adapter_name, stats)
             print_health_checks(phase_num, total_phases, f"{label} Adapter", checks)
