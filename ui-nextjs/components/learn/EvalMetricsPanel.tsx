@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { EvalRunItem, getEvalRuns } from '@/lib/api';
+import { EvalRunItem, Suggestions, getEvalRuns, analyzeFailures } from '@/lib/api';
+import SuggestionsPanel from './SuggestionsPanel';
 
 const TASK_LABELS: Record<string, string> = {
   query_parser: 'Query Parser',
@@ -46,7 +47,7 @@ function MetricRow({ name, value }: { name: string; value: number | null }) {
   );
 }
 
-function TaskCard({ runs }: { runs: EvalRunItem[] }) {
+function TaskCard({ runs, onRefresh }: { runs: EvalRunItem[]; onRefresh: () => Promise<void> }) {
   const task = runs[0]?.task ?? 'unknown';
   const label = TASK_LABELS[task] ?? task;
 
@@ -97,6 +98,14 @@ function TaskCard({ runs }: { runs: EvalRunItem[] }) {
               ))}
             </div>
           )}
+          <SuggestionsPanel
+            suggestions={r.suggestions as Suggestions | null}
+            runId={r.id ?? ''}
+            onAnalyze={async (id) => {
+              await analyzeFailures(id);
+              await onRefresh();
+            }}
+          />
         </div>
       ))}
 
@@ -113,6 +122,13 @@ export default function EvalMetricsPanel() {
   const [runs, setRuns] = useState<EvalRunItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshRuns = async () => {
+    try {
+      const data = await getEvalRuns();
+      setRuns(data.runs);
+    } catch {}
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -171,7 +187,7 @@ export default function EvalMetricsPanel() {
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {Object.entries(byTask).map(([task, taskRuns]) => (
-        <TaskCard key={task} runs={taskRuns} />
+        <TaskCard key={task} runs={taskRuns} onRefresh={refreshRuns} />
       ))}
     </div>
   );
