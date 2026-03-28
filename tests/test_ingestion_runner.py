@@ -14,11 +14,11 @@ from d4bl.services.ingestion_runner import (
 
 class TestScriptRegistry:
     def test_registry_has_all_sources_with_aliases(self):
-        # 13 canonical sources + 12 aliases = 25 entries
-        assert len(SCRIPT_REGISTRY) == 25
+        # 19 canonical sources + 17 aliases = 36 entries
+        assert len(SCRIPT_REGISTRY) == 36
         # All values should be valid module names
         modules = set(SCRIPT_REGISTRY.values())
-        assert len(modules) == 13
+        assert len(modules) == 19
 
     def test_registry_contains_key_sources(self):
         assert "cdc" in SCRIPT_REGISTRY
