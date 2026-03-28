@@ -590,6 +590,120 @@ def export_gguf(
     }
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Health Checks
+# ──────────────────────────────────────────────────────────────────────
+
+def run_health_checks(phase_name: str, stats: dict) -> dict[str, dict]:
+    """Run heuristic health checks on training telemetry.
+
+    Returns a dict of check_name -> {"status": "pass"|"warn"|"fail", "message": str}.
+    """
+    checks: dict[str, dict] = {}
+    steps = stats.get("steps", [])
+    train_losses = [s["train_loss"] for s in steps if s["train_loss"] is not None]
+    eval_losses = [s["eval_loss"] for s in steps if s["eval_loss"] is not None]
+
+    # Check 1: Learning happened
+    if eval_losses:
+        initial, final = eval_losses[0], eval_losses[-1]
+        pct = (1 - final / initial) * 100 if initial > 0 else 0
+        if final < initial:
+            checks["learning"] = {
+                "status": "pass",
+                "message": f"eval_loss {initial:.3f} \u2192 {final:.3f} ({pct:+.0f}%)",
+            }
+        else:
+            checks["learning"] = {
+                "status": "fail",
+                "message": f"eval_loss {initial:.3f} \u2192 {final:.3f} (no improvement)",
+            }
+    elif train_losses:
+        initial, final = train_losses[0], train_losses[-1]
+        pct = (1 - final / initial) * 100 if initial > 0 else 0
+        if final < initial:
+            checks["learning"] = {
+                "status": "pass",
+                "message": f"train_loss {initial:.3f} \u2192 {final:.3f} ({pct:+.0f}%)",
+            }
+        else:
+            checks["learning"] = {
+                "status": "fail",
+                "message": f"train_loss {initial:.3f} \u2192 {final:.3f} (no improvement)",
+            }
+
+    # Check 2: Not overfitting (eval/train ratio)
+    if eval_losses and train_losses:
+        final_eval = eval_losses[-1]
+        final_train = train_losses[-1]
+        ratio = final_eval / final_train if final_train > 0 else float("inf")
+        if ratio < 1.5:
+            checks["overfit"] = {
+                "status": "pass",
+                "message": f"eval/train ratio {ratio:.2f} (< 1.5)",
+            }
+        else:
+            checks["overfit"] = {
+                "status": "warn",
+                "message": f"eval/train ratio {ratio:.2f} (\u2265 1.5 \u2014 possible overfitting)",
+            }
+
+    # Check 3: Stable training (no spikes > 3x rolling average)
+    if len(train_losses) >= 10:
+        window = 10
+        spikes = 0
+        for i in range(window, len(train_losses)):
+            rolling_avg = sum(train_losses[i - window : i]) / window
+            if train_losses[i] > 3 * rolling_avg:
+                spikes += 1
+        if spikes == 0:
+            checks["stability"] = {"status": "pass", "message": "no loss spikes detected"}
+        else:
+            checks["stability"] = {
+                "status": "warn",
+                "message": f"{spikes} loss spike(s) > 3x rolling average",
+            }
+
+    # Check 4: Loss converging (final 20% trending down)
+    if len(train_losses) >= 10:
+        tail_start = int(len(train_losses) * 0.8)
+        tail = train_losses[tail_start:]
+        if len(tail) >= 2:
+            tail_mean_first_half = sum(tail[: len(tail) // 2]) / (len(tail) // 2)
+            tail_mean_second_half = sum(tail[len(tail) // 2 :]) / (len(tail) - len(tail) // 2)
+            if tail_mean_second_half <= tail_mean_first_half:
+                checks["convergence"] = {"status": "pass", "message": "loss still decreasing"}
+            else:
+                checks["convergence"] = {
+                    "status": "warn",
+                    "message": f"loss flat/rising in final {len(tail)} steps \u2014 consider fewer epochs",
+                }
+
+    # Check 5: Eval not diverging (last 3 eval checkpoints)
+    if len(eval_losses) >= 3:
+        last3 = eval_losses[-3:]
+        if last3[-1] <= last3[0]:
+            checks["eval_trend"] = {"status": "pass", "message": "eval_loss trending down"}
+        else:
+            checks["eval_trend"] = {
+                "status": "warn",
+                "message": f"eval_loss rising over last 3 checkpoints: {[f'{l:.3f}' for l in last3]}",
+            }
+
+    return checks
+
+
+def print_health_checks(
+    phase_num: int, total_phases: int, label: str, checks: dict[str, dict]
+) -> None:
+    """Print health check results inline."""
+    print(f"\n      {label} \u2014 Health Check")
+    status_icons = {"pass": "\u2713", "warn": "\u26a0", "fail": "\u2717"}
+    for name, check in checks.items():
+        icon = status_icons.get(check["status"], "?")
+        print(f"      {icon} {name.capitalize()}: {check['message']}")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="D4BL Training Pipeline — headless LoRA fine-tuning",
