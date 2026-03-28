@@ -47,6 +47,19 @@ SCRIPT_REGISTRY: dict[str, str] = {
     "openstates": "ingest_openstates",
     "bjs": "ingest_bjs_incarceration",
     "bjs_incarceration": "ingest_bjs_incarceration",
+    # Web content sources (Sprint 2)
+    "rss": "ingest_rss_feeds",
+    "rss_feeds": "ingest_rss_feeds",
+    "web": "ingest_web_sources",
+    "web_scrape": "ingest_web_sources",
+    "news": "ingest_news_search",
+    "news_search": "ingest_news_search",
+    # New data sources (Sprint 2)
+    "county_health": "ingest_county_health_rankings",
+    "chr": "ingest_county_health_rankings",
+    "usaspending": "ingest_usaspending",
+    "vera": "ingest_vera_incarceration",
+    "vera_incarceration": "ingest_vera_incarceration",
 }
 
 logger = logging.getLogger(__name__)
