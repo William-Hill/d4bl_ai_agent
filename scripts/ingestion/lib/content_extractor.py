@@ -9,12 +9,15 @@ Extracts clean text from URLs using the best strategy for each content type:
 
 from __future__ import annotations
 
+import io
+import json
 import logging
 import re
 from dataclasses import dataclass, field
 
 import httpx
 import trafilatura
+from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)
 
@@ -53,38 +56,35 @@ def extract_from_html(html: str, url: str) -> ExtractedContent | None:
     """Extract content from HTML using trafilatura.
 
     Returns None if trafilatura cannot extract meaningful content.
+    Parses once with JSON output to get both text and metadata.
     """
-    text = trafilatura.extract(
-        html,
-        url=url,
-        include_comments=False,
-        include_tables=True,
-        favor_recall=True,
-    )
-    if not text or len(text.strip()) < 50:
-        return None
-
-    metadata = trafilatura.extract(
+    raw_json = trafilatura.extract(
         html,
         url=url,
         output_format="json",
         include_comments=False,
+        include_tables=True,
+        favor_recall=True,
     )
-    # trafilatura.extract with json format returns a JSON string
+    if not raw_json:
+        return None
+
     meta_dict = {}
     title = None
     author = None
     date = None
-    if metadata:
-        import json
+    text = ""
+    try:
+        meta_dict = json.loads(raw_json)
+        text = meta_dict.get("text", "")
+        title = meta_dict.get("title")
+        author = meta_dict.get("author")
+        date = meta_dict.get("date")
+    except (json.JSONDecodeError, TypeError):
+        return None
 
-        try:
-            meta_dict = json.loads(metadata)
-            title = meta_dict.get("title")
-            author = meta_dict.get("author")
-            date = meta_dict.get("date")
-        except (json.JSONDecodeError, TypeError):
-            pass
+    if len(text.strip()) < 50:
+        return None
 
     return ExtractedContent(
         url=url,
@@ -100,9 +100,6 @@ def extract_from_html(html: str, url: str) -> ExtractedContent | None:
 def extract_from_pdf(content: bytes, url: str) -> ExtractedContent | None:
     """Extract text from PDF bytes using pypdf."""
     try:
-        from pypdf import PdfReader
-        import io
-
         reader = PdfReader(io.BytesIO(content))
         pages_text = []
         for page in reader.pages:
@@ -128,7 +125,9 @@ def extract_from_pdf(content: bytes, url: str) -> ExtractedContent | None:
         return None
 
 
-def extract_from_crawl4ai(url: str, base_url: str = "http://crawl4ai:11235") -> ExtractedContent | None:
+def extract_from_crawl4ai(
+    url: str, base_url: str = "http://crawl4ai:11235",
+) -> ExtractedContent | None:
     """Fallback: use Crawl4AI for JS-rendered pages."""
     try:
         with httpx.Client(timeout=60) as client:
@@ -187,6 +186,8 @@ def extract(
         return extract_from_crawl4ai(url, crawl4ai_base_url)
 
     content_type = detect_content_type(url)
+    # RSS feeds are handled by ingest_rss_feeds.py, not this extractor.
+    # If detected as RSS, treat as HTML and let trafilatura attempt extraction.
 
     try:
         with httpx.Client(
