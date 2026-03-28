@@ -26,7 +26,6 @@ from ingestion.helpers import (
     upsert_batch,
     make_record_id,
     safe_float,
-    safe_int,
 )
 
 DATA_URL = (
@@ -75,7 +74,6 @@ def main() -> int:
     """Download and ingest Vera incarceration trends data."""
     conn = get_db_connection()
     conn.autocommit = False
-    cur = conn.cursor()
 
     records_ingested = 0
     now = datetime.now(timezone.utc).isoformat()
@@ -138,7 +136,6 @@ def main() -> int:
             count = upsert_batch(conn, UPSERT_SQL, batch)
             records_ingested += count
 
-    cur.close()
     conn.close()
     print(f"Vera Incarceration: {records_ingested} county-year records ingested")
     return records_ingested

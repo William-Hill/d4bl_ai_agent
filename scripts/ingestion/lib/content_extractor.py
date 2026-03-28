@@ -12,12 +12,15 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 
 import httpx
 import trafilatura
 from pypdf import PdfReader
+
+_CRAWL4AI_BASE_URL = os.getenv("CRAWL4AI_BASE_URL", "http://crawl4ai:11235")
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +129,7 @@ def extract_from_pdf(content: bytes, url: str) -> ExtractedContent | None:
 
 
 def extract_from_crawl4ai(
-    url: str, base_url: str = "http://crawl4ai:11235",
+    url: str, base_url: str = _CRAWL4AI_BASE_URL,
 ) -> ExtractedContent | None:
     """Fallback: use Crawl4AI for JS-rendered pages."""
     try:
@@ -169,7 +172,7 @@ def extract_from_crawl4ai(
 def extract(
     url: str,
     force_js: bool = False,
-    crawl4ai_base_url: str = "http://crawl4ai:11235",
+    crawl4ai_base_url: str = _CRAWL4AI_BASE_URL,
 ) -> ExtractedContent | None:
     """Extract content from a URL using the best available strategy.
 

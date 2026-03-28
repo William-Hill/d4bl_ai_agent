@@ -26,7 +26,6 @@ from ingestion.helpers import (
     upsert_batch,
     make_record_id,
     safe_float,
-    safe_int,
 )
 
 YEAR = os.environ.get("CHR_YEAR", "2025")
@@ -61,7 +60,6 @@ def main() -> int:
     """Download and ingest County Health Rankings data."""
     conn = get_db_connection()
     conn.autocommit = False
-    cur = conn.cursor()
 
     records_ingested = 0
     now = datetime.now(timezone.utc).isoformat()
@@ -124,7 +122,6 @@ def main() -> int:
             count = upsert_batch(conn, UPSERT_SQL, batch)
             records_ingested += count
 
-    cur.close()
     conn.close()
     print(f"County Health Rankings: {records_ingested} county records ingested")
     return records_ingested

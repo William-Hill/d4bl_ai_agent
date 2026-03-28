@@ -42,65 +42,77 @@ UPSERT_SQL = """
 """
 
 
+def _extract_rss_entries(root: ET.Element) -> list[dict]:
+    """Extract entry dicts from a parsed RSS root element."""
+    entries = []
+    for item in root.iter("item"):
+        title = item.findtext("title", "")
+        link = item.findtext("link", "")
+        guid = item.findtext("guid", link)
+        pub_date = item.findtext("pubDate", "")
+        description = item.findtext("description", "")
+
+        entries.append({
+            "title": title.strip(),
+            "url": link.strip(),
+            "guid": guid.strip(),
+            "date": pub_date.strip(),
+            "content": description.strip(),
+        })
+    return entries
+
+
+def _extract_atom_entries(root: ET.Element) -> list[dict]:
+    """Extract entry dicts from a parsed Atom root element."""
+    entries = []
+    for entry in root.iter(f"{{{ATOM_NS}}}entry"):
+        title_el = entry.find(f"{{{ATOM_NS}}}title")
+        title = title_el.text.strip() if title_el is not None and title_el.text else ""
+
+        link_el = entry.find(f"{{{ATOM_NS}}}link")
+        url = link_el.get("href", "") if link_el is not None else ""
+
+        id_el = entry.find(f"{{{ATOM_NS}}}id")
+        guid = id_el.text.strip() if id_el is not None and id_el.text else url
+
+        summary_el = entry.find(f"{{{ATOM_NS}}}summary")
+        content = summary_el.text.strip() if summary_el is not None and summary_el.text else ""
+
+        updated_el = entry.find(f"{{{ATOM_NS}}}updated")
+        date = updated_el.text.strip() if updated_el is not None and updated_el.text else ""
+
+        entries.append({
+            "title": title,
+            "url": url,
+            "guid": guid,
+            "date": date,
+            "content": content,
+        })
+    return entries
+
+
 def parse_rss_feed(xml_text: str) -> list[dict]:
     """Parse RSS 2.0 feed XML into a list of entry dicts."""
-    entries = []
     try:
         root = ET.fromstring(xml_text)
-        for item in root.iter("item"):
-            title = item.findtext("title", "")
-            link = item.findtext("link", "")
-            guid = item.findtext("guid", link)
-            pub_date = item.findtext("pubDate", "")
-            description = item.findtext("description", "")
-
-            entries.append({
-                "title": title.strip(),
-                "url": link.strip(),
-                "guid": guid.strip(),
-                "date": pub_date.strip(),
-                "content": description.strip(),
-            })
     except ET.ParseError:
         logger.warning("Failed to parse RSS XML")
-    return entries
+        return []
+    return _extract_rss_entries(root)
 
 
 def parse_atom_feed(xml_text: str) -> list[dict]:
     """Parse Atom feed XML into a list of entry dicts."""
-    entries = []
     try:
         root = ET.fromstring(xml_text)
-        for entry in root.iter(f"{{{ATOM_NS}}}entry"):
-            title_el = entry.find(f"{{{ATOM_NS}}}title")
-            title = title_el.text.strip() if title_el is not None and title_el.text else ""
-
-            link_el = entry.find(f"{{{ATOM_NS}}}link")
-            url = link_el.get("href", "") if link_el is not None else ""
-
-            id_el = entry.find(f"{{{ATOM_NS}}}id")
-            guid = id_el.text.strip() if id_el is not None and id_el.text else url
-
-            summary_el = entry.find(f"{{{ATOM_NS}}}summary")
-            content = summary_el.text.strip() if summary_el is not None and summary_el.text else ""
-
-            updated_el = entry.find(f"{{{ATOM_NS}}}updated")
-            date = updated_el.text.strip() if updated_el is not None and updated_el.text else ""
-
-            entries.append({
-                "title": title,
-                "url": url,
-                "guid": guid,
-                "date": date,
-                "content": content,
-            })
     except ET.ParseError:
         logger.warning("Failed to parse Atom XML")
-    return entries
+        return []
+    return _extract_atom_entries(root)
 
 
 def parse_feed(xml_text: str) -> list[dict]:
-    """Auto-detect feed format and parse entries."""
+    """Auto-detect feed format and parse entries. Parses XML once."""
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
@@ -109,9 +121,9 @@ def parse_feed(xml_text: str) -> list[dict]:
     # Detect format by root tag
     tag = root.tag.lower()
     if "feed" in tag:
-        return parse_atom_feed(xml_text)
+        return _extract_atom_entries(root)
     if "rss" in tag or root.find("channel") is not None:
-        return parse_rss_feed(xml_text)
+        return _extract_rss_entries(root)
 
     return []
 

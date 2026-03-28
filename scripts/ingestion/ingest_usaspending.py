@@ -72,7 +72,6 @@ def main() -> int:
     """Fetch and ingest USASpending data by county."""
     conn = get_db_connection()
     conn.autocommit = False
-    cur = conn.cursor()
 
     records_ingested = 0
     now = datetime.now(timezone.utc).isoformat()
@@ -118,7 +117,6 @@ def main() -> int:
                 count = upsert_batch(conn, UPSERT_SQL, batch)
                 records_ingested += count
 
-    cur.close()
     conn.close()
     print(f"USASpending: {records_ingested} county records ingested for FY{FISCAL_YEAR}")
     return records_ingested
