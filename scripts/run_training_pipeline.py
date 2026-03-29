@@ -34,7 +34,11 @@ def main():
     )
     parser.add_argument(
         "--task",
-        choices=["query_parser", "explainer", "evaluator", "all"],
+        choices=[
+            "query_parser", "explainer", "evaluator",
+            "evaluator_v2", "query_parser_v2",
+            "all",
+        ],
         default="all",
     )
     parser.add_argument("--max-per-table", type=_positive_int, default=10_000)
@@ -76,7 +80,12 @@ def main():
         print("STAGE 3: Dataset Preparation")
         print("=" * 60)
         from scripts.training.prepare_dataset import main as prepare_main
-        prepare_main(task=args.task)
+        # v2 tasks generate into the same base task directory for merging
+        prepare_task = {
+            "evaluator_v2": "evaluator",
+            "query_parser_v2": "query_parser",
+        }.get(args.task, args.task)
+        prepare_main(task=prepare_task)
 
     elapsed = time.time() - start
     print(f"\nPipeline complete in {elapsed:.1f}s")
