@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import unsloth  # must be imported before transformers/trl/peft
 import torch
 from datasets import Dataset
 from huggingface_hub import login
