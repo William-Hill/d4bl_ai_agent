@@ -90,6 +90,47 @@ def _print_cost_summary() -> None:
         flush=True,
     )
 
+
+# ---------------------------------------------------------------------------
+# Resume and incremental write helpers
+# ---------------------------------------------------------------------------
+
+
+def _count_existing_lines(path: Path | None) -> int:
+    """Count lines in an existing JSONL file for resume support.
+
+    Returns 0 if the file doesn't exist or path is None.
+    """
+    if path is None or not path.exists():
+        return 0
+    with path.open() as fh:
+        return sum(1 for line in fh if line.strip())
+
+
+def _open_incremental_writer(outfile: Path | None, resume: bool = False):
+    """Open an incremental JSONL writer.
+
+    Args:
+        outfile: Path to write to, or None to skip file output.
+        resume: If True, open in append mode to continue a previous run.
+
+    Returns:
+        A file handle (or None) suitable for incremental pair writing.
+    """
+    if outfile is None:
+        return None
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    mode = "a" if resume else "w"
+    return outfile.open(mode, encoding="utf-8")
+
+
+def _write_pair(fh, pair: dict) -> None:
+    """Write a single pair to an incremental JSONL file handle."""
+    if fh is not None:
+        fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+        fh.flush()
+
+
 # ---------------------------------------------------------------------------
 # Student-model system prompts (short, task-specific)
 # ---------------------------------------------------------------------------
@@ -412,87 +453,113 @@ def generate_evaluator_pairs_v2(
     all_pairs: list[dict] = []
     call_count = 0
 
-    # --- Hallucination subtask: perturbation pipeline ---
-    print("[evaluator_v2/hallucination] Starting perturbation pipeline...", flush=True)
-    # Each seed generates 2 pairs (factual + hallucinated); use ceiling division
-    # so odd count_per_subtask doesn't silently drop a pair
-    hall_count = -(-count_per_subtask // 2)
-    perturbation_types = list(PERTURBATION_TYPES)
+    # Resume support: count existing pairs and skip ahead
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[evaluator_v2] Resuming — {existing_count} pairs already written", flush=True)
 
-    for idx in range(hall_count):
-        row = seed_rows[idx % len(seed_rows)]
-        ptype = perturbation_types[idx % len(perturbation_types)]
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pair_count = existing_count
 
-        factual = _generate_factual_response(row)
-        call_count += 1
-        if call_count % 25 == 0:
-            time.sleep(1)
-        if not factual:
-            continue
+    try:
+        # --- Hallucination subtask: perturbation pipeline ---
+        print("[evaluator_v2/hallucination] Starting perturbation pipeline...", flush=True)
+        # Each seed generates 2 pairs (factual + hallucinated); use ceiling division
+        # so odd count_per_subtask doesn't silently drop a pair
+        hall_count = -(-count_per_subtask // 2)
+        perturbation_types = list(PERTURBATION_TYPES)
 
-        hallucinated = _perturb_to_hallucination(row, factual, ptype)
-        call_count += 1
-        if call_count % 25 == 0:
-            time.sleep(1)
-        if not hallucinated:
-            continue
+        for idx in range(hall_count):
+            # Skip already-generated pairs on resume (2 pairs per seed)
+            if pair_count >= existing_count + 2 * (idx + 1) and resume:
+                continue
+            if existing_count > 0 and idx * 2 < existing_count:
+                continue
 
-        factual_pair, hall_pair = build_hallucination_pair(row, factual, hallucinated)
-        all_pairs.extend([factual_pair, hall_pair])
-        print(
-            f"[evaluator_v2/hallucination] {len(all_pairs)} pairs "
-            f"({idx + 1}/{hall_count} seeds)", flush=True,
-        )
-
-    # --- Relevance, bias, equity_framing: tiered quality outputs ---
-    non_hall_subtasks = ["relevance", "bias", "equity_framing"]
-
-    for subtask in non_hall_subtasks:
-        print(f"[evaluator_v2/{subtask}] Starting tiered generation...", flush=True)
-        for idx in range(count_per_subtask):
             row = seed_rows[idx % len(seed_rows)]
-            tier = QUALITY_TIERS[idx % len(QUALITY_TIERS)]
+            ptype = perturbation_types[idx % len(perturbation_types)]
 
-            model_output = _generate_tiered_model_output(row, tier)
+            factual = _generate_factual_response(row)
             call_count += 1
             if call_count % 25 == 0:
                 time.sleep(1)
-            if not model_output:
+            if not factual:
                 continue
 
-            teacher_prompt = build_evaluator_prompt(
-                task=subtask,
-                context=json.dumps(row, ensure_ascii=False, default=str),
-                model_output=model_output,
+            hallucinated = _perturb_to_hallucination(row, factual, ptype)
+            call_count += 1
+            if call_count % 25 == 0:
+                time.sleep(1)
+            if not hallucinated:
+                continue
+
+            factual_pair, hall_pair = build_hallucination_pair(row, factual, hallucinated)
+            all_pairs.extend([factual_pair, hall_pair])
+            _write_pair(fh, factual_pair)
+            _write_pair(fh, hall_pair)
+            pair_count += 2
+            print(
+                f"[evaluator_v2/hallucination] {pair_count} pairs "
+                f"({idx + 1}/{hall_count} seeds)", flush=True,
             )
-            try:
-                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
-            except Exception as exc:
-                print(f"[warn] Evaluator judgment failed for {subtask}: {exc}", flush=True)
+
+        # --- Relevance, bias, equity_framing: tiered quality outputs ---
+        non_hall_subtasks = ["relevance", "bias", "equity_framing"]
+        # Calculate how many hallucination pairs were expected
+        hall_pairs_expected = hall_count * 2
+
+        for subtask_idx, subtask in enumerate(non_hall_subtasks):
+            print(f"[evaluator_v2/{subtask}] Starting tiered generation...", flush=True)
+            for idx in range(count_per_subtask):
+                # Skip already-generated pairs on resume
+                global_idx = hall_pairs_expected + subtask_idx * count_per_subtask + idx
+                if global_idx < existing_count:
+                    continue
+
+                row = seed_rows[idx % len(seed_rows)]
+                tier = QUALITY_TIERS[idx % len(QUALITY_TIERS)]
+
+                model_output = _generate_tiered_model_output(row, tier)
                 call_count += 1
                 if call_count % 25 == 0:
                     time.sleep(1)
-                continue
-            call_count += 1
-            if call_count % 25 == 0:
-                time.sleep(1)
+                if not model_output:
+                    continue
 
-            validated = _validate_json(response_text)
-            if validated is None:
-                print(f"[warn] Invalid JSON for {subtask} pair {idx}, skipping.", flush=True)
-                continue
+                teacher_prompt = build_evaluator_prompt(
+                    task=subtask,
+                    context=json.dumps(row, ensure_ascii=False, default=str),
+                    model_output=model_output,
+                )
+                try:
+                    response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+                except Exception as exc:
+                    print(f"[warn] Evaluator judgment failed for {subtask}: {exc}", flush=True)
+                    call_count += 1
+                    if call_count % 25 == 0:
+                        time.sleep(1)
+                    continue
+                call_count += 1
+                if call_count % 25 == 0:
+                    time.sleep(1)
 
-            pair = build_evaluator_v2_pair(subtask, row, model_output, validated)
-            all_pairs.append(pair)
-            print(
-                f"[evaluator_v2/{subtask}] {len(all_pairs)} total pairs", flush=True,
-            )
+                validated = _validate_json(response_text)
+                if validated is None:
+                    print(f"[warn] Invalid JSON for {subtask} pair {idx}, skipping.", flush=True)
+                    continue
 
-    random.shuffle(all_pairs)
-
-    if outfile is not None:
-        write_jsonl(all_pairs, outfile)
-        print(f"[evaluator_v2] Saved {len(all_pairs)} pairs to {outfile}", flush=True)
+                pair = build_evaluator_v2_pair(subtask, row, model_output, validated)
+                all_pairs.append(pair)
+                _write_pair(fh, pair)
+                pair_count += 1
+                print(
+                    f"[evaluator_v2/{subtask}] {pair_count} total pairs", flush=True,
+                )
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[evaluator_v2] Saved {pair_count} pairs to {outfile}", flush=True)
 
     _print_cost_summary()
     return all_pairs
@@ -551,10 +618,15 @@ def generate_query_parser_pairs_v2(
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    fh = None
-    if outfile is not None:
-        outfile.parent.mkdir(parents=True, exist_ok=True)
-        fh = outfile.open("w", encoding="utf-8")
+    # Resume support
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[query_parser_v2] Resuming — {existing_count} pairs already written", flush=True)
+
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pair_count = existing_count
+    global_idx = 0
 
     try:
         for entity_type, type_count in type_counts.items():
@@ -562,6 +634,10 @@ def generate_query_parser_pairs_v2(
                 seed_rows, count=type_count, entity_type=entity_type,
             )
             for idx, q in enumerate(questions):
+                if global_idx < existing_count:
+                    global_idx += 1
+                    continue
+                global_idx += 1
                 if idx > 0 and idx % 25 == 0:
                     time.sleep(1)
 
@@ -587,14 +663,13 @@ def generate_query_parser_pairs_v2(
                     assistant=json.dumps(validated, ensure_ascii=False),
                 )
                 pairs.append(pair)
-                if fh is not None:
-                    fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
-                    fh.flush()
-                print(f"[query_parser_v2/{entity_type}] {len(pairs)} total pairs", flush=True)
+                _write_pair(fh, pair)
+                pair_count += 1
+                print(f"[query_parser_v2/{entity_type}] {pair_count} total pairs", flush=True)
     finally:
         if fh is not None:
             fh.close()
-            print(f"[query_parser_v2] Saved {len(pairs)} pairs to {outfile}", flush=True)
+            print(f"[query_parser_v2] Saved {pair_count} pairs to {outfile}", flush=True)
 
     _print_cost_summary()
     return pairs
@@ -869,13 +944,19 @@ def generate_query_parser_pairs(
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    fh = None
-    if outfile is not None:
-        outfile.parent.mkdir(parents=True, exist_ok=True)
-        fh = outfile.open("w", encoding="utf-8")
+    # Resume support
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[query_parser] Resuming — {existing_count} pairs already written", flush=True)
+
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pair_count = existing_count
 
     try:
         for idx, q in enumerate(questions):
+            if idx < existing_count:
+                continue
             if idx > 0 and idx % 25 == 0:
                 time.sleep(1)
             teacher_prompt = build_query_parser_prompt(
@@ -892,21 +973,19 @@ def generate_query_parser_pairs(
             if validated is None:
                 print(f"[warn] Invalid JSON response for pair {idx}, skipping.", flush=True)
                 continue
-            # Student sees only the raw question, not the distillation scaffold
             pair = format_as_chatml(
                 system=_STUDENT_QUERY_PARSER_SYSTEM,
                 user=q["question"],
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
             pairs.append(pair)
-            if fh is not None:
-                fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
-                fh.flush()
-            print(f"[query_parser] {len(pairs)}/{count} pairs generated", flush=True)
+            _write_pair(fh, pair)
+            pair_count += 1
+            print(f"[query_parser] {pair_count}/{count} pairs generated", flush=True)
     finally:
         if fh is not None:
             fh.close()
-            print(f"[query_parser] Saved {len(pairs)} pairs to {outfile}", flush=True)
+            print(f"[query_parser] Saved {pair_count} pairs to {outfile}", flush=True)
 
     return pairs
 
@@ -932,13 +1011,19 @@ def generate_explainer_pairs(
     registers_cycle = list(REGISTERS)
     pairs: list[dict] = []
 
-    fh = None
-    if outfile is not None:
-        outfile.parent.mkdir(parents=True, exist_ok=True)
-        fh = outfile.open("w", encoding="utf-8")
+    # Resume support
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[explainer] Resuming — {existing_count} pairs already written", flush=True)
+
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pair_count = existing_count
 
     try:
         for idx in range(count):
+            if idx < existing_count:
+                continue
             if idx > 0 and idx % 25 == 0:
                 time.sleep(1)
             row = seed_rows[idx % len(seed_rows)]
@@ -960,14 +1045,13 @@ def generate_explainer_pairs(
                 assistant=json.dumps(validated, ensure_ascii=False),
             )
             pairs.append(pair)
-            if fh is not None:
-                fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
-                fh.flush()
-            print(f"[explainer] {len(pairs)}/{count} pairs generated", flush=True)
+            _write_pair(fh, pair)
+            pair_count += 1
+            print(f"[explainer] {pair_count}/{count} pairs generated", flush=True)
     finally:
         if fh is not None:
             fh.close()
-            print(f"[explainer] Saved {len(pairs)} pairs to {outfile}", flush=True)
+            print(f"[explainer] Saved {pair_count} pairs to {outfile}", flush=True)
 
     return pairs
 
@@ -997,9 +1081,21 @@ def generate_evaluator_pairs(
     call_count = 0
     total = count_per_subtask * len(evaluator_tasks)
 
+    # Resume support
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[evaluator] Resuming — {existing_count} pairs already written", flush=True)
+
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pair_count = existing_count
+
     try:
-        for task in evaluator_tasks:
+        for task_idx, task in enumerate(evaluator_tasks):
             for idx in range(count_per_subtask):
+                global_idx = task_idx * count_per_subtask + idx
+                if global_idx < existing_count:
+                    continue
                 if call_count > 0 and call_count % 25 == 0:
                     time.sleep(1)
                 call_count += 1
@@ -1024,22 +1120,20 @@ def generate_evaluator_pairs(
                     print(f"[warn] Invalid JSON for evaluator {task} pair {idx}, skipping.", flush=True)
                     continue
                 student_user = f"Context:\n{context}\n\nModel output:\n{model_output}"
-                all_pairs.append(
-                    format_as_chatml(
-                        system=_STUDENT_EVALUATOR_SYSTEM,
-                        user=student_user,
-                        assistant=json.dumps(validated, ensure_ascii=False),
-                    )
+                pair = format_as_chatml(
+                    system=_STUDENT_EVALUATOR_SYSTEM,
+                    user=student_user,
+                    assistant=json.dumps(validated, ensure_ascii=False),
                 )
-                print(f"[evaluator/{task}] {len(all_pairs)}/{total} pairs generated", flush=True)
+                all_pairs.append(pair)
+                _write_pair(fh, pair)
+                pair_count += 1
+                print(f"[evaluator/{task}] {pair_count}/{total} pairs generated", flush=True)
     finally:
-        if outfile is not None:
-            if all_pairs:
-                random.shuffle(all_pairs)
-            write_jsonl(all_pairs, outfile)
-            print(f"[evaluator] Saved {len(all_pairs)} pairs to {outfile}", flush=True)
+        if fh is not None:
+            fh.close()
+            print(f"[evaluator] Saved {pair_count} pairs to {outfile}", flush=True)
 
-    random.shuffle(all_pairs)
     return all_pairs
 
 
