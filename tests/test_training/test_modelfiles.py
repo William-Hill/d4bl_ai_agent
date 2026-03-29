@@ -68,12 +68,28 @@ class TestModelfileSpecifics:
 
     @pytest.mark.parametrize("model,param,value", [
         ("query-parser", "temperature", "0.1"),
-        ("query-parser", "num_ctx", "2048"),
+        ("query-parser", "num_ctx", "4096"),
         ("explainer", "temperature", "0.3"),
-        ("explainer", "num_ctx", "4096"),
+        ("explainer", "num_ctx", "8192"),
         ("evaluator", "temperature", "0.1"),
-        ("evaluator", "num_ctx", "2048"),
+        ("evaluator", "num_ctx", "4096"),
     ])
     def test_parameter_value(self, model, param, value):
         content = MODELFILES[model].read_text()
         assert f"PARAMETER {param} {value}" in content
+
+    @pytest.mark.parametrize("model,expected_gguf", [
+        ("query-parser", "d4bl-query-parser-qwen35-q4_k_m.gguf"),
+        ("explainer", "d4bl-explainer-qwen35-q4_k_m.gguf"),
+        ("evaluator", "d4bl-evaluator-qwen35-q4_k_m.gguf"),
+    ])
+    def test_from_references_expected_gguf(self, model, expected_gguf):
+        content = MODELFILES[model].read_text()
+        from_line = next(
+            (line for line in content.splitlines() if line.startswith("FROM ")),
+            None,
+        )
+        assert from_line is not None, f"{model}: missing FROM directive"
+        assert expected_gguf in from_line, (
+            f"{model}: FROM should reference {expected_gguf}, got: {from_line}"
+        )

@@ -25,7 +25,7 @@ from datasets import Dataset
 from huggingface_hub import login
 from transformers import TrainerCallback
 from trl import SFTConfig, SFTTrainer
-from unsloth import FastLanguageModel
+from unsloth import FastModel
 
 from scripts.training.config import FINAL_DIR
 
@@ -48,9 +48,9 @@ ADAPTER_CONFIGS = {
         "r": 8,
         "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
         "lora_alpha": 16,
-        "max_seq_length": 2048,
+        "max_seq_length": 4096,
         "epochs": 7,
-        "batch_size": 4,
+        "batch_size": 8,
         "grad_accum": 2,
         "warmup_steps": 20,
         "lr": 1e-4,
@@ -60,7 +60,7 @@ ADAPTER_CONFIGS = {
         "val_file": "query_parser_val.jsonl",
         "output_subdir": "adapter_parser",
         "checkpoint_subdir": "parser_checkpoints",
-        "gguf_name": "d4bl-query-parser",
+        "gguf_name": "d4bl-query-parser-qwen35",
     },
     "explainer": {
         "r": 32,
@@ -69,9 +69,9 @@ ADAPTER_CONFIGS = {
             "gate_proj", "up_proj", "down_proj",
         ],
         "lora_alpha": 64,
-        "max_seq_length": 4096,
+        "max_seq_length": 8192,
         "epochs": 7,
-        "batch_size": 2,
+        "batch_size": 4,
         "grad_accum": 4,
         "warmup_steps": 30,
         "lr": 1e-4,
@@ -81,15 +81,15 @@ ADAPTER_CONFIGS = {
         "val_file": "explainer_val.jsonl",
         "output_subdir": "adapter_explainer",
         "checkpoint_subdir": "explainer_checkpoints",
-        "gguf_name": "d4bl-explainer",
+        "gguf_name": "d4bl-explainer-qwen35",
     },
     "evaluator": {
         "r": 16,
         "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
         "lora_alpha": 32,
-        "max_seq_length": 2048,
+        "max_seq_length": 4096,
         "epochs": 7,
-        "batch_size": 4,
+        "batch_size": 8,
         "grad_accum": 2,
         "warmup_steps": 20,
         "lr": 1e-4,
@@ -99,7 +99,7 @@ ADAPTER_CONFIGS = {
         "val_file": "evaluator_val.jsonl",
         "output_subdir": "adapter_evaluator",
         "checkpoint_subdir": "evaluator_checkpoints",
-        "gguf_name": "d4bl-evaluator",
+        "gguf_name": "d4bl-evaluator-qwen35",
     },
 }
 
@@ -222,16 +222,16 @@ def load_dataset_from_jsonl(path: Path, require_text: bool = False) -> Dataset:
     return Dataset.from_list(records)
 
 
-def format_and_tokenize(dataset: Dataset, tokenizer) -> Dataset:
+def format_and_tokenize(dataset: Dataset, processor) -> Dataset:
     """Convert messages-format dataset to plain text using the model's chat template.
 
-    Falls back to manual ChatML if the tokenizer lacks a chat template.
+    Falls back to manual ChatML if the processor lacks a chat template.
     """
     formatted = []
     for record in dataset:
         msgs = record["messages"]
         try:
-            text = tokenizer.apply_chat_template(
+            text = processor.apply_chat_template(
                 msgs, tokenize=False, add_generation_prompt=False
             )
         except (AttributeError, TypeError, KeyError, ValueError):
@@ -330,16 +330,16 @@ def train_domain_adapter(
     print("      LoRA: r=16, all layers + embeddings, 1 epoch")
 
     # Load base model in 4-bit
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, processor = FastModel.from_pretrained(
         model_name=model_name,
-        max_seq_length=2048,
+        max_seq_length=4096,
         dtype=None,
         load_in_4bit=True,
     )
     print("      Base model loaded.")
 
     # Attach domain LoRA
-    model = FastLanguageModel.get_peft_model(
+    model = FastModel.get_peft_model(
         model,
         r=16,
         target_modules=[
@@ -359,14 +359,14 @@ def train_domain_adapter(
     callback = TelemetryCallback("Domain Adaptation", 1, 5)
     trainer = SFTTrainer(
         model=model,
-        processing_class=tokenizer,
+        processing_class=processor,
         train_dataset=corpus_dataset,
         callbacks=[callback],
         args=SFTConfig(
             output_dir=str(output_dir / "phase1_checkpoints"),
-            max_length=2048,
+            max_length=4096,
             dataset_text_field="text",
-            per_device_train_batch_size=4,
+            per_device_train_batch_size=8,
             gradient_accumulation_steps=4,
             warmup_steps=50,
             num_train_epochs=1,
@@ -393,7 +393,7 @@ def train_domain_adapter(
     print("      Merging domain LoRA into base weights...")
     model.save_pretrained_merged(
         domain_merged_dir,
-        tokenizer,
+        processor,
         save_method="merged_16bit",
     )
     print(f"      \u2713 Saved to domain_merged/ ({_format_duration(duration)})")
@@ -438,7 +438,7 @@ def train_task_adapter(
     print(f"      LoRA: r={cfg['r']}, {len(cfg['target_modules'])} modules, {cfg['epochs']} epochs")
 
     # Load domain-merged base
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, processor = FastModel.from_pretrained(
         model_name=base_model_dir,
         max_seq_length=cfg["max_seq_length"],
         dtype=None,
@@ -446,7 +446,7 @@ def train_task_adapter(
     )
 
     # Attach task LoRA
-    model = FastLanguageModel.get_peft_model(
+    model = FastModel.get_peft_model(
         model,
         r=cfg["r"],
         target_modules=cfg["target_modules"],
@@ -459,15 +459,15 @@ def train_task_adapter(
     model.print_trainable_parameters()
 
     # Convert messages -> text using chat template
-    train_text = format_and_tokenize(train_dataset, tokenizer)
-    val_text = format_and_tokenize(val_dataset, tokenizer)
+    train_text = format_and_tokenize(train_dataset, processor)
+    val_text = format_and_tokenize(val_dataset, processor)
     print(f"      Formatted: {len(train_text)} train, {len(val_text)} val")
 
     # Train
     callback = TelemetryCallback(label, phase_num, total_phases)
     trainer = SFTTrainer(
         model=model,
-        processing_class=tokenizer,
+        processing_class=processor,
         train_dataset=train_text,
         eval_dataset=val_text,
         callbacks=[callback],
@@ -505,7 +505,7 @@ def train_task_adapter(
     # Save adapter weights
     adapter_dir = output_dir / cfg["output_subdir"]
     model.save_pretrained(str(adapter_dir))
-    tokenizer.save_pretrained(str(adapter_dir))
+    processor.save_pretrained(str(adapter_dir))
     print(f"      \u2713 Saved to {cfg['output_subdir']}/ ({_format_duration(duration)})")
 
     summary = callback.get_summary()
@@ -546,14 +546,14 @@ def export_gguf(
 
     print(f"      Exporting {gguf_name}...", end=" ", flush=True)
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, processor = FastModel.from_pretrained(
         model_name=str(adapter_dir),
         max_seq_length=max_seq_length,
         load_in_4bit=True,
     )
     model.save_pretrained_gguf(
         str(gguf_subdir),
-        tokenizer,
+        processor,
         quantization_method=quantize,
     )
 
@@ -565,7 +565,7 @@ def export_gguf(
 
     print(f"done ({size_gb:.1f} GB, {_format_duration(duration)})")
 
-    del model, tokenizer
+    del model, processor
     free_vram()
     return {
         "gguf_name": gguf_name,
@@ -877,7 +877,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="unsloth/Qwen2.5-3B-Instruct",
+        default="unsloth/Qwen3.5-4B",
         help="Base model name (HuggingFace or local path)",
     )
     parser.add_argument(
