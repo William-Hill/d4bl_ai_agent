@@ -7,7 +7,7 @@ from uuid import UUID
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from d4bl.infra.database import get_database_url, init_db, get_db
+from d4bl.infra.database import get_db, init_db
 from d4bl.infra.vector_store import get_vector_store
 
 # Real and research-based content about Mississippi NIL policies

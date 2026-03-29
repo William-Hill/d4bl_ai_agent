@@ -17,7 +17,7 @@ _SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-from ingestion.helpers import get_db_connection, upsert_batch, make_record_id
+from ingestion.helpers import get_db_connection, make_record_id, upsert_batch
 from ingestion.lib.content_extractor import extract
 
 logger = logging.getLogger(__name__)

@@ -12,7 +12,6 @@ import csv
 import io
 import os
 import sys
-from datetime import datetime, timezone
 
 import httpx
 
@@ -22,10 +21,10 @@ if _SCRIPTS_DIR not in sys.path:
 
 from ingestion.helpers import (
     get_db_connection,
-    upsert_batch,
     make_record_id,
     safe_float,
     safe_int,
+    upsert_batch,
 )
 
 DATA_URL = (

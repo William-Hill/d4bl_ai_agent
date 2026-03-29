@@ -1,7 +1,7 @@
 """Post-eval suggestion engine: rules-based + optional LLM analysis."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
 from scripts.training.ship_criteria import SHIP_CRITERIA

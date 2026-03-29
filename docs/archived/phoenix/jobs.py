@@ -9,10 +9,10 @@ from typing import Dict, List, Optional
 from uuid import UUID
 
 import pandas as pd
+from d4bl.database import EvaluationResult, ResearchJob, init_db
 from sqlalchemy import or_, select
 
 from d4bl import database as db
-from d4bl.database import EvaluationResult, ResearchJob, init_db
 
 
 async def attach_db_context(qa_df: pd.DataFrame) -> pd.DataFrame:
@@ -441,4 +441,3 @@ async def persist_eval_results(
         session.add_all(eval_records)
         await session.commit()
         print(f"💾 Stored {len(eval_records)} evaluation rows in the database.")
-

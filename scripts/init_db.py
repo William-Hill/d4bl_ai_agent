@@ -10,7 +10,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from d4bl.infra.database import init_db, create_tables, close_db
+from d4bl.infra.database import close_db, create_tables, init_db
 
 
 async def main():
@@ -31,5 +31,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 

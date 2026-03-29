@@ -21,7 +21,9 @@ import zipfile
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id,
+    execute_batch,
+    get_db_connection,
+    make_record_id,
 )
 
 # Bulk CSV download URL for CRDC data

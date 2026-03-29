@@ -119,10 +119,10 @@ def main() -> int:
 
         # Define CSV file -> parser mapping
         parse_tasks = [
-            (f"p{yy}stt03.csv", parse_table3_sentenced, f"Table 3 (sentenced population)"),
-            (f"p{yy}stt05.csv", parse_table5_rates, f"Table 5 (imprisonment rates, all ages)"),
-            (f"p{yy}stt06.csv", parse_table6_rates, f"Table 6 (imprisonment rates, adults)"),
-            (f"p{yy}stat01.csv", parse_appendix_table1, f"Appendix Table 1 (population by race/state)"),
+            (f"p{yy}stt03.csv", parse_table3_sentenced, "Table 3 (sentenced population)"),
+            (f"p{yy}stt05.csv", parse_table5_rates, "Table 5 (imprisonment rates, all ages)"),
+            (f"p{yy}stt06.csv", parse_table6_rates, "Table 6 (imprisonment rates, adults)"),
+            (f"p{yy}stat01.csv", parse_appendix_table1, "Appendix Table 1 (population by race/state)"),
         ]
 
         all_records: list[dict] = []

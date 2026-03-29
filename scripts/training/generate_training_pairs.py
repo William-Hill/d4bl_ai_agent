@@ -329,7 +329,11 @@ def generate_query_parser_questions_v2(
         vars_["county2"] = "Harris County"
         vars_["city"] = row.get("city", "Chicago")
         vars_["event"] = _TEMPORAL_EVENTS[i % len(_TEMPORAL_EVENTS)]
-        vars_["year2"] = str(int(vars_["year"]) + 3)
+        # Safely compute year2 with fallback to default year
+        try:
+            vars_["year2"] = str(int(vars_["year"]) + 3)
+        except (ValueError, TypeError):
+            vars_["year2"] = "2022"
         vars_["metric2"] = "unemployment"
         vars_["metric3"] = "incarceration"
         vars_["state2"] = "California"

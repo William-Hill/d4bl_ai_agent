@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
-
 from d4bl_pipelines.utils import (
     INGESTED_RECORDS_UPSERT_SQL,
     compute_content_hash,

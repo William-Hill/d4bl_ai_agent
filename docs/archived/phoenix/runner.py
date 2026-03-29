@@ -8,10 +8,6 @@ from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
-from phoenix.client import Client
-from phoenix.evals import async_evaluate_dataframe
-from phoenix.evals.utils import to_annotation_dataframe
-
 from d4bl.evals.jobs import (
     attach_db_context,
     filter_qa_df_by_jobs,
@@ -24,6 +20,10 @@ from d4bl.evals.phoenix import (
     sanitize_annotation_dataframe,
     validate_span_ids_against_phoenix,
 )
+
+from phoenix.client import Client
+from phoenix.evals import async_evaluate_dataframe
+from phoenix.evals.utils import to_annotation_dataframe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -154,4 +154,3 @@ async def run_evals_and_log(
         import traceback
 
         traceback.print_exc()
-

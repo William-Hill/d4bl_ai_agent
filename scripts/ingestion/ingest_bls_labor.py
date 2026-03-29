@@ -12,7 +12,11 @@ import os
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id, safe_float, safe_int,
+    execute_batch,
+    get_db_connection,
+    make_record_id,
+    safe_float,
+    safe_int,
 )
 
 BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"

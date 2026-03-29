@@ -19,11 +19,11 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 from ingestion.helpers import (
+    STATE_FIPS,
     get_db_connection,
-    upsert_batch,
     make_record_id,
     safe_float,
-    STATE_FIPS,
+    upsert_batch,
 )
 
 FISCAL_YEAR = os.environ.get("USASPENDING_YEAR", "2025")
