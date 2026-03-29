@@ -60,7 +60,7 @@ ADAPTER_CONFIGS = {
         "val_file": "query_parser_val.jsonl",
         "output_subdir": "adapter_parser",
         "checkpoint_subdir": "parser_checkpoints",
-        "gguf_name": "d4bl-query-parser",
+        "gguf_name": "d4bl-query-parser-qwen35",
     },
     "explainer": {
         "r": 32,
@@ -81,7 +81,7 @@ ADAPTER_CONFIGS = {
         "val_file": "explainer_val.jsonl",
         "output_subdir": "adapter_explainer",
         "checkpoint_subdir": "explainer_checkpoints",
-        "gguf_name": "d4bl-explainer",
+        "gguf_name": "d4bl-explainer-qwen35",
     },
     "evaluator": {
         "r": 16,
@@ -99,7 +99,7 @@ ADAPTER_CONFIGS = {
         "val_file": "evaluator_val.jsonl",
         "output_subdir": "adapter_evaluator",
         "checkpoint_subdir": "evaluator_checkpoints",
-        "gguf_name": "d4bl-evaluator",
+        "gguf_name": "d4bl-evaluator-qwen35",
     },
 }
 

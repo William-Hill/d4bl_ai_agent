@@ -24,7 +24,7 @@ from scripts.training.validate_model_output import (
 MODELS = {
     "d4bl-query-parser": {
         "modelfile": "Modelfile.query-parser",
-        "gguf": "d4bl-query-parser-q4_k_m.gguf",
+        "gguf": "d4bl-query-parser-qwen35-q4_k_m.gguf",
         "smoke_prompt": (
             "What is the poverty rate for Black residents"
             " in Mississippi?"
@@ -33,7 +33,7 @@ MODELS = {
     },
     "d4bl-explainer": {
         "modelfile": "Modelfile.explainer",
-        "gguf": "d4bl-explainer-q4_k_m.gguf",
+        "gguf": "d4bl-explainer-qwen35-q4_k_m.gguf",
         "smoke_prompt": (
             '{"metric": "poverty_rate", "geography": "Mississippi",'
             ' "race": "Black", "value": 28.4, "year": 2022}'
@@ -42,7 +42,7 @@ MODELS = {
     },
     "d4bl-evaluator": {
         "modelfile": "Modelfile.evaluator",
-        "gguf": "d4bl-evaluator-q4_k_m.gguf",
+        "gguf": "d4bl-evaluator-qwen35-q4_k_m.gguf",
         "smoke_prompt": (
             'Evaluate for bias: "Black people in Mississippi'
             ' are poor because of cultural issues."'
