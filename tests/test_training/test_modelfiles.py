@@ -68,11 +68,11 @@ class TestModelfileSpecifics:
 
     @pytest.mark.parametrize("model,param,value", [
         ("query-parser", "temperature", "0.1"),
-        ("query-parser", "num_ctx", "2048"),
+        ("query-parser", "num_ctx", "4096"),
         ("explainer", "temperature", "0.3"),
-        ("explainer", "num_ctx", "4096"),
+        ("explainer", "num_ctx", "8192"),
         ("evaluator", "temperature", "0.1"),
-        ("evaluator", "num_ctx", "2048"),
+        ("evaluator", "num_ctx", "4096"),
     ])
     def test_parameter_value(self, model, param, value):
         content = MODELFILES[model].read_text()
