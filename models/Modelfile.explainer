@@ -1,6 +1,6 @@
-FROM ./d4bl-explainer-q4_k_m.gguf
+FROM ./d4bl-explainer-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.3
-PARAMETER num_ctx 4096
+PARAMETER num_ctx 8192
 PARAMETER num_predict 1024
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system

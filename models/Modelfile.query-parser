@@ -1,6 +1,6 @@
-FROM ./d4bl-query-parser-q4_k_m.gguf
+FROM ./d4bl-query-parser-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.1
-PARAMETER num_ctx 2048
+PARAMETER num_ctx 4096
 PARAMETER num_predict 512
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
