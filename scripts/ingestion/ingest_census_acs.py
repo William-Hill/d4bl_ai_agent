@@ -15,7 +15,10 @@ import os
 import httpx
 
 from .helpers import (
-    STATE_FIPS, get_db_connection, make_record_id, safe_float, upsert_batch,
+    STATE_FIPS,
+    get_db_connection,
+    make_record_id,
+    upsert_batch,
 )
 
 CENSUS_BASE_URL = "https://api.census.gov/data"
@@ -206,7 +209,7 @@ def main() -> int:
             print("  State-level: no data returned")
 
         # --- County-level ---
-        print(f"Fetching county-level ACS data...")
+        print("Fetching county-level ACS data...")
         rows = _fetch_acs(client, year, CENSUS_VARIABLES, geography="county:*")
 
         if rows and len(rows) >= 2:

@@ -21,7 +21,9 @@ import time
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id,
+    execute_batch,
+    get_db_connection,
+    make_record_id,
 )
 
 OPENSTATES_URL = "https://v3.openstates.org/bills"

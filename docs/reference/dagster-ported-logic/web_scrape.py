@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
-
 from d4bl_pipelines.utils import slugify
 from dagster import (
     AssetExecutionContext,

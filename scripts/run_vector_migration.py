@@ -4,7 +4,6 @@ Script to run the vector database migration for Supabase.
 This enables the pgvector extension and creates the scraped_content_vectors table.
 """
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -12,8 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from d4bl.infra.database import get_database_url
 
@@ -115,6 +113,5 @@ async def run_migration():
 if __name__ == "__main__":
     success = asyncio.run(run_migration())
     sys.exit(0 if success else 1)
-
 
 

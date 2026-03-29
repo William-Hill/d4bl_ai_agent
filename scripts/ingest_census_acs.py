@@ -26,7 +26,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import d4bl.infra.database as dbmod
 from d4bl.infra.database import CensusIndicator
 
-
 # Census ACS variable codes by metric and race
 # B25003: Tenure (homeownership), B19013: Median HH income, B17001: Poverty
 METRIC_VARS: dict[str, dict[str, object]] = {
@@ -220,4 +219,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     asyncio.run(main(args.year, args.state, args.dry_run))
-

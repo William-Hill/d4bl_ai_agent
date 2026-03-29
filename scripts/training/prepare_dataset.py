@@ -200,6 +200,76 @@ def _write_split(pairs: list[dict[str, Any]], path: Path) -> int:
     return write_jsonl(pairs, path)
 
 
+def load_and_merge_pairs(pairs_dir: Path, task_prefix: str) -> list[dict[str, Any]]:
+    """Load and merge all JSONL files matching ``{task_prefix}*.jsonl`` in *pairs_dir*.
+
+    This enables v1 + v2 data to be combined before dedup and splitting.
+
+    Args:
+        pairs_dir: Directory containing JSONL pair files.
+        task_prefix: Prefix to match (e.g., "evaluator" matches "evaluator.jsonl"
+            and "evaluator_v2.jsonl").
+
+    Returns:
+        Combined list of pairs from all matching files.
+    """
+    all_pairs: list[dict[str, Any]] = []
+    pattern = f"{task_prefix}*.jsonl"
+    matched_files = sorted(pairs_dir.glob(pattern))
+    for path in matched_files:
+        pairs = _load_pairs(path)
+        print(f"[merge] Loaded {len(pairs)} pairs from {path.name}")
+        all_pairs.extend(pairs)
+    return all_pairs
+
+
+def apply_swap_augmentation(pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Duplicate evaluator pairs with swapped Context/Model output order.
+
+    For each pair whose user message contains both "Context:" and "Model output:"
+    sections, creates a copy with those sections swapped. This prevents position
+    bias per JudgeLM (ICLR 2025).
+
+    Args:
+        pairs: List of ChatML-formatted evaluator pairs.
+
+    Returns:
+        Original pairs plus swapped copies (up to 2x input size).
+    """
+    if not pairs:
+        return []
+
+    result = list(pairs)
+    separator = "\n\nModel output:\n"
+
+    for pair in pairs:
+        user_content = _get_user_text(pair)
+
+        if "Context:\n" not in user_content or separator not in user_content:
+            continue
+
+        parts = user_content.split(separator, 1)
+        if len(parts) != 2:
+            continue
+
+        context_section = parts[0]
+        model_output_text = parts[1]
+        context_text = context_section.replace("Context:\n", "", 1)
+
+        swapped_user = f"Model output:\n{model_output_text}\n\nContext:\n{context_text}"
+
+        swapped_pair = {
+            "messages": [
+                pair["messages"][0],
+                {"role": "user", "content": swapped_user},
+                pair["messages"][2],
+            ]
+        }
+        result.append(swapped_pair)
+
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Task orchestrator
 # ---------------------------------------------------------------------------
@@ -208,21 +278,33 @@ def _write_split(pairs: list[dict[str, Any]], path: Path) -> int:
 def process_task(task: str) -> dict[str, int]:
     """Load, filter, deduplicate, and split training data for *task*.
 
+    Uses glob-based merging to combine v1 + v2 pair files when both exist.
+    Applies swap augmentation for evaluator relevance and bias subtasks.
+
     Args:
         task: Task name (e.g. ``"query_parser"``, ``"explainer"``).
 
     Returns:
         Dict mapping split name to number of examples written.
     """
-    input_path = PAIRS_DIR / f"{task}.jsonl"
-    if not input_path.exists():
-        raise FileNotFoundError(f"Pairs file not found: {input_path}")
+    pairs = load_and_merge_pairs(PAIRS_DIR, task)
 
-    pairs = _load_pairs(input_path)
-    print(f"[{task}] Loaded {len(pairs)} pairs from {input_path}")
+    if not pairs:
+        input_path = PAIRS_DIR / f"{task}.jsonl"
+        if not input_path.exists():
+            raise FileNotFoundError(f"No pairs files found for task: {task}")
+        pairs = _load_pairs(input_path)
+        print(f"[{task}] Loaded {len(pairs)} pairs from {input_path}")
+    else:
+        print(f"[{task}] Merged {len(pairs)} total pairs")
 
     pairs = filter_invalid_json(pairs)
     print(f"[{task}] After JSON filter: {len(pairs)} pairs")
+
+    if task == "evaluator":
+        pre_swap = len(pairs)
+        pairs = apply_swap_augmentation(pairs)
+        print(f"[{task}] After swap augmentation: {len(pairs)} pairs (+{len(pairs) - pre_swap})")
 
     pairs = deduplicate_by_jaccard(pairs, threshold=JACCARD_THRESHOLD)
     print(f"[{task}] After deduplication: {len(pairs)} pairs")

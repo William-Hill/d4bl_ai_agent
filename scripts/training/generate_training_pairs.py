@@ -29,16 +29,26 @@ from typing import IO, Any, Union
 from scripts.training.config import (
     DISTILLATION_MODEL,
     EVALUATOR_PAIRS_PER_SUBTASK,
+    EVALUATOR_V2_PAIRS_PER_SUBTASK,
     PAIRS_DIR,
     PAIRS_PER_TASK,
+    PARSER_V2_ENTITY_PAIRS,
     write_jsonl,
 )
 from scripts.training.prompts import (
     D4BL_SYSTEM_PROMPT,
+    ENTITY_TYPE_TEMPLATES,
+    ORG_NAMES,
+    PERTURBATION_TYPES,
+    POLICY_NAMES,
+    QUALITY_TIERS,
     REGISTERS,
+    STUDENT_EVALUATOR_SYSTEMS,
     build_evaluator_prompt,
     build_explainer_prompt,
+    build_perturbation_prompt,
     build_query_parser_prompt,
+    build_tiered_model_output_prompt,
 )
 
 # ---------------------------------------------------------------------------
@@ -217,6 +227,377 @@ def format_as_chatml(system: str, user: str, assistant: str) -> dict:
             {"role": "assistant", "content": assistant},
         ]
     }
+
+
+def format_eval_user_message(context: str, model_output: str) -> str:
+    """Format a (context, model_output) pair into the evaluator user message format.
+
+    This format is load-bearing: ``apply_swap_augmentation`` in prepare_dataset.py
+    parses it by splitting on the same separators.
+    """
+    return f"Context:\n{context}\n\nModel output:\n{model_output}"
+
+
+def build_hallucination_pair(
+    seed_row: dict,
+    factual_response: str,
+    hallucinated_response: str,
+) -> tuple[dict, dict]:
+    """Build a (FACTUAL, HALLUCINATED) pair for hallucination detection training.
+
+    Returns:
+        Tuple of (factual_pair, hallucinated_pair) in ChatML format.
+    """
+    system = STUDENT_EVALUATOR_SYSTEMS["hallucination"]
+    context = json.dumps(seed_row, ensure_ascii=False, default=str)
+
+    factual_pair = format_as_chatml(
+        system=system,
+        user=format_eval_user_message(context, factual_response),
+        assistant=json.dumps({"label": "FACTUAL"}),
+    )
+    hallucinated_pair = format_as_chatml(
+        system=system,
+        user=format_eval_user_message(context, hallucinated_response),
+        assistant=json.dumps({"label": "HALLUCINATED"}),
+    )
+    return factual_pair, hallucinated_pair
+
+
+def build_evaluator_v2_pair(
+    subtask: str,
+    seed_row: dict,
+    model_output: str,
+    judgment: dict,
+) -> dict:
+    """Build a single evaluator training pair for relevance/bias/equity_framing.
+
+    Args:
+        subtask: One of "relevance", "bias", "equity_framing".
+        seed_row: Source data row dict.
+        model_output: The model response being evaluated.
+        judgment: The expected evaluator judgment dict.
+
+    Returns:
+        ChatML-formatted training pair.
+    """
+    system = STUDENT_EVALUATOR_SYSTEMS[subtask]
+    context = json.dumps(seed_row, ensure_ascii=False, default=str)
+    return format_as_chatml(
+        system=system,
+        user=format_eval_user_message(context, model_output),
+        assistant=json.dumps(judgment, ensure_ascii=False),
+    )
+
+
+_TEMPORAL_EVENTS = (
+    "the 2008 recession", "COVID-19", "the Affordable Care Act",
+    "the 2020 census", "Hurricane Katrina", "the Great Migration",
+)
+
+
+def generate_query_parser_questions_v2(
+    seed_rows: list[dict],
+    count: int,
+    entity_type: str,
+) -> list[dict]:
+    """Generate questions for a specific entity type using v2 templates.
+
+    Args:
+        seed_rows: Seed data rows for template variable extraction.
+        count: Number of questions to generate.
+        entity_type: Key into ENTITY_TYPE_TEMPLATES.
+
+    Returns:
+        List of dicts with "question", "entity_type", and "seed_data" keys.
+    """
+    if count == 0:
+        return []
+
+    templates = ENTITY_TYPE_TEMPLATES[entity_type]
+    results: list[dict] = []
+
+    for i in range(count):
+        row = seed_rows[i % len(seed_rows)]
+        template = templates[i % len(templates)]
+        vars_ = _extract_template_vars(row)
+        # Add entity-type-specific variables
+        vars_["org"] = ORG_NAMES[i % len(ORG_NAMES)]
+        vars_["org2"] = ORG_NAMES[(i + 1) % len(ORG_NAMES)]
+        vars_["policy"] = POLICY_NAMES[i % len(POLICY_NAMES)]
+        vars_["county"] = row.get("county_name", row.get("geography_name", "Cook County"))
+        vars_["county2"] = "Harris County"
+        vars_["city"] = row.get("city", "Chicago")
+        vars_["event"] = _TEMPORAL_EVENTS[i % len(_TEMPORAL_EVENTS)]
+        try:
+            vars_["year2"] = str(int(vars_["year"]) + 3)
+        except (ValueError, TypeError):
+            vars_["year2"] = "2025"
+        vars_["metric2"] = "unemployment"
+        vars_["metric3"] = "incarceration"
+        vars_["state2"] = "California"
+        vars_["demographic"] = "families"
+        try:
+            question = template.format(**vars_)
+        except KeyError:
+            question = template.format_map(vars_)
+        results.append({
+            "question": question,
+            "entity_type": entity_type,
+            "seed_data": row,
+        })
+
+    return results
+
+
+def _generate_factual_response(seed_row: dict) -> str | None:
+    """Call Claude to generate a grounded narrative from a seed row."""
+    data_str = json.dumps(seed_row, ensure_ascii=False, default=str)
+    prompt = (
+        f"Write a 2-4 sentence factual summary of the following data. "
+        f"Ground every claim in the provided data. Do not add information "
+        f"not present in the data.\n\nData:\n{data_str}"
+    )
+    try:
+        return _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+    except Exception as exc:
+        print(f"[warn] Factual response generation failed: {exc}", flush=True)
+        return None
+
+
+def _perturb_to_hallucination(
+    seed_row: dict,
+    factual_response: str,
+    perturbation_type: str,
+) -> str | None:
+    """Call Claude to create a hallucinated version of a factual response."""
+    context = json.dumps(seed_row, ensure_ascii=False, default=str)
+    prompt = build_perturbation_prompt(context, factual_response, perturbation_type)
+    try:
+        return _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+    except Exception as exc:
+        print(f"[warn] Perturbation failed: {exc}", flush=True)
+        return None
+
+
+def _generate_tiered_model_output(seed_row: dict, quality_tier: str) -> str | None:
+    """Call Claude to generate a model output at a specific quality tier."""
+    prompt = build_tiered_model_output_prompt(seed_row, quality_tier)
+    try:
+        return _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+    except Exception as exc:
+        print(f"[warn] Tiered output generation failed ({quality_tier}): {exc}", flush=True)
+        return None
+
+
+def generate_evaluator_pairs_v2(
+    conn: Any,
+    count_per_subtask: int = EVALUATOR_V2_PAIRS_PER_SUBTASK,
+    outfile: Path | None = None,
+) -> list[dict]:
+    """Generate v2 evaluator training pairs using perturbation-based hallucinations.
+
+    Hallucination subtask uses a three-step factual->perturb->format pipeline.
+    Relevance, bias, equity_framing use tiered quality model outputs.
+
+    Args:
+        conn: A live psycopg2 connection.
+        count_per_subtask: Number of pairs per subtask before dedup.
+        outfile: Optional output path for incremental writes.
+
+    Returns:
+        A shuffled list of ChatML pair dicts.
+    """
+    seed_rows = _load_seed_rows(conn, limit=400)
+    all_pairs: list[dict] = []
+    call_count = 0
+
+    # --- Hallucination subtask: perturbation pipeline ---
+    print("[evaluator_v2/hallucination] Starting perturbation pipeline...", flush=True)
+    # Each seed generates 2 pairs (factual + hallucinated); use ceiling division
+    # so odd count_per_subtask doesn't silently drop a pair
+    hall_count = -(-count_per_subtask // 2)
+    perturbation_types = list(PERTURBATION_TYPES)
+
+    for idx in range(hall_count):
+        row = seed_rows[idx % len(seed_rows)]
+        ptype = perturbation_types[idx % len(perturbation_types)]
+
+        factual = _generate_factual_response(row)
+        call_count += 1
+        if call_count % 25 == 0:
+            time.sleep(1)
+        if not factual:
+            continue
+
+        hallucinated = _perturb_to_hallucination(row, factual, ptype)
+        call_count += 1
+        if call_count % 25 == 0:
+            time.sleep(1)
+        if not hallucinated:
+            continue
+
+        factual_pair, hall_pair = build_hallucination_pair(row, factual, hallucinated)
+        all_pairs.extend([factual_pair, hall_pair])
+        print(
+            f"[evaluator_v2/hallucination] {len(all_pairs)} pairs "
+            f"({idx + 1}/{hall_count} seeds)", flush=True,
+        )
+
+    # --- Relevance, bias, equity_framing: tiered quality outputs ---
+    non_hall_subtasks = ["relevance", "bias", "equity_framing"]
+
+    for subtask in non_hall_subtasks:
+        print(f"[evaluator_v2/{subtask}] Starting tiered generation...", flush=True)
+        for idx in range(count_per_subtask):
+            row = seed_rows[idx % len(seed_rows)]
+            tier = QUALITY_TIERS[idx % len(QUALITY_TIERS)]
+
+            model_output = _generate_tiered_model_output(row, tier)
+            call_count += 1
+            if call_count % 25 == 0:
+                time.sleep(1)
+            if not model_output:
+                continue
+
+            teacher_prompt = build_evaluator_prompt(
+                task=subtask,
+                context=json.dumps(row, ensure_ascii=False, default=str),
+                model_output=model_output,
+            )
+            try:
+                response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+            except Exception as exc:
+                print(f"[warn] Evaluator judgment failed for {subtask}: {exc}", flush=True)
+                call_count += 1
+                if call_count % 25 == 0:
+                    time.sleep(1)
+                continue
+            call_count += 1
+            if call_count % 25 == 0:
+                time.sleep(1)
+
+            validated = _validate_json(response_text)
+            if validated is None:
+                print(f"[warn] Invalid JSON for {subtask} pair {idx}, skipping.", flush=True)
+                continue
+
+            pair = build_evaluator_v2_pair(subtask, row, model_output, validated)
+            all_pairs.append(pair)
+            print(
+                f"[evaluator_v2/{subtask}] {len(all_pairs)} total pairs", flush=True,
+            )
+
+    random.shuffle(all_pairs)
+
+    if outfile is not None:
+        write_jsonl(all_pairs, outfile)
+        print(f"[evaluator_v2] Saved {len(all_pairs)} pairs to {outfile}", flush=True)
+
+    _print_cost_summary()
+    return all_pairs
+
+
+def generate_query_parser_pairs_v2(
+    conn: Any,
+    count: int = PARSER_V2_ENTITY_PAIRS,
+    outfile: Path | None = None,
+) -> list[dict]:
+    """Generate v2 query parser pairs targeting diverse entity types.
+
+    Generates questions across 6 entity type categories using expanded seed
+    tables and new templates.
+
+    Args:
+        conn: A live psycopg2 connection.
+        count: Total number of pairs to generate across all entity types.
+        outfile: Optional output path for incremental writes.
+
+    Returns:
+        A list of ChatML pair dicts.
+    """
+    # Load expanded seed data including new tables
+    seed_rows: list[dict] = []
+    for table in list(_ALLOWED_SEED_TABLES):
+        try:
+            seed_rows.extend(_fetch_seed_data(conn, table, limit=100))
+        except Exception:
+            continue
+    if not seed_rows:
+        seed_rows = _load_seed_rows(conn)
+    random.shuffle(seed_rows)
+
+    # Distribute count across entity types per spec targets
+    type_counts = {
+        "organization": 50,
+        "policy": 50,
+        "sub_state_geography": 80,
+        "intersectional": 40,
+        "temporal": 30,
+        "adversarial_json": 50,
+    }
+    # Validate type_counts keys match ENTITY_TYPE_TEMPLATES
+    assert set(type_counts) == set(ENTITY_TYPE_TEMPLATES), (
+        f"type_counts keys {set(type_counts)} != ENTITY_TYPE_TEMPLATES keys {set(ENTITY_TYPE_TEMPLATES)}"
+    )
+    # Scale if total count differs from 300
+    total_specified = sum(type_counts.values())
+    if count <= 0:
+        return []
+    if count != total_specified:
+        scale = count / total_specified
+        type_counts = {k: max(1, round(v * scale)) for k, v in type_counts.items()}
+
+    data_sources = list(_ALLOWED_SEED_TABLES)
+    pairs: list[dict] = []
+
+    fh = None
+    if outfile is not None:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        fh = outfile.open("w", encoding="utf-8")
+
+    try:
+        for entity_type, type_count in type_counts.items():
+            questions = generate_query_parser_questions_v2(
+                seed_rows, count=type_count, entity_type=entity_type,
+            )
+            for idx, q in enumerate(questions):
+                if idx > 0 and idx % 25 == 0:
+                    time.sleep(1)
+
+                teacher_prompt = build_query_parser_prompt(
+                    question=q["question"],
+                    data_sources=data_sources,
+                    question_style="adversarial" if entity_type == "adversarial_json" else "standard",
+                )
+                try:
+                    response_text = _call_claude(D4BL_SYSTEM_PROMPT, teacher_prompt)
+                except Exception as exc:
+                    print(f"[warn] Claude call failed for {entity_type} pair {idx}: {exc}", flush=True)
+                    continue
+
+                validated = _validate_json(response_text)
+                if validated is None:
+                    print(f"[warn] Invalid JSON for {entity_type} pair {idx}, skipping.", flush=True)
+                    continue
+
+                pair = format_as_chatml(
+                    system=_STUDENT_QUERY_PARSER_SYSTEM,
+                    user=q["question"],
+                    assistant=json.dumps(validated, ensure_ascii=False),
+                )
+                pairs.append(pair)
+                if fh is not None:
+                    fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+                    fh.flush()
+                print(f"[query_parser_v2/{entity_type}] {len(pairs)} total pairs", flush=True)
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[query_parser_v2] Saved {len(pairs)} pairs to {outfile}", flush=True)
+
+    _print_cost_summary()
+    return pairs
 
 
 def write_pairs_jsonl(
@@ -438,8 +819,18 @@ def _load_seed_rows(conn: Any, limit: int = 200) -> list[dict]:
         "year": 2022,
         "value": 35400.0,
     }
+    seed_tables = (
+        "census_indicators",
+        "cdc_health_outcomes",
+        "census_demographics",
+        "policy_bills",
+        "bjs_incarceration",
+        "vera_incarceration",
+        "police_violence_incidents",
+        "epa_environmental_justice",
+    )
     rows: list[dict] = []
-    for table in ("census_indicators", "cdc_health_outcomes", "census_demographics"):
+    for table in seed_tables:
         try:
             rows.extend(_fetch_seed_data(conn, table, limit=limit))
         except Exception:  # noqa: BLE001
@@ -705,6 +1096,14 @@ def main(task: str) -> None:
                 conn, count_per_subtask=EVALUATOR_PAIRS_PER_SUBTASK,
                 outfile=PAIRS_DIR / "evaluator.jsonl",
             ),
+            "evaluator_v2": lambda: generate_evaluator_pairs_v2(
+                conn, count_per_subtask=EVALUATOR_V2_PAIRS_PER_SUBTASK,
+                outfile=PAIRS_DIR / "evaluator_v2.jsonl",
+            ),
+            "query_parser_v2": lambda: generate_query_parser_pairs_v2(
+                conn, count=PARSER_V2_ENTITY_PAIRS,
+                outfile=PAIRS_DIR / "query_parser_v2.jsonl",
+            ),
         }
 
         if task == "all":
@@ -713,7 +1112,7 @@ def main(task: str) -> None:
             tasks_to_run = [task]
         else:
             raise ValueError(
-                f"Unknown task: {task!r}. Must be one of: query_parser, explainer, evaluator, all"
+                f"Unknown task: {task!r}. Must be one of: {', '.join(_TASK_MAP.keys())}, all"
             )
 
         for t in tasks_to_run:
@@ -736,7 +1135,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--task",
-        choices=["query_parser", "explainer", "evaluator", "all"],
+        choices=["query_parser", "explainer", "evaluator", "evaluator_v2", "query_parser_v2", "all"],
         required=True,
         help="Which task to generate pairs for (use 'all' to run all tasks).",
     )

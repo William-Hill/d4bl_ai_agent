@@ -3,17 +3,18 @@
 Test script to verify database connection is using the correct Docker database
 """
 import asyncio
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add src to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-import d4bl.infra.database as _db
-from d4bl.infra.database import init_db, ResearchJob, get_database_url
 from sqlalchemy import select, text
+
+import d4bl.infra.database as _db
+from d4bl.infra.database import ResearchJob, get_database_url, init_db
 
 
 async def test_connection():
@@ -59,7 +60,7 @@ async def test_connection():
             
             if row:
                 db_name, db_user, server_addr, server_port = row
-                print(f"\n✅ Connected successfully!")
+                print("\n✅ Connected successfully!")
                 print(f"   Database: {db_name}")
                 print(f"   User: {db_user}")
                 print(f"   Server Address: {server_addr}")
@@ -91,7 +92,6 @@ async def test_connection():
 if __name__ == "__main__":
     success = asyncio.run(test_connection())
     sys.exit(0 if success else 1)
-
 
 
 

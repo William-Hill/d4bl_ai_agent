@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Optional
 
 import pandas as pd
+
 from phoenix.client import Client
 from phoenix.client.helpers.spans import get_input_output_context
 
@@ -165,4 +166,3 @@ def validate_span_ids_against_phoenix(
             print("✅ All annotation span_ids were found in Phoenix spans.")
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️  Could not validate span IDs against Phoenix: {exc}")
-

@@ -20,7 +20,11 @@ import zipfile
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id, safe_float, safe_int,
+    execute_batch,
+    get_db_connection,
+    make_record_id,
+    safe_float,
+    safe_int,
 )
 
 # Direct download URL for the Food Access Research Atlas Excel file

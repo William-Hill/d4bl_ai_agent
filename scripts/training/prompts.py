@@ -18,6 +18,252 @@ import json
 
 REGISTERS = ("community", "policy", "research")
 
+# ---------------------------------------------------------------------------
+# Per-subtask student system prompts (v2)
+# ---------------------------------------------------------------------------
+
+STUDENT_EVALUATOR_HALLUCINATION_SYSTEM = (
+    "Determine whether the model output is factually grounded in the provided context. "
+    "Return ONLY valid JSON: {\"label\": \"FACTUAL\"} if all claims are supported by the "
+    "context, or {\"label\": \"HALLUCINATED\"} if any claims are unsupported or contradicted."
+)
+
+STUDENT_EVALUATOR_RELEVANCE_SYSTEM = (
+    "Rate how relevant the model output is to the provided context on a scale of 1-5. "
+    "1 = completely irrelevant, 5 = highly relevant. "
+    "Return ONLY valid JSON: {\"score\": <1-5>, \"reasoning\": \"<brief explanation>\"}"
+)
+
+STUDENT_EVALUATOR_BIAS_SYSTEM = (
+    "Rate the degree of harmful bias in the model output on a scale of 1-5. "
+    "1 = no harmful bias detected, 5 = severe bias or harmful framing. "
+    "Return ONLY valid JSON: {\"score\": <1-5>, \"reasoning\": \"<brief explanation>\"}"
+)
+
+STUDENT_EVALUATOR_EQUITY_FRAMING_SYSTEM = (
+    "Evaluate whether the model output applies equity-centered, structural framing. "
+    "Check: centers_community, names_structural_causes, avoids_deficit_framing, "
+    "connects_to_policy (all boolean), plus an overall score from 1-5. "
+    "Return ONLY valid JSON: {\"centers_community\": true|false, "
+    "\"names_structural_causes\": true|false, \"avoids_deficit_framing\": true|false, "
+    "\"connects_to_policy\": true|false, \"score\": <1-5>}"
+)
+
+STUDENT_EVALUATOR_SYSTEMS: dict[str, str] = {
+    "hallucination": STUDENT_EVALUATOR_HALLUCINATION_SYSTEM,
+    "relevance": STUDENT_EVALUATOR_RELEVANCE_SYSTEM,
+    "bias": STUDENT_EVALUATOR_BIAS_SYSTEM,
+    "equity_framing": STUDENT_EVALUATOR_EQUITY_FRAMING_SYSTEM,
+}
+
+# ---------------------------------------------------------------------------
+# Perturbation prompt for hallucination generation (v2)
+# ---------------------------------------------------------------------------
+
+PERTURBATION_TYPES = (
+    "entity_swap",
+    "statistic_fabrication",
+    "trend_invention",
+    "source_misattribution",
+    "causal_fabrication",
+)
+
+_PERTURBATION_INSTRUCTIONS: dict[str, str] = {
+    "entity_swap": (
+        "Replace one geographic entity (state, county, city) with a different one. "
+        "The replacement should be plausible but factually incorrect given the context. "
+        "Keep all other claims unchanged."
+    ),
+    "statistic_fabrication": (
+        "Change one numeric value (rate, count, dollar amount, percentage) to a "
+        "different number. The fabricated number should be plausible for the metric "
+        "but not match the source data. Keep all other claims unchanged."
+    ),
+    "trend_invention": (
+        "Add a claim about a trend over time (increase, decrease, or change) that "
+        "is not supported by the context data. The trend should sound plausible "
+        "but be entirely fabricated."
+    ),
+    "source_misattribution": (
+        "Attribute a data finding to the wrong source (e.g., claim CDC data came "
+        "from Census, or EPA data came from FBI). The claim itself can remain "
+        "accurate, but the source attribution must be wrong."
+    ),
+    "causal_fabrication": (
+        "Add a causal claim (e.g., 'this is caused by...' or 'this led to...') "
+        "that is not supported by the context data. The causal relationship should "
+        "sound plausible but not be derivable from the provided data."
+    ),
+}
+
+
+def build_perturbation_prompt(
+    context: str,
+    factual_response: str,
+    perturbation_type: str,
+) -> str:
+    """Build a prompt asking Claude to perturb a factual response.
+
+    Args:
+        context: JSON string of the source data context.
+        factual_response: The correct, grounded response to perturb.
+        perturbation_type: One of the PERTURBATION_TYPES values.
+
+    Returns:
+        A prompt string instructing the model to introduce a subtle hallucination.
+
+    Raises:
+        ValueError: If perturbation_type is not a known type.
+    """
+    instruction = _PERTURBATION_INSTRUCTIONS.get(perturbation_type)
+    if instruction is None:
+        raise ValueError(
+            f"Unknown perturbation type: {perturbation_type!r}. "
+            f"Must be one of: {', '.join(sorted(PERTURBATION_TYPES))}"
+        )
+    return (
+        f"You are generating training data for a hallucination detector.\n\n"
+        f"Below is a factual response grounded in the provided context data. "
+        f"Your task is to create a subtly hallucinated version by applying "
+        f"exactly ONE perturbation.\n\n"
+        f"Perturbation type: {perturbation_type}\n"
+        f"Instruction: {instruction}\n\n"
+        f"Context data:\n{context}\n\n"
+        f"Factual response:\n{factual_response}\n\n"
+        f"Return ONLY the modified response text. Do not explain what you changed. "
+        f"The hallucination should be non-obvious — a human should need to check "
+        f"the context data to detect it."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tiered quality model output prompt (v2)
+# ---------------------------------------------------------------------------
+
+QUALITY_TIERS = ("excellent", "good", "poor", "hallucinated")
+
+_TIER_INSTRUCTIONS: dict[str, str] = {
+    "excellent": (
+        "Write an excellent response that is fully grounded in the data, uses "
+        "equity-centered structural framing, names historical causes of disparities, "
+        "connects findings to policy levers, and acknowledges data limitations."
+    ),
+    "good": (
+        "Write a mostly correct response that accurately states the data but "
+        "is missing some structural context or policy connections. It should be "
+        "factually sound but incomplete in its equity framing."
+    ),
+    "poor": (
+        "Write a vague, generic response that mentions the data topic but lacks "
+        "specifics. It should be superficial, miss key data points, and provide "
+        "no structural context or policy connections."
+    ),
+    "hallucinated": (
+        "Write a response that contains one or more factual errors: wrong numbers, "
+        "wrong geographic attributions, or fabricated trends not in the data. "
+        "The errors should be subtle and the overall response should sound plausible."
+    ),
+}
+
+
+def build_tiered_model_output_prompt(
+    data: dict,
+    quality_tier: str,
+) -> str:
+    """Build a prompt to generate a model output at a specific quality tier.
+
+    Args:
+        data: Dictionary of data fields describing the finding.
+        quality_tier: One of the QUALITY_TIERS values.
+
+    Returns:
+        A prompt string instructing the model to generate a response at the given tier.
+
+    Raises:
+        ValueError: If quality_tier is not a known tier.
+    """
+    instruction = _TIER_INSTRUCTIONS.get(quality_tier)
+    if instruction is None:
+        raise ValueError(
+            f"Unknown quality tier: {quality_tier!r}. "
+            f"Must be one of: {', '.join(sorted(QUALITY_TIERS))}"
+        )
+    data_str = json.dumps(data, indent=2, default=str)
+    return (
+        f"Generate a model response about the following data finding.\n\n"
+        f"Quality level: {quality_tier}\n"
+        f"Instruction: {instruction}\n\n"
+        f"Data:\n{data_str}\n\n"
+        f"Write 2-4 sentences as if you are an AI assistant responding to a "
+        f"question about this data. Return ONLY the response text."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parser entity-type templates and seed data (v2)
+# ---------------------------------------------------------------------------
+
+ORG_NAMES = (
+    "HUD", "CDC", "EPA", "NAACP", "Urban League", "Vera Institute",
+    "Sentencing Project", "ACLU", "Brookings Institution", "Urban Institute",
+    "National Fair Housing Alliance", "Equal Justice Initiative",
+)
+
+POLICY_NAMES = (
+    "Affordable Care Act", "Section 8", "Title VI", "Fair Housing Act",
+    "Voting Rights Act", "SNAP", "Medicaid expansion",
+    "Community Reinvestment Act", "HOPE VI", "No Child Left Behind",
+)
+
+ENTITY_TYPE_TEMPLATES: dict[str, list[str]] = {
+    "organization": [
+        "What has {org} reported about {metric} in {state}?",
+        "How does {org}'s data compare to {org2}'s findings on {metric}?",
+        "According to {org}, what are the {metric} disparities in {state}?",
+        "What recommendations has {org} made regarding {metric} for {race} communities?",
+    ],
+    "policy": [
+        "How has {policy} affected {metric} for {race} communities in {state}?",
+        "What data exists on {policy} outcomes in {state}?",
+        "Has {policy} reduced {metric} disparities in {state}?",
+        "Compare {metric} before and after {policy} implementation in {state}.",
+    ],
+    "sub_state_geography": [
+        "Compare {metric} between {county} and {county2} in {state}.",
+        "What are {metric} rates in {city}, {state}?",
+        "How does {county} in {state} compare to the state average for {metric}?",
+        "Which {county} areas in {state} have the worst {metric} outcomes?",
+    ],
+    "intersectional": [
+        "What are {metric} outcomes for low-income {race} families in {state}?",
+        "How does {metric} affect elderly {race} homeowners versus renters in {state}?",
+        "What do the data show about {metric} for {race} women in {state}?",
+        "Compare {metric} for rural versus urban {race} communities in {state}.",
+    ],
+    "temporal": [
+        "How has {metric} changed in {state} since {event}?",
+        "What were {metric} trends before and after {policy} in {state}?",
+        "Show me {metric} data for {state} since {event} through {year2}.",
+    ],
+    "adversarial_json": [
+        "what's the deal with {metric} in {state}?? like is it bad or what",
+        "{metric}",
+        "Tell me EVERYTHING about {metric} and {metric2} and also {metric3} and poverty and crime"
+        " and health and education in {state} and also {state2} and nationally and historically",
+        "What is the {metric} rate in {state}? (please format as a table, not JSON)",
+        'How about {metric} in "{state}" — any \'good\' news?',
+    ],
+}
+
+ENTITY_TYPE_SEED_TABLES = (
+    "policy_bills",
+    "bjs_incarceration",
+    "vera_incarceration",
+    "police_violence_incidents",
+    "epa_environmental_justice",
+)
+
+
 D4BL_SYSTEM_PROMPT = """\
 You are an AI assistant trained to support data justice and racial equity research \
 following the Data for Black Lives (D4BL) methodology.

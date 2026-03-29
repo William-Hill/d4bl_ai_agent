@@ -18,6 +18,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from sqlalchemy import text
+
 from d4bl.infra.database import init_db
 
 
@@ -70,4 +71,3 @@ async def add_research_data_column():
 if __name__ == "__main__":
     success = asyncio.run(add_research_data_column())
     sys.exit(0 if success else 1)
-

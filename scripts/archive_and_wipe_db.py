@@ -12,8 +12,8 @@ Usage:
     --no-archive: Skip CSV export
     --yes: Skip confirmation prompt (useful for Docker/automation)
 """
-import asyncio
 import argparse
+import asyncio
 import csv
 import sys
 from datetime import datetime
@@ -23,9 +23,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from sqlalchemy import text, select
+from sqlalchemy import select, text
+
 from d4bl.infra import database as db
-from d4bl.infra.database import ResearchJob, EvaluationResult
+from d4bl.infra.database import EvaluationResult, ResearchJob
 
 
 async def export_data_to_csv():
@@ -202,4 +203,3 @@ if __name__ == "__main__":
     
     success = asyncio.run(main(no_archive=args.no_archive, skip_confirm=args.yes))
     sys.exit(0 if success else 1)
-

@@ -23,9 +23,9 @@ if _SCRIPTS_DIR not in sys.path:
 
 from ingestion.helpers import (
     get_db_connection,
-    upsert_batch,
     make_record_id,
     safe_float,
+    upsert_batch,
 )
 
 YEAR = os.environ.get("CHR_YEAR", "2025")

@@ -325,9 +325,9 @@ def train_domain_adapter(
     """Phase 1: Domain-adaptive LoRA pre-training, then merge into base weights."""
     start_timestamp = _now_utc()
     phase_start = time.monotonic()
-    print(f"\n      Phase 1: Domain Adaptation")
+    print("\n      Phase 1: Domain Adaptation")
     print(f"      Dataset: {len(corpus_dataset)} passages")
-    print(f"      LoRA: r=16, all layers + embeddings, 1 epoch")
+    print("      LoRA: r=16, all layers + embeddings, 1 epoch")
 
     # Load base model in 4-bit
     model, tokenizer = FastLanguageModel.from_pretrained(

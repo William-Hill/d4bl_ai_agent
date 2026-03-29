@@ -21,7 +21,10 @@ from datetime import datetime
 import httpx
 
 from .helpers import (
-    get_db_connection, execute_batch, make_record_id, safe_int,
+    execute_batch,
+    get_db_connection,
+    make_record_id,
+    safe_int,
 )
 
 MPV_DEFAULT_URL = "https://mappingpoliceviolence.us/s/MPVDatasetDownload.xlsx"

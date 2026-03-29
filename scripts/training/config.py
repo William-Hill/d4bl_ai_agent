@@ -29,6 +29,10 @@ TEST_RATIO = 0.10
 # Deduplication
 JACCARD_THRESHOLD = 1.0  # Effectively disabled — only exact duplicates removed
 
+# V2 expansion (issue #139)
+EVALUATOR_V2_PAIRS_PER_SUBTASK = 350  # targets 300+ post-dedup
+PARSER_V2_ENTITY_PAIRS = 300
+
 
 def write_jsonl(
     items: list,

@@ -16,7 +16,11 @@ import os
 import httpx
 
 from .helpers import (
-    STATE_FIPS, get_db_connection, make_record_id, safe_int, upsert_batch,
+    STATE_FIPS,
+    get_db_connection,
+    make_record_id,
+    safe_int,
+    upsert_batch,
 )
 
 # 2020 PL 94-171 variables: race alone counts + Hispanic
