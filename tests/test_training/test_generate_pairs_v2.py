@@ -47,18 +47,22 @@ class TestBuildHallucinationPair:
         assert factual_pair["messages"][0]["content"] == expected_system
         assert hall_pair["messages"][0]["content"] == expected_system
 
-    def test_factual_pair_user_contains_factual_response(self):
+    def test_factual_pair_user_has_eval_framing(self):
         factual_pair, _ = build_hallucination_pair(
             self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
         )
         user_content = factual_pair["messages"][1]["content"]
+        assert user_content.startswith("Context:\n")
+        assert "\n\nModel output:\n" in user_content
         assert self._FACTUAL in user_content
 
-    def test_hallucinated_pair_user_contains_hallucinated_response(self):
+    def test_hallucinated_pair_user_has_eval_framing(self):
         _, hall_pair = build_hallucination_pair(
             self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
         )
         user_content = hall_pair["messages"][1]["content"]
+        assert user_content.startswith("Context:\n")
+        assert "\n\nModel output:\n" in user_content
         assert self._HALLUCINATED in user_content
 
 
@@ -86,7 +90,7 @@ class TestBuildEvaluatorV2Pair:
         )
         assert result["messages"][0]["content"] == STUDENT_EVALUATOR_SYSTEMS["bias"]
 
-    def test_user_message_contains_context_and_output(self):
+    def test_user_message_has_eval_framing(self):
         result = build_evaluator_v2_pair(
             subtask="relevance",
             seed_row=self._SEED_ROW,
@@ -94,6 +98,8 @@ class TestBuildEvaluatorV2Pair:
             judgment=self._JUDGMENT,
         )
         user_content = result["messages"][1]["content"]
+        assert user_content.startswith("Context:\n")
+        assert "\n\nModel output:\n" in user_content
         assert "Alabama" in user_content
         assert "19%" in user_content
 

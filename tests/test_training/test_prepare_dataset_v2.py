@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -29,12 +30,16 @@ class TestLoadAndMergePairs:
         f2.write_text(json.dumps(_make_pair("q2", '{"b":2}')) + "\n")
         result = load_and_merge_pairs(tmp_path, "evaluator")
         assert len(result) == 2
+        user_contents = [r["messages"][1]["content"] for r in result]
+        assert "q1" in user_contents
+        assert "q2" in user_contents
 
     def test_single_file_still_works(self, tmp_path: Path):
         f1 = tmp_path / "evaluator.jsonl"
         f1.write_text(json.dumps(_make_pair("q1", '{"a":1}')) + "\n")
         result = load_and_merge_pairs(tmp_path, "evaluator")
         assert len(result) == 1
+        assert result[0]["messages"][1]["content"] == "q1"
 
     def test_no_files_returns_empty(self, tmp_path: Path):
         result = load_and_merge_pairs(tmp_path, "evaluator")
@@ -47,6 +52,7 @@ class TestLoadAndMergePairs:
         f2.write_text(json.dumps(_make_pair("q2", '{"b":2}')) + "\n")
         result = load_and_merge_pairs(tmp_path, "evaluator")
         assert len(result) == 1
+        assert result[0]["messages"][1]["content"] == "q1"
 
 
 class TestApplySwapAugmentation:
@@ -57,8 +63,10 @@ class TestApplySwapAugmentation:
 
     def test_original_pair_preserved(self):
         original = _make_pair("Context:\ndata\n\nModel output:\nresponse", '{"score":3}')
+        snapshot = copy.deepcopy(original)
         result = apply_swap_augmentation([original])
-        assert result[0] == original
+        assert original == snapshot
+        assert result[0] == snapshot
 
     def test_swapped_pair_has_reversed_sections(self):
         pairs = [_make_pair(
@@ -74,5 +82,7 @@ class TestApplySwapAugmentation:
 
     def test_pairs_without_separator_unchanged(self):
         pairs = [_make_pair("just a question", '{"score":3}')]
+        snapshot = copy.deepcopy(pairs)
         result = apply_swap_augmentation(pairs)
         assert len(result) == 1
+        assert result[0] == snapshot[0]

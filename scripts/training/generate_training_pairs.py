@@ -533,6 +533,8 @@ def generate_query_parser_pairs_v2(
     )
     # Scale if total count differs from 300
     total_specified = sum(type_counts.values())
+    if count <= 0:
+        return []
     if count != total_specified:
         scale = count / total_specified
         type_counts = {k: max(1, round(v * scale)) for k, v in type_counts.items()}

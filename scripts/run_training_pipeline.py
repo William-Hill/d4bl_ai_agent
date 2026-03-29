@@ -45,6 +45,12 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
+    # v2 tasks map to their base task for the prepare stage
+    prepare_task = {
+        "evaluator_v2": "evaluator",
+        "query_parser_v2": "query_parser",
+    }.get(args.task, args.task)
+
     if args.dry_run:
         print("DRY RUN — would execute:")
         if args.stage in ("extract", "all"):
@@ -53,7 +59,7 @@ def main():
             print(f"  Stage 2: Generate training pairs (task={args.task})")
             print("  Requires: ANTHROPIC_API_KEY, DATABASE_URL")
         if args.stage in ("prepare", "all"):
-            print(f"  Stage 3: Filter, dedup, split (task={args.task})")
+            print(f"  Stage 3: Filter, dedup, split (task={prepare_task})")
         return
 
     start = time.time()
@@ -80,11 +86,6 @@ def main():
         print("STAGE 3: Dataset Preparation")
         print("=" * 60)
         from scripts.training.prepare_dataset import main as prepare_main
-        # v2 tasks generate into the same base task directory for merging
-        prepare_task = {
-            "evaluator_v2": "evaluator",
-            "query_parser_v2": "query_parser",
-        }.get(args.task, args.task)
         prepare_main(task=prepare_task)
 
     elapsed = time.time() - start
