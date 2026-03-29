@@ -329,11 +329,10 @@ def generate_query_parser_questions_v2(
         vars_["county2"] = "Harris County"
         vars_["city"] = row.get("city", "Chicago")
         vars_["event"] = _TEMPORAL_EVENTS[i % len(_TEMPORAL_EVENTS)]
-        # Safely compute year2 with fallback to default year
         try:
             vars_["year2"] = str(int(vars_["year"]) + 3)
         except (ValueError, TypeError):
-            vars_["year2"] = "2022"
+            vars_["year2"] = "2025"
         vars_["metric2"] = "unemployment"
         vars_["metric3"] = "incarceration"
         vars_["state2"] = "California"
@@ -415,23 +414,26 @@ def generate_evaluator_pairs_v2(
 
     # --- Hallucination subtask: perturbation pipeline ---
     print("[evaluator_v2/hallucination] Starting perturbation pipeline...", flush=True)
-    hall_count = count_per_subtask // 2  # Each generates 2 pairs (factual + hallucinated)
+    # Each seed generates 2 pairs (factual + hallucinated); use ceiling division
+    # so odd count_per_subtask doesn't silently drop a pair
+    hall_count = -(-count_per_subtask // 2)
     perturbation_types = list(PERTURBATION_TYPES)
 
     for idx in range(hall_count):
-        if call_count > 0 and call_count % 25 == 0:
-            time.sleep(1)
-
         row = seed_rows[idx % len(seed_rows)]
         ptype = perturbation_types[idx % len(perturbation_types)]
 
         factual = _generate_factual_response(row)
         call_count += 1
+        if call_count % 25 == 0:
+            time.sleep(1)
         if not factual:
             continue
 
         hallucinated = _perturb_to_hallucination(row, factual, ptype)
         call_count += 1
+        if call_count % 25 == 0:
+            time.sleep(1)
         if not hallucinated:
             continue
 
@@ -448,14 +450,13 @@ def generate_evaluator_pairs_v2(
     for subtask in non_hall_subtasks:
         print(f"[evaluator_v2/{subtask}] Starting tiered generation...", flush=True)
         for idx in range(count_per_subtask):
-            if call_count > 0 and call_count % 25 == 0:
-                time.sleep(1)
-
             row = seed_rows[idx % len(seed_rows)]
             tier = QUALITY_TIERS[idx % len(QUALITY_TIERS)]
 
             model_output = _generate_tiered_model_output(row, tier)
             call_count += 1
+            if call_count % 25 == 0:
+                time.sleep(1)
             if not model_output:
                 continue
 
@@ -469,8 +470,12 @@ def generate_evaluator_pairs_v2(
             except Exception as exc:
                 print(f"[warn] Evaluator judgment failed for {subtask}: {exc}", flush=True)
                 call_count += 1
+                if call_count % 25 == 0:
+                    time.sleep(1)
                 continue
             call_count += 1
+            if call_count % 25 == 0:
+                time.sleep(1)
 
             validated = _validate_json(response_text)
             if validated is None:
