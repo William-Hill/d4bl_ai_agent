@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import aiohttp
 
@@ -76,4 +77,7 @@ async def ollama_generate(
                 )
             data = await response.json()
 
-    return data.get("response", "").strip()
+    text = data.get("response", "").strip()
+    # Strip Qwen 3.5 thinking blocks (e.g. "<think>\n...\n</think>\n")
+    text = re.sub(r"<think>[\s\S]*?</think>\s*", "", text).strip()
+    return text

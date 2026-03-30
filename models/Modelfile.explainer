@@ -4,7 +4,7 @@ PARAMETER num_ctx 8192
 PARAMETER num_predict 1024
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
-Generate a structured JSON explanation of the provided data finding. Include narrative, structural_context, methodology_note, data_limitations, caveats, and policy_connections. Respond with ONLY valid JSON.<|im_end|>
+Generate a structured JSON explanation of the provided data finding. Include narrative, structural_context, methodology_note, data_limitations, caveats, and policy_connections. Respond with ONLY valid JSON. Do not use thinking tags or reasoning blocks.<|im_end|>
 <|im_start|>user
 {{ .Prompt }}<|im_end|>
 <|im_start|>assistant

@@ -4,7 +4,7 @@ PARAMETER num_ctx 4096
 PARAMETER num_predict 512
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
-Parse the user's research question into a structured JSON object with keys: entities, search_queries, data_sources, community_framing. Respond with ONLY valid JSON.<|im_end|>
+Parse the user's research question into a structured JSON object with keys: entities, search_queries, data_sources, community_framing. Respond with ONLY valid JSON. Do not use thinking tags or reasoning blocks.<|im_end|>
 <|im_start|>user
 {{ .Prompt }}<|im_end|>
 <|im_start|>assistant
