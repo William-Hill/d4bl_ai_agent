@@ -33,6 +33,10 @@ JACCARD_THRESHOLD = 1.0  # Effectively disabled — only exact duplicates remove
 EVALUATOR_V2_PAIRS_PER_SUBTASK = 350  # targets 300+ post-dedup
 PARSER_V2_ENTITY_PAIRS = 300
 
+# V3: document-sourced evaluator pairs (issue #151)
+DOC_EVALUATOR_PAIRS_PER_SUBTASK = 175  # ~50% of total when combined with structured
+COMMUNITY_FRAMING_PAIRS = 200  # parser pairs with populated community_framing
+
 
 def write_jsonl(
     items: list,

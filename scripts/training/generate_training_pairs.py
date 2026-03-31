@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import IO, Any, Union
 
 from scripts.training.config import (
+    COMMUNITY_FRAMING_PAIRS,
     DISTILLATION_MODEL,
+    DOC_EVALUATOR_PAIRS_PER_SUBTASK,
     EVALUATOR_PAIRS_PER_SUBTASK,
     EVALUATOR_V2_PAIRS_PER_SUBTASK,
     PAIRS_DIR,
@@ -328,6 +330,73 @@ def build_evaluator_v2_pair(
         system=system,
         user=format_eval_user_message(context, model_output),
         assistant=json.dumps(judgment, ensure_ascii=False),
+    )
+
+
+def build_doc_hallucination_pair(
+    chunk: dict,
+    hallucinated_text: str,
+) -> tuple[dict, dict]:
+    """Build a (FACTUAL, HALLUCINATED) pair from a document chunk.
+
+    The chunk content itself is the factual reference — no Claude call needed
+    for the factual side. Only the hallucinated version requires generation.
+
+    Args:
+        chunk: Dict with keys: content, title, content_type.
+        hallucinated_text: The perturbed/hallucinated version of the content.
+
+    Returns:
+        Tuple of (factual_pair, hallucinated_pair) in ChatML format.
+    """
+    system = STUDENT_EVALUATOR_SYSTEMS["hallucination"]
+    context = json.dumps(
+        {"title": chunk.get("title", ""), "content_type": chunk.get("content_type", ""),
+         "source_text": chunk["content"]},
+        ensure_ascii=False,
+    )
+
+    factual_pair = format_as_chatml(
+        system=system,
+        user=format_eval_user_message(context, chunk["content"]),
+        assistant=json.dumps({"label": "FACTUAL"}),
+    )
+    hallucinated_pair = format_as_chatml(
+        system=system,
+        user=format_eval_user_message(context, hallucinated_text),
+        assistant=json.dumps({"label": "HALLUCINATED"}),
+    )
+    return factual_pair, hallucinated_pair
+
+
+def build_community_framing_pair(
+    question: str,
+    entities: list[str],
+    data_sources: list[str],
+    community_framing: dict,
+) -> dict:
+    """Build a parser training pair with a populated community_framing field.
+
+    Args:
+        question: The community-voiced research question.
+        entities: Geographic/demographic entities in the question.
+        data_sources: Relevant data source keys.
+        community_framing: Dict with detected, issue_domain, structural_frame.
+
+    Returns:
+        ChatML-formatted training pair.
+    """
+    assistant_response = json.dumps({
+        "entities": entities,
+        "search_queries": [question],
+        "data_sources": data_sources,
+        "community_framing": community_framing,
+    }, ensure_ascii=False)
+
+    return format_as_chatml(
+        system=_STUDENT_QUERY_PARSER_SYSTEM,
+        user=question,
+        assistant=assistant_response,
     )
 
 
