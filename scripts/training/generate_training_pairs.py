@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import IO, Any, Union
 
 from scripts.training.config import (
+    COMMUNITY_FRAMING_PAIRS,
     DISTILLATION_MODEL,
+    DOC_EVALUATOR_PAIRS_PER_SUBTASK,
     EVALUATOR_PAIRS_PER_SUBTASK,
     EVALUATOR_V2_PAIRS_PER_SUBTASK,
     PAIRS_DIR,
@@ -36,6 +38,7 @@ from scripts.training.config import (
     write_jsonl,
 )
 from scripts.training.prompts import (
+    COMMUNITY_FRAMING_QUESTION_TEMPLATES,
     D4BL_SYSTEM_PROMPT,
     ENTITY_TYPE_TEMPLATES,
     ORG_NAMES,
@@ -43,6 +46,7 @@ from scripts.training.prompts import (
     POLICY_NAMES,
     QUALITY_TIERS,
     REGISTERS,
+    STRUCTURAL_FRAMES,
     STUDENT_EVALUATOR_SYSTEMS,
     build_evaluator_prompt,
     build_explainer_prompt,
@@ -742,6 +746,216 @@ def generate_query_parser_pairs_v2(
     return pairs
 
 
+# ---------------------------------------------------------------------------
+# V3 generators: document-sourced evaluator + community framing parser
+# ---------------------------------------------------------------------------
+
+
+def generate_doc_hallucination_pairs(
+    conn: Any,
+    count_per_subtask: int = DOC_EVALUATOR_PAIRS_PER_SUBTASK,
+    outfile: Path | None = None,
+) -> list[dict]:
+    """Generate v3 evaluator pairs from document chunks.
+
+    Fetches random document chunks, perturbs each into a hallucinated version
+    via Claude, then uses build_doc_hallucination_pair to create paired
+    FACTUAL/HALLUCINATED training examples.
+
+    Args:
+        conn: A live psycopg2 connection.
+        count_per_subtask: Number of chunks to process (yields 2x pairs).
+        outfile: Optional output path for incremental writes.
+
+    Returns:
+        A list of ChatML pair dicts.
+    """
+    import psycopg2.extras
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT dc.content, d.title, d.content_type "
+            "FROM document_chunks dc "
+            "JOIN documents d ON dc.document_id = d.id "
+            "WHERE length(dc.content) > 80 "
+            "ORDER BY random() LIMIT %s",
+            (count_per_subtask,),
+        )
+        chunks = [dict(row) for row in cur.fetchall()]
+
+    if not chunks:
+        print("[evaluator_v3] No document chunks found — skipping", flush=True)
+        return []
+
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[evaluator_v3] Resuming — {existing_count} pairs already written", flush=True)
+
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pairs: list[dict] = []
+    pair_count = existing_count
+    perturbation_types = list(PERTURBATION_TYPES)
+
+    try:
+        for idx, chunk in enumerate(chunks):
+            if idx * 2 < existing_count:
+                continue
+
+            ptype = perturbation_types[idx % len(perturbation_types)]
+            context = json.dumps(
+                {"title": chunk["title"], "content_type": chunk["content_type"]},
+                ensure_ascii=False,
+            )
+            prompt = build_perturbation_prompt(context, chunk["content"], ptype)
+
+            try:
+                hallucinated = _call_claude(D4BL_SYSTEM_PROMPT, prompt)
+            except Exception as exc:
+                print(f"[warn] Doc perturbation failed: {exc}", flush=True)
+                continue
+
+            if not hallucinated:
+                continue
+
+            factual_pair, hall_pair = build_doc_hallucination_pair(chunk, hallucinated)
+            pairs.extend([factual_pair, hall_pair])
+            _write_pair(fh, factual_pair)
+            _write_pair(fh, hall_pair)
+            pair_count += 2
+            print(
+                f"[evaluator_v3] {pair_count} pairs ({idx + 1}/{len(chunks)} chunks)",
+                flush=True,
+            )
+
+            if (idx + 1) % 25 == 0:
+                time.sleep(1)
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[evaluator_v3] Saved {pair_count} pairs to {outfile}", flush=True)
+
+    _print_cost_summary()
+    return pairs
+
+
+_FRAMING_RACES = [
+    "Black", "Latino", "Indigenous", "Asian American", "Pacific Islander",
+]
+
+_FRAMING_STATES = [
+    "Alabama", "Georgia", "Mississippi", "Louisiana", "Texas",
+    "California", "New York", "Illinois", "Ohio", "Michigan",
+    "North Carolina", "Florida", "Pennsylvania", "Virginia", "Tennessee",
+]
+
+_FRAMING_ISSUE_LABELS: dict[str, str] = {
+    "housing": "housing discrimination",
+    "criminal_justice": "criminal justice inequality",
+    "voting_rights": "voter suppression",
+    "education": "education funding disparities",
+    "health": "health access disparities",
+    "economic_justice": "economic inequality",
+    "environmental_justice": "environmental injustice",
+}
+
+_BILL_NUMBERS = [
+    "HB 1234", "SB 567", "HB 890", "SB 101", "HB 2345",
+]
+
+
+def _build_framing_example(idx: int) -> tuple[str, list[str], dict]:
+    """Build a single community-framing training example deterministically.
+
+    Cycles through domains, frames, races, states, and templates using idx
+    to ensure balanced, reproducible coverage across all combinations.
+    """
+    domains = list(STRUCTURAL_FRAMES.keys())
+    templates = COMMUNITY_FRAMING_QUESTION_TEMPLATES
+
+    domain = domains[idx % len(domains)]
+    frames = STRUCTURAL_FRAMES[domain]
+    frame = frames[idx % len(frames)]
+    race = _FRAMING_RACES[idx % len(_FRAMING_RACES)]
+    state = _FRAMING_STATES[idx % len(_FRAMING_STATES)]
+    issue = _FRAMING_ISSUE_LABELS[domain]
+
+    # Pick a related issue from a different domain for cross-domain templates
+    other_domain = domains[(idx + 1) % len(domains)]
+    related_issue = _FRAMING_ISSUE_LABELS[other_domain]
+
+    template = templates[idx % len(templates)]
+    question = template.format(
+        state=state,
+        race=race,
+        issue=issue,
+        related_issue=related_issue,
+        bill_number=_BILL_NUMBERS[idx % len(_BILL_NUMBERS)],
+    )
+
+    entities = [state, race]
+    community_framing = {
+        "detected": True,
+        "issue_domain": domain,
+        "structural_frame": frame,
+    }
+
+    return question, entities, community_framing
+
+
+def generate_community_framing_pairs(
+    conn: Any,
+    count: int = COMMUNITY_FRAMING_PAIRS,
+    outfile: Path | None = None,
+) -> list[dict]:
+    """Generate v3 parser pairs with populated community_framing fields.
+
+    Uses COMMUNITY_FRAMING_QUESTION_TEMPLATES to build questions that sound
+    like community organizers asking about equity data. No Claude calls needed
+    — the ground truth is deterministic from the template parameters.
+
+    Args:
+        conn: A live psycopg2 connection (unused but kept for signature parity).
+        count: Number of pairs to generate.
+        outfile: Optional output path for incremental writes.
+
+    Returns:
+        A list of ChatML pair dicts.
+    """
+    existing_count = _count_existing_lines(outfile)
+    resume = existing_count > 0
+    if resume:
+        print(f"[query_parser_v3] Resuming — {existing_count} pairs already written", flush=True)
+
+    fh = _open_incremental_writer(outfile, resume=resume)
+    pairs: list[dict] = []
+    pair_count = existing_count
+    data_sources = list(_ALLOWED_SEED_TABLES)
+
+    try:
+        for idx in range(count):
+            if idx < existing_count:
+                continue
+
+            question, entities, community_framing = _build_framing_example(idx)
+
+            pair = build_community_framing_pair(
+                question, entities, data_sources, community_framing,
+            )
+            pairs.append(pair)
+            _write_pair(fh, pair)
+            pair_count += 1
+
+            if pair_count % 50 == 0:
+                print(f"[query_parser_v3] {pair_count}/{count} pairs", flush=True)
+    finally:
+        if fh is not None:
+            fh.close()
+            print(f"[query_parser_v3] Saved {pair_count} pairs to {outfile}", flush=True)
+
+    return pairs
+
+
 def write_pairs_jsonl(
     pairs: list[dict],
     outfile: Union[str, Path, IO[str]],
@@ -1264,6 +1478,14 @@ def main(task: str) -> None:
             "query_parser_v2": lambda: generate_query_parser_pairs_v2(
                 conn, count=PARSER_V2_ENTITY_PAIRS,
                 outfile=PAIRS_DIR / "query_parser_v2.jsonl",
+            ),
+            "evaluator_v3": lambda: generate_doc_hallucination_pairs(
+                conn, count_per_subtask=DOC_EVALUATOR_PAIRS_PER_SUBTASK,
+                outfile=PAIRS_DIR / "evaluator_v3.jsonl",
+            ),
+            "query_parser_v3": lambda: generate_community_framing_pairs(
+                conn, count=COMMUNITY_FRAMING_PAIRS,
+                outfile=PAIRS_DIR / "query_parser_v3.jsonl",
             ),
         }
 

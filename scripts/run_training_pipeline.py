@@ -37,6 +37,7 @@ def main():
         choices=[
             "query_parser", "explainer", "evaluator",
             "evaluator_v2", "query_parser_v2",
+            "evaluator_v3", "query_parser_v3",
             "all",
         ],
         default="all",
@@ -45,10 +46,12 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    # v2 tasks map to their base task for the prepare stage
+    # v2/v3 tasks map to their base task for the prepare stage
     prepare_task = {
         "evaluator_v2": "evaluator",
+        "evaluator_v3": "evaluator",
         "query_parser_v2": "query_parser",
+        "query_parser_v3": "query_parser",
     }.get(args.task, args.task)
 
     if args.dry_run:
