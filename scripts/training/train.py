@@ -64,14 +64,14 @@ ADAPTER_CONFIGS = {
         "gguf_name": "d4bl-query-parser-qwen35",
     },
     "explainer": {
-        "r": 32,
+        "r": 16,
         "target_modules": [
             "q_proj", "k_proj", "v_proj", "o_proj",
             "gate_proj", "up_proj", "down_proj",
         ],
-        "lora_alpha": 64,
+        "lora_alpha": 32,
         "max_seq_length": 8192,
-        "epochs": 7,
+        "epochs": 4,
         "batch_size": 4,
         "grad_accum": 4,
         "warmup_steps": 30,

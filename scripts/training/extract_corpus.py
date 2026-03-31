@@ -17,6 +17,7 @@ from scripts.training.templates import (
     render_bjs_passage,
     render_cdc_passage,
     render_census_passage,
+    render_document_passage,
     render_epa_passage,
     render_fbi_passage,
     render_police_violence_passage,
@@ -85,6 +86,15 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
             "ORDER BY random() LIMIT %(limit)s"
         ),
         "template": render_fbi_passage,
+    },
+    "documents": {
+        "query": (
+            "SELECT dc.content, d.title, d.content_type "
+            "FROM document_chunks dc "
+            "JOIN documents d ON dc.document_id = d.id "
+            "ORDER BY random() LIMIT %(limit)s"
+        ),
+        "template": render_document_passage,
     },
 }
 

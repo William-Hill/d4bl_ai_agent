@@ -141,6 +141,66 @@ class ModelEvalRun(Base):
         }
 
 
+class Document(Base):
+    """Parent document: one row per source file/article/report."""
+    __tablename__ = "documents"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    title = Column(Text, nullable=True)
+    source_url = Column(Text, nullable=True)
+    storage_path = Column(Text, nullable=True)
+    content_type = Column(String(50), nullable=False)
+    source_key = Column(String(100), nullable=True)
+    job_id = Column(PG_UUID(as_uuid=True), ForeignKey("research_jobs.job_id"), nullable=True)
+    extraction_metadata = Column(JSONB, default=dict)
+    # "metadata" is reserved by SQLAlchemy's Declarative API; map to the same DB column name
+    extra_metadata = Column("metadata", JSONB, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "title": self.title,
+            "source_url": self.source_url,
+            "storage_path": self.storage_path,
+            "content_type": self.content_type,
+            "source_key": self.source_key,
+            "job_id": str(self.job_id) if self.job_id else None,
+            "extraction_metadata": self.extraction_metadata or {},
+            "metadata": self.extra_metadata or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DocumentChunk(Base):
+    """Child chunk: N chunks per document, each with its own embedding."""
+    __tablename__ = "document_chunks"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    document_id = Column(PG_UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    token_count = Column(Integer, nullable=True)
+    # embedding column (vector(1024)) is managed via raw SQL, not the ORM —
+    # same pattern as scraped_content_vectors. See vector_store.py and embedder.py.
+    # "metadata" is reserved by SQLAlchemy's Declarative API; map to the same DB column name
+    extra_metadata = Column("metadata", JSONB, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "document_id": str(self.document_id),
+            "content": self.content,
+            "chunk_index": self.chunk_index,
+            "token_count": self.token_count,
+            "metadata": self.extra_metadata or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class CensusIndicator(Base):
     """Race-disaggregated Census ACS indicators by geography."""
     __tablename__ = "census_indicators"
