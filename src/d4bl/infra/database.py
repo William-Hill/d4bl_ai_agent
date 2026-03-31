@@ -155,8 +155,8 @@ class Document(Base):
     extraction_metadata = Column(JSONB, default=dict)
     # "metadata" is reserved by SQLAlchemy's Declarative API; map to the same DB column name
     extra_metadata = Column("metadata", JSONB, default=dict)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
-    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
 
     def to_dict(self):
         return {
@@ -187,7 +187,7 @@ class DocumentChunk(Base):
     # same pattern as scraped_content_vectors. See vector_store.py and embedder.py.
     # "metadata" is reserved by SQLAlchemy's Declarative API; map to the same DB column name
     extra_metadata = Column("metadata", JSONB, default=dict)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     def to_dict(self):
         return {

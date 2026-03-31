@@ -59,8 +59,7 @@ class TestBuildCommunityFramingPair:
         assert len(pair["messages"]) == 3
 
         assistant_json = json.loads(pair["messages"][2]["content"])
-        assert assistant_json["community_framing"]["detected"] is True
-        assert assistant_json["community_framing"]["issue_domain"] == "housing"
+        assert assistant_json["community_framing"] == expected_framing
 
     def test_user_message_is_the_question(self):
         pair = build_community_framing_pair(

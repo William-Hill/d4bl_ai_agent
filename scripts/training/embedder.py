@@ -46,6 +46,10 @@ async def _embed_single(
     embedding = result.get("embedding")
     if not embedding:
         raise ValueError("No embedding in Ollama response")
+    if len(embedding) != EMBEDDING_DIM:
+        raise ValueError(
+            f"Embedding dimension mismatch: expected {EMBEDDING_DIM}, got {len(embedding)}"
+        )
     return embedding
 
 
@@ -64,6 +68,9 @@ async def batch_embed(
     Returns:
         List of embedding vectors (same order as input texts).
     """
+    if max_concurrency <= 0:
+        raise ValueError(f"max_concurrency must be positive, got {max_concurrency}")
+
     if ollama_url is None:
         ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 

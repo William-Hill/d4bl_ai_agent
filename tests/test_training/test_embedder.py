@@ -58,3 +58,54 @@ class TestBatchEmbed:
         call_args = mock_session.post.call_args
         sent_prompt = call_args[1]["json"]["prompt"]
         assert len(sent_prompt) <= 6000
+
+    @pytest.mark.asyncio
+    async def test_raises_on_non_200_response(self):
+        mock_response = AsyncMock()
+        mock_response.status = 500
+        mock_response.text = AsyncMock(return_value="Internal Server Error")
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            with pytest.raises(RuntimeError, match="500"):
+                await batch_embed(["hello"])
+
+    @pytest.mark.asyncio
+    async def test_raises_on_missing_embedding(self):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            with pytest.raises(ValueError, match="No embedding"):
+                await batch_embed(["hello"])
+
+    @pytest.mark.asyncio
+    async def test_raises_on_wrong_dimension(self):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"embedding": [0.1] * 512})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            with pytest.raises(ValueError, match="dimension mismatch"):
+                await batch_embed(["hello"])
