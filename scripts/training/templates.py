@@ -225,3 +225,29 @@ def render_fbi_passage(row: dict) -> str:
         f"This represents a rate of {rate_per_100k:.1f} per 100,000 people."
     )
     return passage
+
+
+def render_document_passage(row: dict) -> str:
+    """Render a document_chunks row as a training passage.
+
+    Wraps the chunk text with light metadata context. No heavy templating
+    needed since the text is already natural prose.
+
+    Args:
+        row: Dict with keys: content, title, content_type.
+
+    Returns:
+        A passage string, or empty string if content is missing.
+    """
+    content = (row.get("content") or "").strip()
+    if not content:
+        return ""
+
+    title = row.get("title") or ""
+    content_type = row.get("content_type") or "document"
+
+    header = f"Source: {content_type}"
+    if title:
+        header += f' — "{title}"'
+
+    return f"{header}\n{content}"
