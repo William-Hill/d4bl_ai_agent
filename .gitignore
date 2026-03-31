@@ -33,3 +33,4 @@ notebooks/training/outputs/
 
 # Model files (downloaded/generated, large)
 models/*.gguf
+pytest-of-william-meroxa/

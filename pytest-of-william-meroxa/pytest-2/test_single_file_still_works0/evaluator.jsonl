@@ -1,1 +1,0 @@
-{"messages": [{"role": "system", "content": "sys"}, {"role": "user", "content": "q1"}, {"role": "assistant", "content": "{\"a\":1}"}]}
