@@ -29,6 +29,7 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 from training.chunker import chunk_text
+from training.embedder import format_embedding_for_pg
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +355,7 @@ def _migrate_scraped_content(
             embedding_str: str | None = None
             if embedding is not None:
                 if isinstance(embedding, (list, tuple)):
-                    embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+                    embedding_str = format_embedding_for_pg(embedding)
                 elif isinstance(embedding, str):
                     embedding_str = embedding
 
@@ -394,12 +395,9 @@ def main(sources: list[str], dry_run: bool = False) -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    db_url = os.environ.get("DATABASE_URL") or os.environ.get("DAGSTER_POSTGRES_URL")
-    if not db_url:
-        logger.error("Set DATABASE_URL env var")
-        sys.exit(1)
+    from ingestion.helpers import get_db_connection
 
-    conn = psycopg2.connect(db_url)
+    conn = get_db_connection()
     try:
         for source in sources:
             fn = ALL_SOURCES.get(source)

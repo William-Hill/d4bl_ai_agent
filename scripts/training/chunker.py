@@ -52,12 +52,11 @@ def chunk_text(
 
         if current_sentences and current_tokens + sent_tokens > target_tokens:
             content = " ".join(current_sentences)
-            is_paragraph = "\n\n" in content
             chunks.append({
                 "content": content,
                 "chunk_index": chunk_index,
                 "token_count": _estimate_tokens(content),
-                "metadata": {"boundary": "paragraph" if is_paragraph else "sentence"},
+                "metadata": {"boundary": "sentence"},
             })
             chunk_index += 1
 

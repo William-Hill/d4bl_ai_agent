@@ -12,6 +12,8 @@ import json
 import logging
 from typing import Any
 
+import psycopg2.extras
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,25 +59,23 @@ def corpus_stats_for_training(conn: Any) -> dict:
         }
     }
     """
-    import psycopg2.extras
-
     doc_stats = query_corpus_metrics(conn)
 
-    # Count structured passages from existing extractors
+    # Count structured passages from existing extractors in a single query
     structured_tables = [
         "census_indicators", "cdc_health_outcomes", "epa_environmental_justice",
         "police_violence_incidents", "bjs_incarceration", "fbi_crime_stats",
     ]
     structured_count = 0
+    union_sql = " UNION ALL ".join(
+        f"SELECT COUNT(*) AS cnt FROM {t}" for t in structured_tables  # noqa: S608 — hardcoded allowlist
+    )
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        for table in structured_tables:
-            try:
-                cur.execute(
-                    f"SELECT COUNT(*) AS cnt FROM {table}"  # noqa: S608
-                )
-                structured_count += cur.fetchone()["cnt"]
-            except Exception:
-                pass
+        try:
+            cur.execute(union_sql)
+            structured_count = sum(row["cnt"] for row in cur.fetchall())
+        except psycopg2.errors.UndefinedTable:
+            logger.warning("Some structured tables don't exist yet; structured count may be incomplete")
 
     return {
         "corpus_version": "v3.0",
@@ -90,8 +90,6 @@ def corpus_stats_for_training(conn: Any) -> dict:
 
 def query_corpus_metrics(conn: Any) -> dict:
     """Query document corpus statistics from the database."""
-    import psycopg2.extras
-
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
             SELECT d.content_type,
@@ -109,8 +107,6 @@ def query_corpus_metrics(conn: Any) -> dict:
 
 def query_training_metrics(conn: Any) -> list[dict]:
     """Query model evaluation runs ordered by version."""
-    import psycopg2.extras
-
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
             SELECT model_version, task, metrics, ship_decision, created_at
@@ -123,8 +119,6 @@ def query_training_metrics(conn: Any) -> list[dict]:
 
 def query_research_quality(conn: Any) -> dict:
     """Query average evaluation scores across recent completed jobs."""
-    import psycopg2.extras
-
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
             SELECT eval_name, AVG(score) AS avg_score, COUNT(*) AS eval_count

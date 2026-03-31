@@ -52,6 +52,10 @@ class TestChunkText:
             assert len(chunks_with_overlap) >= len(chunks_no_overlap)
 
     def test_metadata_includes_boundary_type(self):
-        text = "First sentence. Second sentence.\n\nNew paragraph here."
+        text = "First sentence. Second sentence. Third sentence. Fourth sentence."
         chunks = chunk_text(text, target_tokens=8)
         assert all("boundary" in c.get("metadata", {}) for c in chunks)
+        # Boundary is "sentence" for mid-chunks, "end" for the last chunk
+        if len(chunks) > 1:
+            assert chunks[-1]["metadata"]["boundary"] == "end"
+            assert chunks[0]["metadata"]["boundary"] == "sentence"
