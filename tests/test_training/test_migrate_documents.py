@@ -55,3 +55,4 @@ class TestExtractResearchJobText:
         research_data = {"research_findings": "Finding text."}
         text = extract_research_job_text(result, research_data)
         assert "Report text" in text
+        assert "Finding text" in text

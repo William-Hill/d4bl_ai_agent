@@ -1,6 +1,6 @@
 """Tests for the batch embedder utility."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,20 +17,27 @@ class TestFormatEmbedding:
         assert format_embedding_for_pg([]) == "[]"
 
 
+def _make_mock_session(fake_embedding):
+    """Build a mock aiohttp session that supports async with session.post(...)."""
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"embedding": fake_embedding})
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = AsyncMock()
+    # session.post() must return an async context manager, not a coroutine
+    mock_session.post = MagicMock(return_value=mock_response)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    return mock_session
+
+
 class TestBatchEmbed:
     @pytest.mark.asyncio
     async def test_returns_embeddings_for_each_text(self):
         fake_embedding = [0.1] * 1024
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"embedding": fake_embedding})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session = _make_mock_session(fake_embedding)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             results = await batch_embed(["hello", "world"])
@@ -42,16 +49,7 @@ class TestBatchEmbed:
     async def test_truncates_long_text(self):
         long_text = "a " * 4000  # 8000 chars
         fake_embedding = [0.1] * 1024
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"embedding": fake_embedding})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session = _make_mock_session(fake_embedding)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             results = await batch_embed([long_text])

@@ -13,7 +13,7 @@ class TestBuildCorpusStats:
             {"content_type": "html", "chunk_count": 200, "total_tokens": 100000},
         ]
         stats = build_corpus_stats(rows)
-        assert stats["total_documents"] == 350
+        assert stats["total_chunks"] == 350
         assert stats["total_tokens"] == 130000
         assert stats["content_types"]["policy_bill"] == 100
         assert stats["content_types"]["research_report"] == 50
@@ -21,6 +21,6 @@ class TestBuildCorpusStats:
 
     def test_empty_rows(self):
         stats = build_corpus_stats([])
-        assert stats["total_documents"] == 0
+        assert stats["total_chunks"] == 0
         assert stats["total_tokens"] == 0
         assert stats["content_types"] == {}

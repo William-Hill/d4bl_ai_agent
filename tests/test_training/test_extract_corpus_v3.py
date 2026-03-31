@@ -1,7 +1,7 @@
 """Tests for document corpus extraction (v3)."""
 
-from scripts.training.templates import render_document_passage
 from scripts.training.extract_corpus import EXTRACTORS
+from scripts.training.templates import render_document_passage
 
 
 class TestRenderDocumentPassage:
@@ -36,4 +36,4 @@ class TestDocumentsExtractor:
         ext = EXTRACTORS["documents"]
         assert "query" in ext
         assert "template" in ext
-        assert callable(ext["template"])
+        assert ext["template"] is render_document_passage

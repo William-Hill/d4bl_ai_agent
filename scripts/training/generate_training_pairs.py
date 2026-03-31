@@ -27,9 +27,7 @@ from pathlib import Path
 from typing import IO, Any, Union
 
 from scripts.training.config import (
-    COMMUNITY_FRAMING_PAIRS,
     DISTILLATION_MODEL,
-    DOC_EVALUATOR_PAIRS_PER_SUBTASK,
     EVALUATOR_PAIRS_PER_SUBTASK,
     EVALUATOR_V2_PAIRS_PER_SUBTASK,
     PAIRS_DIR,

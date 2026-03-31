@@ -183,6 +183,8 @@ class DocumentChunk(Base):
     content = Column(Text, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     token_count = Column(Integer, nullable=True)
+    # embedding column (vector(1024)) is managed via raw SQL, not the ORM —
+    # same pattern as scraped_content_vectors. See vector_store.py and embedder.py.
     # "metadata" is reserved by SQLAlchemy's Declarative API; map to the same DB column name
     extra_metadata = Column("metadata", JSONB, default=dict)
     created_at = Column(DateTime, nullable=False, default=_utc_now)

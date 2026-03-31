@@ -27,7 +27,7 @@ def build_corpus_stats(rows: list[dict]) -> dict:
         Dict with total_documents, total_tokens, and content_types breakdown.
     """
     content_types: dict[str, int] = {}
-    total_docs = 0
+    total_chunks = 0
     total_tokens = 0
 
     for row in rows:
@@ -35,11 +35,11 @@ def build_corpus_stats(rows: list[dict]) -> dict:
         count = row["chunk_count"]
         tokens = row["total_tokens"]
         content_types[ct] = count
-        total_docs += count
+        total_chunks += count
         total_tokens += tokens
 
     return {
-        "total_documents": total_docs,
+        "total_chunks": total_chunks,
         "total_tokens": total_tokens,
         "content_types": content_types,
     }
@@ -81,7 +81,7 @@ def corpus_stats_for_training(conn: Any) -> dict:
         "corpus_version": "v3.0",
         "corpus_stats": {
             "structured_passages": structured_count,
-            "unstructured_passages": doc_stats["total_documents"],
+            "unstructured_passages": doc_stats["total_chunks"],
             "content_types": doc_stats["content_types"],
             "total_tokens": doc_stats["total_tokens"],
         },
@@ -156,7 +156,7 @@ def main(as_json: bool = False) -> dict:
     else:
         print("\n=== D4BL Data Flywheel Metrics ===\n")
         print("1. Corpus (Documents In)")
-        print(f"   Total chunks: {corpus['total_documents']}")
+        print(f"   Total chunks: {corpus['total_chunks']}")
         print(f"   Total tokens: {corpus['total_tokens']:,}")
         for ct, count in corpus["content_types"].items():
             print(f"     {ct}: {count}")

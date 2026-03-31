@@ -33,15 +33,15 @@ async def _embed_single(
     if len(text) > MAX_TEXT_LENGTH:
         text = text[:MAX_TEXT_LENGTH]
 
-    response = await session.post(
+    async with session.post(
         f"{ollama_url}/api/embeddings",
         json={"model": EMBEDDING_MODEL, "prompt": text},
         timeout=aiohttp.ClientTimeout(total=30),
-    )
-    if response.status != 200:
-        body = await response.text()
-        raise RuntimeError(f"Ollama embedding API returned {response.status}: {body}")
-    result = await response.json()
+    ) as response:
+        if response.status != 200:
+            body = await response.text()
+            raise RuntimeError(f"Ollama embedding API returned {response.status}: {body}")
+        result = await response.json()
 
     embedding = result.get("embedding")
     if not embedding:

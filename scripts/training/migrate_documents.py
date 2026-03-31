@@ -189,9 +189,14 @@ def _insert_document_and_chunks(
         chunks = [{
             "content": text,
             "chunk_index": 0,
-            "token_count": max(1, len(text.split())),
+            "token_count": max(1, int(len(text.split()) * 1.3)),
             "metadata": {"boundary": "end"},
         }]
+
+    # Only preserve embedding for single-chunk documents; multi-chunk documents
+    # need per-chunk embeddings which must be recomputed (a document-level vector
+    # is meaningless for individual chunks in semantic search).
+    use_embedding = embedding if len(chunks) == 1 else None
 
     for chunk in chunks:
         chunk_params = {
@@ -201,8 +206,8 @@ def _insert_document_and_chunks(
             "token_count": chunk["token_count"],
             "metadata": json.dumps(chunk.get("metadata", {})),
         }
-        if embedding is not None:
-            chunk_params["embedding"] = embedding
+        if use_embedding is not None:
+            chunk_params["embedding"] = use_embedding
             cur.execute(_INSERT_CHUNK_WITH_EMBEDDING_SQL, chunk_params)
         else:
             cur.execute(_INSERT_CHUNK_SQL, chunk_params)
