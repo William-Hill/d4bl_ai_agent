@@ -486,3 +486,62 @@ def build_evaluator_prompt(task: str, context: str, model_output: str) -> str:
             f"{', '.join(sorted(_EVALUATOR_TEMPLATES))}"
         )
     return template.format(context=context, model_output=model_output)
+
+
+# ---------------------------------------------------------------------------
+# Community framing: topic_tags → issue_domain mapping
+# ---------------------------------------------------------------------------
+
+TOPIC_TAG_TO_ISSUE_DOMAIN: dict[str, str] = {
+    "housing": "housing",
+    "rent": "housing",
+    "tenant": "housing",
+    "eviction": "housing",
+    "affordable housing": "housing",
+    "criminal justice": "criminal_justice",
+    "police": "criminal_justice",
+    "prison": "criminal_justice",
+    "incarceration": "criminal_justice",
+    "sentencing": "criminal_justice",
+    "voting rights": "voting_rights",
+    "ballot": "voting_rights",
+    "redistricting": "voting_rights",
+    "gerrymandering": "voting_rights",
+    "education": "education",
+    "school": "education",
+    "student": "education",
+    "health care": "health",
+    "medicaid": "health",
+    "hospital": "health",
+    "mental health": "health",
+    "income": "economic_justice",
+    "poverty": "economic_justice",
+    "economic inequality": "economic_justice",
+    "wealth": "economic_justice",
+    "environment": "environmental_justice",
+    "pollution": "environmental_justice",
+    "climate": "environmental_justice",
+}
+
+STRUCTURAL_FRAMES: dict[str, list[str]] = {
+    "housing": ["economic_displacement", "gentrification", "redlining", "disinvestment"],
+    "criminal_justice": ["over_policing", "mass_incarceration", "sentencing_disparity"],
+    "voting_rights": ["voter_suppression", "gerrymandering", "disenfranchisement"],
+    "education": ["school_to_prison_pipeline", "funding_disparity", "segregation"],
+    "health": ["healthcare_access", "environmental_racism", "insurance_disparity"],
+    "economic_justice": ["wealth_gap", "wage_disparity", "hiring_discrimination"],
+    "environmental_justice": ["toxic_exposure", "environmental_racism", "climate_injustice"],
+}
+
+COMMUNITY_FRAMING_QUESTION_TEMPLATES: list[str] = [
+    "Our community in {state} is fighting {issue} — what does the data show?",
+    "As an organizer, I need to understand {issue} disparities for {race} families in {state}.",
+    "What policies could address {issue} in {state}? Show me the data.",
+    "Why is {issue} so much worse for {race} residents in {state} compared to white residents?",
+    "Help me explain {issue} data to my neighbors in {state} — what should they know?",
+    "What structural factors drive {issue} in {state}?",
+    "How has {issue} changed in {state} over the past decade for {race} communities?",
+    "Is there data connecting {issue} to {related_issue} in {state}?",
+    "What does {bill_number} do about {issue}? Does the data support it?",
+    "Our {race} community in {state} is being displaced — what does {issue} data reveal?",
+]
