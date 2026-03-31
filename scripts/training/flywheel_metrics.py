@@ -43,6 +43,51 @@ def build_corpus_stats(rows: list[dict]) -> dict:
     }
 
 
+def corpus_stats_for_training(conn: Any) -> dict:
+    """Generate corpus composition stats for tagging a training run.
+
+    Returns a dict suitable for embedding in model_eval_runs.metrics:
+    {
+        "corpus_version": "v3.0",
+        "corpus_stats": {
+            "structured_passages": <int>,
+            "unstructured_passages": <int>,
+            "content_types": {"research_report": N, "policy_bill": N, ...},
+            "total_tokens": <int>,
+        }
+    }
+    """
+    import psycopg2.extras
+
+    doc_stats = query_corpus_metrics(conn)
+
+    # Count structured passages from existing extractors
+    structured_tables = [
+        "census_indicators", "cdc_health_outcomes", "epa_environmental_justice",
+        "police_violence_incidents", "bjs_incarceration", "fbi_crime_stats",
+    ]
+    structured_count = 0
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        for table in structured_tables:
+            try:
+                cur.execute(
+                    f"SELECT COUNT(*) AS cnt FROM {table}"  # noqa: S608
+                )
+                structured_count += cur.fetchone()["cnt"]
+            except Exception:
+                pass
+
+    return {
+        "corpus_version": "v3.0",
+        "corpus_stats": {
+            "structured_passages": structured_count,
+            "unstructured_passages": doc_stats["total_documents"],
+            "content_types": doc_stats["content_types"],
+            "total_tokens": doc_stats["total_tokens"],
+        },
+    }
+
+
 def query_corpus_metrics(conn: Any) -> dict:
     """Query document corpus statistics from the database."""
     import psycopg2.extras
