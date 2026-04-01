@@ -44,6 +44,24 @@ TASK_MODELS: dict[str, str] = {
     "evaluator": "d4bl-evaluator",
 }
 
+# Evaluator subtask dispatch: system prompt substring → Ollama model name
+_EVALUATOR_SUBTASK_MODELS: dict[str, str] = {
+    "factually grounded": "d4bl-evaluator-hallucination",
+    "how relevant": "d4bl-evaluator-relevance",
+    "harmful bias": "d4bl-evaluator-bias",
+    "equity-centered": "d4bl-evaluator-equity-framing",
+}
+
+
+def _resolve_evaluator_model(system_prompt: str | None) -> str:
+    """Pick the subtask-specific evaluator model based on the system prompt."""
+    if system_prompt:
+        lower = system_prompt.lower()
+        for keyword, model in _EVALUATOR_SUBTASK_MODELS.items():
+            if keyword in lower:
+                return model
+    return TASK_MODELS["evaluator"]
+
 
 def resolve_model_name(model_override: str | None, task: str) -> str:
     """Resolve inference model: --model override takes precedence over TASK_MODELS."""
@@ -113,16 +131,24 @@ async def run_task_eval(
     start = time.monotonic()
     outputs: list[dict] = []
 
-    for example in test_set:
+    total = len(test_set)
+    for i, example in enumerate(test_set, 1):
+        # For evaluator task, dispatch to subtask-specific model
+        effective_model = model_name
+        if task == "evaluator":
+            effective_model = _resolve_evaluator_model(example.get("system"))
+
         try:
             raw, latency = await _run_prompt(
-                base_url, model_name, example["input"]
+                base_url, effective_model, example["input"]
             )
         except Exception as e:
             logger.warning("Prompt failed: %s", e)
             raw, latency = str(e), 0.0
 
         outputs.append({"raw": raw, "latency": latency})
+        if i % 10 == 0 or i == total:
+            logger.info("[%s] %d/%d examples (%.0fms)", task, i, total, latency * 1000)
 
     # Compute task-specific metrics
     if task == "query_parser":

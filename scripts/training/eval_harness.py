@@ -22,7 +22,8 @@ def load_test_set(path: str) -> list[dict]:
     """Load a ChatML JSONL test set and extract input/expected pairs.
 
     Each line is ``{"messages": [system, user, assistant]}``.
-    Returns list of ``{"input": str, "expected_raw": str, "expected": dict|None}``.
+    Returns list of ``{"input": str, "expected_raw": str, "expected": dict|None,
+    "system": str|None}``.
     """
     results = []
     text = Path(path).read_text().strip()
@@ -33,6 +34,7 @@ def load_test_set(path: str) -> list[dict]:
             continue
         example = json.loads(line)
         messages = example["messages"]
+        system_msg = messages[0]["content"] if messages[0]["role"] == "system" else None
         user_msg = messages[1]["content"]
         assistant_msg = messages[2]["content"]
         try:
@@ -43,6 +45,7 @@ def load_test_set(path: str) -> list[dict]:
             "input": user_msg,
             "expected_raw": assistant_msg,
             "expected": expected,
+            "system": system_msg,
         })
     return results
 
