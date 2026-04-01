@@ -2,7 +2,7 @@
 
 **Rolling document tracking model training experiments, methodology, and results.**
 **Started:** 2026-03-25
-**Last updated:** 2026-03-31
+**Last updated:** 2026-04-01
 
 ---
 
@@ -14,6 +14,17 @@
 | 2 | 2026-03-25 | Sprint 2.5 JSON fix | Qwen2.5-3B | 11/11 integration tests passing |
 | 3 | 2026-03-29 | v2 Qwen 3.5 upgrade | Qwen3.5-4B | Base model upgrade, v2 training data |
 | 4 | 2026-03-31 | v3 document layer + subtask dispatch | Qwen3.5-4B | Parser entity F1 +16pp, evaluator 0%->84% |
+| 5 | 2026-04-01 | v3.1 expanded state coverage (FAILED) | Qwen3.5-4B | Domain re-adaptation broke evaluator output format |
+
+## Cumulative Cost
+
+| Experiment | Claude API | Colab Compute | Cumulative Total |
+|------------|-----------|---------------|------------------|
+| 1. Sprint 2 baseline | ~$15.00 | ~$4.00 | ~$19.00 |
+| 2. Sprint 2.5 JSON fix | ~$15.00 | ~$4.00 | ~$38.00 |
+| 3. v2 Qwen 3.5 upgrade | $0.02 (resume) | ~$4.00 | ~$42.02 |
+| 4. v3 document layer | $0.59 | ~$4.00 | ~$46.61 |
+| 5. v3.1 expanded states (FAILED) | $0.59 | ~$4.00 | **~$51.20** |
 
 ---
 
@@ -225,6 +236,75 @@ Latency is MacBook CPU inference, not representative of production (GPU).
 | Doc hallucination pair generation (175 Claude calls) | $0.59 |
 | Colab A100 training (1h 55m) | ~$4.00 |
 | **Total incremental cost for v3** | **~$4.59** |
+
+---
+
+## Experiment 5: v3.1 Expanded State Coverage (FAILED)
+
+**Date:** 2026-04-01
+**Status:** Failed — reverted to v3 evaluator GGUF
+
+### Observation
+
+The v3 evaluator scored 84% hallucination accuracy but was trained on document chunks from only 4 states (AL, AK, AR, AZ). Expanding to 8 states (adding MS, GA, CA, NY) would increase document diversity from 1,849 to 2,896 bills across more geographic and policy contexts.
+
+### Hypothesis
+
+Training the evaluator on document chunks from 8 states instead of 4 would improve hallucination detection accuracy past the 85% ship threshold by exposing the model to more diverse policy language patterns.
+
+### Methodology
+
+1. Expanded OpenStates ingestion to 8 states (added 1,047 new D4BL-relevant bills)
+2. Re-extracted corpus: 44,235 passages (was 43,188)
+3. Regenerated evaluator_v3 pairs from the expanded document pool (350 pairs, $0.59)
+4. Re-ran domain adaptation on the expanded corpus (required because corpus changed)
+5. Skipped parser/explainer adapters (unchanged data)
+6. Retrained evaluator adapter on the new domain-adapted base
+
+#### Training health (appeared normal)
+
+| Phase | Train Loss | Eval Loss | Overfit Ratio | Duration |
+|-------|-----------|-----------|---------------|----------|
+| Domain Adaptation | 0.481 | — | — | 59m 14s |
+| Evaluator | 0.551 | 0.603 | 1.09 | 33m 20s |
+
+### Results
+
+**Catastrophic failure.** The retrained evaluator produced verbose prose, `<think>` reasoning blocks, and wrong JSON schemas instead of `{"label": "FACTUAL/HALLUCINATED"}`.
+
+| Metric | v3 (working) | v3.1 (broken) |
+|--------|-------------|---------------|
+| hallucination_accuracy | 84% | 0.5% |
+| relevance_mae | 1.53 | 4.00 |
+
+### Root Cause Analysis
+
+**Domain adaptation interference.** Re-running Phase 1 (domain adaptation) on the slightly expanded corpus (44,235 vs 43,188 passages) produced a new `domain_merged` checkpoint with different base weights. The evaluator LoRA, trained on this new base, lost its ability to produce terse JSON output.
+
+Key factors:
+- The domain corpus teaches the model to produce **prose passages** (the training format)
+- The evaluator LoRA (r=16, attention-only) is too small to fully override the base model's prose tendency when the base weights shift
+- The previous v3 evaluator worked because its LoRA was trained on a specific domain-adapted base — the LoRA and base were "co-adapted"
+- Even though the domain adaptation loss was nearly identical (0.481 vs 0.485), the internal weight distribution changed enough to break the evaluator's output behavior
+
+### Resolution
+
+Reverted to the v3 evaluator GGUF (March 31 training run) which produces correct output. The v3 parser and explainer GGUFs were unaffected (those adapters were skipped during v3.1 training).
+
+### Lessons Learned
+
+1. **Never re-run domain adaptation without retraining ALL task adapters.** The domain-merged checkpoint is the foundation — changing it invalidates all existing LoRA adapters.
+2. **Preserve the domain_merged checkpoint on Drive** before any re-training run. Back it up to a versioned directory (e.g., `domain_merged_v3/`).
+3. **The evaluator is the most fragile adapter** (r=16, attention-only, multiple output schemas). It's the first to break when the base shifts.
+4. **For incremental data additions (small corpus changes), retrain only the task adapter WITHOUT re-running domain adaptation.** Use `--phases evaluator` to skip Phase 1.
+
+### Cost
+
+| Item | Cost |
+|------|------|
+| Doc hallucination pair generation (175 Claude calls) | $0.59 |
+| Colab A100 training (~48 min) | ~$4.00 |
+| **Total (wasted)** | **~$4.59** |
 
 ---
 

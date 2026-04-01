@@ -1,10 +1,10 @@
 FROM ./d4bl-evaluator-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.1
 PARAMETER num_ctx 4096
-PARAMETER num_predict 64
+PARAMETER num_predict 512
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
-Determine whether the model output is factually grounded in the provided context. Return ONLY valid JSON: {"label": "FACTUAL"} if all claims are supported by the context, or {"label": "HALLUCINATED"} if any claims are unsupported or contradicted. Do not use thinking tags or reasoning blocks.<|im_end|>
+Determine whether the model output is factually grounded in the provided context. Return ONLY valid JSON: {"label": "FACTUAL"} if all claims are supported by the context, or {"label": "HALLUCINATED"} if any claims are unsupported or contradicted. Do not reason or explain. Output only the JSON object.<|im_end|>
 <|im_start|>user
 {{ .Prompt }}<|im_end|>
 <|im_start|>assistant

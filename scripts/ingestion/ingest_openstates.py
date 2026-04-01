@@ -155,21 +155,28 @@ def _map_status(status_text):
     return "other"
 
 
-# Cap pages per query to avoid over-fetching
-_MAX_PAGES = 10
+# Cap pages per query — 50 pages x 20 per_page = 1000 bills max per state
+_MAX_PAGES = 50
 
 
 def _api_get(client, params):
-    """GET with retry on 429 (exponential backoff, up to 3 attempts)."""
-    for attempt in range(3):
+    """GET with retry on 429, 5xx, and timeouts (exponential backoff, up to 4 attempts)."""
+    resp = None
+    for attempt in range(4):
         if attempt > 0:
-            wait = 10 * (2 ** (attempt - 1))  # 10s, 20s on retries
-            print(f"    429 rate-limited, waiting {wait}s...")
+            wait = 15 * (2 ** (attempt - 1))  # 15s, 30s, 60s on retries
+            print(f"    Retry {attempt}/3 — waiting {wait}s...", flush=True)
             time.sleep(wait)
-        resp = client.get(OPENSTATES_URL, params=params, timeout=60)
-        if resp.status_code != 429:
-            time.sleep(2)  # rate-limit courtesy delay after success
-            return resp
+        try:
+            resp = client.get(OPENSTATES_URL, params=params, timeout=120)
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, OSError) as exc:
+            print(f"    Timeout on attempt {attempt + 1}: {exc}", flush=True)
+            continue
+        if resp.status_code == 429 or resp.status_code >= 500:
+            print(f"    {resp.status_code} on attempt {attempt + 1}", flush=True)
+            continue
+        time.sleep(3)  # rate-limit courtesy delay after success
+        return resp
     return resp
 
 
@@ -200,14 +207,20 @@ def _fetch_bills_for_state(client, api_key, jurisdiction, session_id):
             params["session"] = session_id
 
         resp = _api_get(client, params)
-        resp.raise_for_status()
+        if resp is None or resp.status_code >= 400:
+            print(f"    Stopping at page {page} — API error (keeping {len(bills)} fetched so far)")
+            break
         data = resp.json()
 
         results = data.get("results", [])
         bills.extend(results)
 
         pagination = data.get("pagination", {})
-        if page >= pagination.get("max_page", 1):
+        max_page = pagination.get("max_page", 1)
+        total_items = pagination.get("total_items", "?")
+        print(f"    page {page}/{max_page} — {len(bills)}/{total_items} fetched", flush=True)
+
+        if page >= max_page:
             break
         page += 1
 
@@ -242,7 +255,7 @@ def main():
     )
 
     try:
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=120) as client:
             for state_slug in states:
                 abbrev, full_name = STATE_MAP.get(
                     state_slug, (state_slug.upper(), state_slug)
