@@ -162,7 +162,14 @@ class Settings:
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
 
         # Embedder provider (for CrewAI memory)
-        _set("embedder_provider", os.getenv("EMBEDDER_PROVIDER", "ollama").lower())
+        embedder_provider_raw = os.getenv("EMBEDDER_PROVIDER", "ollama").lower()
+        allowed_embedders = {"ollama", "google"}
+        if embedder_provider_raw not in allowed_embedders:
+            raise ValueError(
+                f"Invalid EMBEDDER_PROVIDER: '{embedder_provider_raw}'. "
+                f"Allowed values are: {', '.join(sorted(allowed_embedders))}"
+            )
+        _set("embedder_provider", embedder_provider_raw)
 
         # Fine-tuned task models
         _set("query_parser_model", os.getenv("QUERY_PARSER_MODEL", ""))

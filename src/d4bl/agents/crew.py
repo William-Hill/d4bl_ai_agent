@@ -193,6 +193,11 @@ class D4Bl():
         embedder_provider = settings.embedder_provider
 
         if embedder_provider == "google":
+            if not settings.llm_api_key:
+                raise ValueError(
+                    "Google embedder selected but LLM_API_KEY is not set. "
+                    "Please set the LLM_API_KEY environment variable."
+                )
             embedder_config = {
                 "provider": "google-generativeai",
                 "config": {
@@ -268,4 +273,3 @@ class D4Bl():
             memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
             embedder=embedder_config,
         )
-
