@@ -11,7 +11,7 @@ class TestBuildLlmModelString:
 
     def test_gemini_provider(self) -> None:
         from d4bl.llm.provider import build_llm_model_string
-        assert build_llm_model_string("gemini", "gemini-2.0-flash") == "gemini/gemini-2.0-flash"
+        assert build_llm_model_string("gemini", "gemini-2.5-flash") == "gemini/gemini-2.5-flash"
 
     def test_openai_provider(self) -> None:
         from d4bl.llm.provider import build_llm_model_string
@@ -50,7 +50,7 @@ class TestGetLlm:
         reset_llm()
         mock_settings = MagicMock()
         mock_settings.llm_provider = "gemini"
-        mock_settings.llm_model = "gemini-2.0-flash"
+        mock_settings.llm_model = "gemini-2.5-flash"
         mock_settings.llm_api_key = "test-gemini-key"
         mock_settings.ollama_base_url = "http://localhost:11434"
         mock_get_settings.return_value = mock_settings
@@ -59,7 +59,7 @@ class TestGetLlm:
 
         mock_llm_cls.assert_called_once()
         call_kwargs = mock_llm_cls.call_args[1]
-        assert call_kwargs["model"] == "gemini/gemini-2.0-flash"
+        assert call_kwargs["model"] == "gemini/gemini-2.5-flash"
         assert call_kwargs["api_key"] == "test-gemini-key"
         assert "base_url" not in call_kwargs
         reset_llm()
@@ -71,14 +71,14 @@ class TestGetAvailableModels:
         from d4bl.llm.provider import get_available_models
         mock_settings = MagicMock()
         mock_settings.llm_provider = "gemini"
-        mock_settings.llm_model = "gemini-2.0-flash"
+        mock_settings.llm_model = "gemini-2.5-flash"
         mock_get_settings.return_value = mock_settings
 
         models = get_available_models()
         assert len(models) >= 1
         default_model = next(m for m in models if m["is_default"])
         assert default_model["provider"] == "gemini"
-        assert default_model["model"] == "gemini-2.0-flash"
+        assert default_model["model"] == "gemini-2.5-flash"
 
 
 class TestGetLlmForTask:

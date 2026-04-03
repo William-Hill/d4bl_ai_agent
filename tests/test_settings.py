@@ -210,8 +210,8 @@ class TestFieldDefaults:
         assert s.llm_model == "mistral"
 
     def test_llm_model_from_env(self) -> None:
-        s = _fresh_settings(LLM_MODEL="gemini-2.0-flash")
-        assert s.llm_model == "gemini-2.0-flash"
+        s = _fresh_settings(LLM_MODEL="gemini-2.5-flash")
+        assert s.llm_model == "gemini-2.5-flash"
 
     def test_llm_api_key_default_none(self) -> None:
         s = _fresh_settings(LLM_API_KEY=None)

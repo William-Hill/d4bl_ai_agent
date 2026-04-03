@@ -103,7 +103,7 @@ flyctl apps create d4bl-crawl4ai
 ```bash
 flyctl secrets set \
   LLM_PROVIDER=gemini \
-  LLM_MODEL=gemini-2.0-flash \
+  LLM_MODEL=gemini-2.5-flash \
   LLM_API_KEY=<your-gemini-api-key> \
   POSTGRES_HOST=db.<project-ref>.supabase.co \
   POSTGRES_PORT=5432 \

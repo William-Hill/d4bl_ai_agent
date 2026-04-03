@@ -15,8 +15,8 @@ async def test_get_models_returns_list():
     mock_models = [
         {
             "provider": "gemini",
-            "model": "gemini-2.0-flash",
-            "model_string": "gemini/gemini-2.0-flash",
+            "model": "gemini-2.5-flash",
+            "model_string": "gemini/gemini-2.5-flash",
             "is_default": True,
         }
     ]
@@ -35,8 +35,8 @@ async def test_get_models_returns_list():
 def test_research_request_accepts_model():
     """ResearchRequest schema should accept an optional model field."""
     from d4bl.app.schemas import ResearchRequest
-    req = ResearchRequest(query="test query", model="gemini/gemini-2.0-flash")
-    assert req.model == "gemini/gemini-2.0-flash"
+    req = ResearchRequest(query="test query", model="gemini/gemini-2.5-flash")
+    assert req.model == "gemini/gemini-2.5-flash"
 
 
 def test_research_request_model_defaults_none():
@@ -70,7 +70,7 @@ def test_cloud_provider_requires_api_key():
     from d4bl.llm.provider import reset_llm
 
     reset_llm()
-    with patch.dict("os.environ", {"LLM_PROVIDER": "gemini", "LLM_MODEL": "gemini-2.0-flash"}, clear=False):
+    with patch.dict("os.environ", {"LLM_PROVIDER": "gemini", "LLM_MODEL": "gemini-2.5-flash"}, clear=False):
         # Clear LLM_API_KEY if set
         with patch.dict("os.environ", {"LLM_API_KEY": ""}, clear=False):
             from d4bl.settings import get_settings
