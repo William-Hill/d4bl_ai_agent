@@ -58,6 +58,9 @@ class Settings:
     llm_model: str = field(init=False)
     llm_api_key: str | None = field(init=False)
 
+    # -- Embedder provider (for CrewAI memory) --
+    embedder_provider: str = field(init=False)
+
     # -- Fine-tuned task models (empty = use llm_model / ollama_model) --
     query_parser_model: str = field(init=False)
     explainer_model: str = field(init=False)
@@ -157,6 +160,9 @@ class Settings:
         _set("llm_provider", os.getenv("LLM_PROVIDER", "ollama").lower())
         _set("llm_model", os.getenv("LLM_MODEL", "mistral"))
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
+
+        # Embedder provider (for CrewAI memory)
+        _set("embedder_provider", os.getenv("EMBEDDER_PROVIDER", "ollama").lower())
 
         # Fine-tuned task models
         _set("query_parser_model", os.getenv("QUERY_PARSER_MODEL", ""))

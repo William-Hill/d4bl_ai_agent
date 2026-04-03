@@ -189,19 +189,25 @@ class D4Bl():
     @crew
     def crew(self) -> Crew:
         """Creates the D4Bl crew"""
-        ollama_base_url = get_settings().ollama_base_url
-        embedder_model = "mxbai-embed-large"
+        settings = get_settings()
+        embedder_provider = settings.embedder_provider
 
-        # Construct the embedder configuration
-        # CrewAI requires explicit embedder config to avoid defaulting to OpenAI
-        # Note: Use "url" pointing to /api/embeddings endpoint, not "base_url"
-        embedder_config = {
-            "provider": "ollama",
-            "config": {
-                "model_name": embedder_model,
-                "url": f"{ollama_base_url}/api/embeddings"
+        if embedder_provider == "google":
+            embedder_config = {
+                "provider": "google-generativeai",
+                "config": {
+                    "api_key": settings.llm_api_key,
+                    "model_name": "models/gemini-embedding-001",
+                }
             }
-        }
+        else:
+            embedder_config = {
+                "provider": "ollama",
+                "config": {
+                    "model_name": "mxbai-embed-large",
+                    "url": f"{settings.ollama_base_url}/api/embeddings"
+                }
+            }
 
         # Filter agents and tasks if selected_agents is specified
         agents_to_use = self.agents

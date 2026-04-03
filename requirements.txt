@@ -5,6 +5,7 @@ uvicorn[standard]>=0.30.0
 
 # CrewAI and AI Agent Framework
 crewai[tools,google-genai]==1.5.0
+google-generativeai>=0.8.0  # Google AI embeddings for CrewAI memory
 
 # Database
 sqlalchemy>=2.0.0
