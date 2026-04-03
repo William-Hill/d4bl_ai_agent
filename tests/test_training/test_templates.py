@@ -15,6 +15,7 @@ from scripts.training.templates import (
 # Census
 # ---------------------------------------------------------------------------
 
+
 class TestRenderCensusPassage:
     def test_contains_geography_name(self):
         row = {
@@ -112,6 +113,7 @@ class TestRenderCensusPassage:
 # CDC
 # ---------------------------------------------------------------------------
 
+
 class TestRenderCdcPassage:
     CDC_ROW = {
         "geography_name": "Alabama",
@@ -147,6 +149,7 @@ class TestRenderCdcPassage:
 # ---------------------------------------------------------------------------
 # EPA
 # ---------------------------------------------------------------------------
+
 
 class TestRenderEpaPassage:
     EPA_ROW = {
@@ -188,6 +191,7 @@ class TestRenderEpaPassage:
 # Police Violence
 # ---------------------------------------------------------------------------
 
+
 class TestRenderPoliceViolencePassage:
     PV_ROW = {
         "city": "Denver",
@@ -222,6 +226,7 @@ class TestRenderPoliceViolencePassage:
 # BJS
 # ---------------------------------------------------------------------------
 
+
 class TestRenderBjsPassage:
     BJS_ROW = {
         "state_name": "Texas",
@@ -254,6 +259,7 @@ class TestRenderBjsPassage:
 # ---------------------------------------------------------------------------
 # FBI
 # ---------------------------------------------------------------------------
+
 
 class TestRenderFbiPassage:
     FBI_ROW = {

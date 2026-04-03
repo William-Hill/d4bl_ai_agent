@@ -1,4 +1,5 @@
 """Test that the evaluation runner uses the task-specific evaluator model."""
+
 from unittest.mock import MagicMock, patch
 
 
@@ -12,9 +13,6 @@ class TestRunnerModelRouting:
         mock_langfuse.return_value = None  # Skip Langfuse (returns SKIPPED)
         mock_get_task_llm.return_value = MagicMock()
 
-        run_comprehensive_evaluation(
-            query="test", research_output="test output", sources=[]
-        )
+        run_comprehensive_evaluation(query="test", research_output="test output", sources=[])
 
         mock_get_task_llm.assert_called_once_with("evaluator")
-

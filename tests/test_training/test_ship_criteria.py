@@ -1,4 +1,5 @@
 """Tests for ship/no-ship criteria checker."""
+
 from __future__ import annotations
 
 import pytest
@@ -19,9 +20,7 @@ class TestShipCriteria:
         for task, criteria in SHIP_CRITERIA.items():
             for metric, spec in criteria.items():
                 assert "blocking" in spec, f"{task}.{metric} missing 'blocking'"
-                assert "min" in spec or "max" in spec, (
-                    f"{task}.{metric} needs 'min' or 'max'"
-                )
+                assert "min" in spec or "max" in spec, f"{task}.{metric} needs 'min' or 'max'"
 
 
 class TestCheckShipCriteria:

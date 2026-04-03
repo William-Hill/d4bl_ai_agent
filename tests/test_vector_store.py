@@ -64,14 +64,10 @@ class TestVectorStore:
         assert len(sent_json["prompt"]) <= 6000
 
     @pytest.mark.asyncio
-    async def test_store_scraped_content_calls_generate_embedding(
-        self, mock_db_session
-    ):
+    async def test_store_scraped_content_calls_generate_embedding(self, mock_db_session):
         """store_scraped_content should generate embedding and insert."""
         job_id = uuid4()
-        self.store.generate_embedding = AsyncMock(
-            return_value=[0.1] * 1024
-        )
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
         mock_db_session.execute = AsyncMock(
             return_value=MagicMock(scalar_one=MagicMock(return_value=uuid4()))
         )
@@ -88,9 +84,7 @@ class TestVectorStore:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_store_scraped_content_skips_short_content(
-        self, mock_db_session
-    ):
+    async def test_store_scraped_content_skips_short_content(self, mock_db_session):
         """store_scraped_content should skip content that is too short."""
         job_id = uuid4()
 
@@ -104,13 +98,9 @@ class TestVectorStore:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_search_similar_generates_query_embedding(
-        self, mock_db_session
-    ):
+    async def test_search_similar_generates_query_embedding(self, mock_db_session):
         """search_similar should generate embedding for the query text."""
-        self.store.generate_embedding = AsyncMock(
-            return_value=[0.1] * 1024
-        )
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
 
         mock_result = MagicMock()
         mock_result.mappings.return_value = []
@@ -122,16 +112,12 @@ class TestVectorStore:
             limit=5,
         )
 
-        self.store.generate_embedding.assert_called_once_with(
-            "NIL policies Mississippi"
-        )
+        self.store.generate_embedding.assert_called_once_with("NIL policies Mississippi")
 
     @pytest.mark.asyncio
     async def test_store_batch_stores_multiple_items(self, mock_db_session):
         """store_batch should store each item and return count."""
-        self.store.generate_embedding = AsyncMock(
-            return_value=[0.1] * 1024
-        )
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
         mock_db_session.execute = AsyncMock(
             return_value=MagicMock(scalar_one=MagicMock(return_value=uuid4()))
         )

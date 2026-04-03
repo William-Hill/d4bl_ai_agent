@@ -11,4 +11,3 @@ __all__ = [
     "initialize_langfuse",
     "resolve_langfuse_host",
 ]
-

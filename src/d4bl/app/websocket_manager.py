@@ -1,6 +1,7 @@
 """
 Utilities for managing WebSocket connections and job log state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,4 +70,3 @@ def set_job_logs(job_id: str, logs: list[str]) -> None:
 def get_job_logs(job_id: str) -> list[str]:
     """Look up logs for a job."""
     return job_logs.get(job_id, [])
-

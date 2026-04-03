@@ -138,11 +138,14 @@ class TestParseTable3:
         reader = csv.reader(io.StringIO(TABLE3_CSV))
         records = parse_table3_sentenced(reader, data_year=2023)
         assert len(records) > 0
-        total_pop = [r for r in records
-                     if r["metric"] == "sentenced_population"
-                     and r["race"] == "total"
-                     and r["gender"] == "total"
-                     and r["year"] == 2023]
+        total_pop = [
+            r
+            for r in records
+            if r["metric"] == "sentenced_population"
+            and r["race"] == "total"
+            and r["gender"] == "total"
+            and r["year"] == 2023
+        ]
         assert len(total_pop) == 1
         assert total_pop[0]["value"] == 1210308.0
         assert total_pop[0]["state_abbrev"] == "US"
@@ -150,11 +153,14 @@ class TestParseTable3:
     def test_race_breakdown(self):
         reader = csv.reader(io.StringIO(TABLE3_CSV))
         records = parse_table3_sentenced(reader, data_year=2023)
-        black = [r for r in records
-                 if r["metric"] == "sentenced_population"
-                 and r["race"] == "black"
-                 and r["gender"] == "total"
-                 and r["year"] == 2023]
+        black = [
+            r
+            for r in records
+            if r["metric"] == "sentenced_population"
+            and r["race"] == "black"
+            and r["gender"] == "total"
+            and r["year"] == 2023
+        ]
         assert len(black) == 1
         assert black[0]["value"] == 394500.0
 
@@ -163,9 +169,7 @@ class TestParseAppendixTable1:
     def test_state_rows(self):
         reader = csv.reader(io.StringIO(APPENDIX_CSV))
         records = parse_appendix_table1(reader, data_year=2023)
-        al_total = [r for r in records
-                    if r["state_abbrev"] == "AL"
-                    and r["race"] == "total"]
+        al_total = [r for r in records if r["state_abbrev"] == "AL" and r["race"] == "total"]
         assert len(al_total) == 1
         assert al_total[0]["value"] == 27181.0
         assert al_total[0]["metric"] == "total_population"
@@ -173,9 +177,7 @@ class TestParseAppendixTable1:
     def test_race_breakdown(self):
         reader = csv.reader(io.StringIO(APPENDIX_CSV))
         records = parse_appendix_table1(reader, data_year=2023)
-        al_black = [r for r in records
-                    if r["state_abbrev"] == "AL"
-                    and r["race"] == "black"]
+        al_black = [r for r in records if r["state_abbrev"] == "AL" and r["race"] == "black"]
         assert len(al_black) == 1
         assert al_black[0]["value"] == 14548.0
 
@@ -209,10 +211,11 @@ class TestParseAdmissionsReleases:
                 10: ("admissions_supervision_violations", 2023),
             },
         )
-        al_2023 = [r for r in records
-                   if r["state_abbrev"] == "AL"
-                   and r["year"] == 2023
-                   and r["metric"] == "admissions_total"]
+        al_2023 = [
+            r
+            for r in records
+            if r["state_abbrev"] == "AL" and r["year"] == 2023 and r["metric"] == "admissions_total"
+        ]
         assert len(al_2023) == 1
         assert al_2023[0]["value"] == 9786.0
         assert al_2023[0]["race"] == "total"

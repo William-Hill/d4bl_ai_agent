@@ -66,7 +66,10 @@ class TestBuildCommunityFramingPair:
             question="Why are people being pushed out?",
             entities=["Atlanta"],
             data_sources=["census_indicators"],
-            community_framing={"detected": True, "issue_domain": "housing",
-                               "structural_frame": "gentrification"},
+            community_framing={
+                "detected": True,
+                "issue_domain": "housing",
+                "structural_frame": "gentrification",
+            },
         )
         assert pair["messages"][1]["content"] == "Why are people being pushed out?"

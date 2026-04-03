@@ -45,17 +45,13 @@ from d4bl.services.ingestion_runner import (
 
 logger = logging.getLogger(__name__)
 
-UPLOAD_ROOT = os.environ.get(
-    "D4BL_UPLOAD_DIR", "/tmp/d4bl_uploads"
-)
+UPLOAD_ROOT = os.environ.get("D4BL_UPLOAD_DIR", "/tmp/d4bl_uploads")
 ALLOWED_UPLOAD_EXTENSIONS = {"csv", "xlsx", "json"}
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
 
-async def _last_run_for_source(
-    db: AsyncSession, source_id: uuid.UUID
-) -> IngestionRun | None:
+async def _last_run_for_source(db: AsyncSession, source_id: uuid.UUID) -> IngestionRun | None:
     """Return the most recent ingestion run for a given data source."""
     result = await db.execute(
         select(IngestionRun)
@@ -66,18 +62,12 @@ async def _last_run_for_source(
     return result.scalar_one_or_none()
 
 
-def _source_response(
-    source: DataSource, last_run: IngestionRun | None
-) -> DataSourceResponse:
+def _source_response(source: DataSource, last_run: IngestionRun | None) -> DataSourceResponse:
     """Build a DataSourceResponse from a source and its optional last run."""
     return DataSourceResponse(
         **source.to_dict(),
         last_run_status=last_run.status if last_run else None,
-        last_run_at=(
-            last_run.started_at.isoformat()
-            if last_run and last_run.started_at
-            else None
-        ),
+        last_run_at=(last_run.started_at.isoformat() if last_run and last_run.started_at else None),
     )
 
 
@@ -106,10 +96,8 @@ async def list_sources(
         .outerjoin(
             IngestionRun,
             and_(
-                IngestionRun.data_source_id
-                == latest_run_subq.c.data_source_id,
-                IngestionRun.started_at
-                == latest_run_subq.c.max_started,
+                IngestionRun.data_source_id == latest_run_subq.c.data_source_id,
+                IngestionRun.started_at == latest_run_subq.c.max_started,
             ),
         )
         .order_by(desc(DataSource.created_at))
@@ -146,9 +134,7 @@ async def get_source(
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve a single data source by ID."""
-    result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -165,9 +151,7 @@ async def update_source(
     db: AsyncSession = Depends(get_db),
 ):
     """Update fields on an existing data source."""
-    result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -195,9 +179,7 @@ async def delete_source(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a data source and its associated runs."""
-    result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -230,13 +212,9 @@ async def list_runs(
 ):
     """List ingestion runs, optionally filtered by source or status."""
     if not 1 <= limit <= 100:
-        raise HTTPException(
-            status_code=422, detail="limit must be between 1 and 100"
-        )
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
 
-    query = (
-        select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(limit)
-    )
+    query = select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(limit)
     if source_id:
         query = query.where(IngestionRun.data_source_id == source_id)
     if status:
@@ -288,9 +266,7 @@ async def upload_file(
     for later processing by the file upload ingestion pipeline.
     """
     # Verify the source exists
-    result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -298,7 +274,7 @@ async def upload_file(
     # Sanitize filename - take only the basename, strip path components
     raw_filename = file.filename or "upload"
     safe_name = PurePosixPath(raw_filename).name
-    if not safe_name or safe_name.startswith('.'):
+    if not safe_name or safe_name.startswith("."):
         raise HTTPException(status_code=422, detail="Invalid filename")
 
     # Validate file extension
@@ -340,9 +316,7 @@ async def trigger_source(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger an ingestion run for a data source."""
-    result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -356,11 +330,7 @@ async def trigger_source(
         )
 
     # Lock the source row to serialize concurrent triggers (prevents TOCTOU)
-    await db.execute(
-        select(DataSource.id)
-        .where(DataSource.id == source_id)
-        .with_for_update()
-    )
+    await db.execute(select(DataSource.id).where(DataSource.id == source_id).with_for_update())
 
     # Mark stale runs from crashed processes as failed
     stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=4)
@@ -378,10 +348,12 @@ async def trigger_source(
 
     # Concurrency guard: reject if a run is already pending/running
     existing = await db.execute(
-        select(IngestionRun.id).where(
+        select(IngestionRun.id)
+        .where(
             IngestionRun.data_source_id == source_id,
             IngestionRun.status.in_(["pending", "running"]),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -404,9 +376,7 @@ async def trigger_source(
     # Fire background task (hold strong reference to prevent GC)
     from d4bl.app.api import _background_tasks, _log_task_exception
 
-    task = asyncio.create_task(
-        run_ingestion_task(run.id, module_name, _db_mod.async_session_maker)
-    )
+    task = asyncio.create_task(run_ingestion_task(run.id, module_name, _db_mod.async_session_maker))
     _background_tasks.add(task)
     task.add_done_callback(_log_task_exception)
 
@@ -426,17 +396,13 @@ async def source_run_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the status of the latest ingestion run for a data source."""
-    src_result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    src_result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     if not src_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Source not found")
 
     last_run = await _last_run_for_source(db, source_id)
     if not last_run:
-        raise HTTPException(
-            status_code=404, detail="No runs found for this source"
-        )
+        raise HTTPException(status_code=404, detail="No runs found for this source")
 
     return RunStatusResponse(
         ingestion_run_id=str(last_run.id),
@@ -569,17 +535,13 @@ async def test_source_connection(
     db: AsyncSession = Depends(get_db),
 ):
     """Validate a source's configuration without ingesting data."""
-    result = await db.execute(
-        select(DataSource).where(DataSource.id == source_id)
-    )
+    result = await db.execute(select(DataSource).where(DataSource.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
     try:
-        test_result = await _test_connection(
-            source.source_type, source.config, source_id=source_id
-        )
+        test_result = await _test_connection(source.source_type, source.config, source_id=source_id)
         return test_result
     except Exception as exc:
         logger.error(
@@ -598,16 +560,12 @@ async def _check_url_reachable(
 ) -> ConnectionTestResponse:
     """HEAD-request a URL, falling back to GET if HEAD is rejected."""
     timeout = aiohttp.ClientTimeout(total=10)
-    async with session.head(
-        url, timeout=timeout, allow_redirects=True
-    ) as resp:
+    async with session.head(url, timeout=timeout, allow_redirects=True) as resp:
         status = resp.status
 
     # Fall back to GET if the server doesn't support HEAD
     if status in (405, 501):
-        async with session.get(
-            url, timeout=timeout, allow_redirects=True
-        ) as resp:
+        async with session.get(url, timeout=timeout, allow_redirects=True) as resp:
             status = resp.status
 
     prefix = f"{label} " if label else ""
@@ -639,22 +597,16 @@ async def _test_connection(
         url_keys = _URL_KEYS[source_type]
         url = next((config.get(k) for k in url_keys if config.get(k)), None)
         if not url:
-            return ConnectionTestResponse(
-                success=False, message="No URL configured"
-            )
+            return ConnectionTestResponse(success=False, message="No URL configured")
         async with aiohttp.ClientSession() as session:
             return await _check_url_reachable(session, url, label=source_type)
 
     elif source_type == "rss_feed":
         url = config.get("feed_url") or config.get("url")
         if not url:
-            return ConnectionTestResponse(
-                success=False, message="No feed URL configured"
-            )
+            return ConnectionTestResponse(success=False, message="No feed URL configured")
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status >= 400:
                     return ConnectionTestResponse(
                         success=False,
@@ -664,24 +616,22 @@ async def _test_connection(
                 is_xml = "<rss" in text[:500] or "<feed" in text[:500]
                 return ConnectionTestResponse(
                     success=is_xml,
-                    message="Valid RSS/Atom feed" if is_xml else "Response is not valid RSS/Atom XML",
+                    message="Valid RSS/Atom feed"
+                    if is_xml
+                    else "Response is not valid RSS/Atom XML",
                 )
 
     elif source_type == "database":
         dsn = config.get("connection_string") or config.get("dsn")
         if not dsn:
-            return ConnectionTestResponse(
-                success=False, message="No connection string configured"
-            )
+            return ConnectionTestResponse(success=False, message="No connection string configured")
         from sqlalchemy.ext.asyncio import create_async_engine as _create_engine
 
         test_engine = _create_engine(dsn, pool_pre_ping=True)
         try:
             async with test_engine.connect() as conn:
                 await conn.execute(select(func.now()))
-            return ConnectionTestResponse(
-                success=True, message="Database connection successful"
-            )
+            return ConnectionTestResponse(success=True, message="Database connection successful")
         finally:
             await test_engine.dispose()
 
@@ -694,13 +644,9 @@ async def _test_connection(
                     success=True,
                     message=f"Upload directory exists with {len(files)} file(s)",
                 )
-        return ConnectionTestResponse(
-            success=False, message="No files found in upload directory"
-        )
+        return ConnectionTestResponse(success=False, message="No files found in upload directory")
 
-    return ConnectionTestResponse(
-        success=False, message=f"Unknown source type: {source_type}"
-    )
+    return ConnectionTestResponse(success=False, message=f"Unknown source type: {source_type}")
 
 
 # ---------------------------------------------------------------------------
@@ -714,16 +660,12 @@ async def list_monitors(
     db: AsyncSession = Depends(get_db),
 ):
     """List all keyword monitors."""
-    result = await db.execute(
-        select(KeywordMonitor).order_by(desc(KeywordMonitor.created_at))
-    )
+    result = await db.execute(select(KeywordMonitor).order_by(desc(KeywordMonitor.created_at)))
     monitors = result.scalars().all()
     return [KeywordMonitorResponse(**m.to_dict()) for m in monitors]
 
 
-@router.post(
-    "/monitors", response_model=KeywordMonitorResponse, status_code=201
-)
+@router.post("/monitors", response_model=KeywordMonitorResponse, status_code=201)
 async def create_monitor(
     body: KeywordMonitorCreate,
     user: CurrentUser = Depends(require_admin),
@@ -744,27 +686,21 @@ async def create_monitor(
     return KeywordMonitorResponse(**monitor.to_dict())
 
 
-@router.get(
-    "/monitors/{monitor_id}", response_model=KeywordMonitorResponse
-)
+@router.get("/monitors/{monitor_id}", response_model=KeywordMonitorResponse)
 async def get_monitor(
     monitor_id: uuid.UUID,
     user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve a single keyword monitor by ID."""
-    result = await db.execute(
-        select(KeywordMonitor).where(KeywordMonitor.id == monitor_id)
-    )
+    result = await db.execute(select(KeywordMonitor).where(KeywordMonitor.id == monitor_id))
     monitor = result.scalar_one_or_none()
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
     return KeywordMonitorResponse(**monitor.to_dict())
 
 
-@router.patch(
-    "/monitors/{monitor_id}", response_model=KeywordMonitorResponse
-)
+@router.patch("/monitors/{monitor_id}", response_model=KeywordMonitorResponse)
 async def update_monitor(
     monitor_id: uuid.UUID,
     body: KeywordMonitorUpdate,
@@ -772,9 +708,7 @@ async def update_monitor(
     db: AsyncSession = Depends(get_db),
 ):
     """Update fields on an existing keyword monitor."""
-    result = await db.execute(
-        select(KeywordMonitor).where(KeywordMonitor.id == monitor_id)
-    )
+    result = await db.execute(select(KeywordMonitor).where(KeywordMonitor.id == monitor_id))
     monitor = result.scalar_one_or_none()
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
@@ -802,9 +736,7 @@ async def delete_monitor(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a keyword monitor."""
-    result = await db.execute(
-        select(KeywordMonitor).where(KeywordMonitor.id == monitor_id)
-    )
+    result = await db.execute(select(KeywordMonitor).where(KeywordMonitor.id == monitor_id))
     monitor = result.scalar_one_or_none()
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")

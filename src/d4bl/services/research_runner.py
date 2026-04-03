@@ -1,6 +1,7 @@
 """
 Logic for executing research jobs and streaming their progress.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,12 +55,60 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
     # Extract key terms from query (simple keyword extraction)
     query_lower = query.lower()
     # Extract meaningful words (3+ characters, not common stop words)
-    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'how', 'what', 'when', 'where', 'why', 'which', 'who'}
-    query_words = [w for w in re.findall(r'\b\w{3,}\b', query_lower) if w not in stop_words]
+    stop_words = {
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "is",
+        "was",
+        "are",
+        "were",
+        "been",
+        "be",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "can",
+        "this",
+        "that",
+        "these",
+        "those",
+        "how",
+        "what",
+        "when",
+        "where",
+        "why",
+        "which",
+        "who",
+    }
+    query_words = [w for w in re.findall(r"\b\w{3,}\b", query_lower) if w not in stop_words]
     validation_result["query_keywords"] = query_words[:10]  # Top 10 keywords
 
     output_lower = output.lower()
-    output_words = [w for w in re.findall(r'\b\w{3,}\b', output_lower) if w not in stop_words]
+    output_words = [w for w in re.findall(r"\b\w{3,}\b", output_lower) if w not in stop_words]
     validation_result["output_keywords"] = list(set(output_words))[:20]  # Top 20 unique keywords
 
     # Check for keyword overlap
@@ -243,7 +292,9 @@ async def run_research_job(
         )
 
     try:
-        with tracer.start_as_current_span("d4bl.research_job", attributes=span_attributes) as job_span:
+        with tracer.start_as_current_span(
+            "d4bl.research_job", attributes=span_attributes
+        ) as job_span:
             span_context = job_span.get_span_context()
             trace_id_hex = format(span_context.trace_id, "032x")
 
@@ -269,7 +320,9 @@ async def run_research_job(
             original_stdout = sys.stdout
             original_stderr = sys.stderr
             job_log_queue = create_log_queue(job_id)
-            output_handler = LiveOutputHandler(job_id, original_stdout, original_stderr, job_log_queue)
+            output_handler = LiveOutputHandler(
+                job_id, original_stdout, original_stderr, job_log_queue
+            )
 
             async def process_log_queue():
                 while True:
@@ -307,6 +360,7 @@ async def run_research_job(
                         recovery_result = ErrorRecoveryStrategy.return_partial_results(
                             e, {"query": query, "partial_results": []}
                         )
+
                         # Create a mock result object for partial failure
                         class PartialResult:
                             def __init__(self, error_data):
@@ -383,12 +437,15 @@ async def run_research_job(
                                 {"agent": agent_name, "description": description, "output": output}
                             )
 
-                            if "research" in agent_name.lower() or "researcher" in agent_name.lower():
+                            if (
+                                "research" in agent_name.lower()
+                                or "researcher" in agent_name.lower()
+                            ):
                                 # Extract source URLs from crawl tool results
                                 # The crawl tool returns JSON with source_urls or urls_crawled
                                 try:
                                     # Try to parse output as JSON (crawl tool returns JSON)
-                                    if output.strip().startswith('{'):
+                                    if output.strip().startswith("{"):
                                         crawl_data = json.loads(output)
                                         # Extract source URLs from crawl results
                                         source_urls = crawl_data.get("source_urls", [])
@@ -396,7 +453,10 @@ async def run_research_job(
                                             source_urls = crawl_data.get("urls_crawled", [])
                                         if source_urls:
                                             research_data_dict["source_urls"].extend(source_urls)
-                                            logger.info("Extracted %s source URLs from crawl results", len(source_urls))
+                                            logger.info(
+                                                "Extracted %s source URLs from crawl results",
+                                                len(source_urls),
+                                            )
 
                                         # Also extract URLs from results array
                                         results = crawl_data.get("results", [])
@@ -414,22 +474,32 @@ async def run_research_job(
                                     logger.warning(
                                         "⚠️ Research output relevance check failed for %s: %s",
                                         agent_name,
-                                        "; ".join(validation["warnings"])
+                                        "; ".join(validation["warnings"]),
                                     )
                                     # Add validation info to result
                                     result_dict["tasks_output"][-1]["validation"] = validation
 
                                 research_data_dict["research_findings"].append(
-                                    {"agent": agent_name, "description": description, "content": output}
+                                    {
+                                        "agent": agent_name,
+                                        "description": description,
+                                        "content": output,
+                                    }
                                 )
                                 if research_data_dict["all_research_content"]:
                                     research_data_dict["all_research_content"] += "\n\n"
                                 research_data_dict["all_research_content"] += (
                                     f"## {agent_name}: {description}\n\n{output}"
                                 )
-                            elif "analyst" in agent_name.lower() or "analysis" in agent_name.lower():
+                            elif (
+                                "analyst" in agent_name.lower() or "analysis" in agent_name.lower()
+                            ):
                                 research_data_dict["analysis_data"].append(
-                                    {"agent": agent_name, "description": description, "content": output}
+                                    {
+                                        "agent": agent_name,
+                                        "description": description,
+                                        "content": output,
+                                    }
                                 )
                                 if research_data_dict["all_research_content"]:
                                     research_data_dict["all_research_content"] += "\n\n"
@@ -442,7 +512,9 @@ async def run_research_job(
                                 {
                                     "agent": "Unknown",
                                     "description": "",
-                                    "output": str(task_output) if task_output else "Error extracting output",
+                                    "output": str(task_output)
+                                    if task_output
+                                    else "Error extracting output",
                                 }
                             )
             except Exception as exc:  # noqa: BLE001
@@ -459,7 +531,9 @@ async def run_research_job(
             # Set trace input/output in Langfuse for evaluations
             # According to Langfuse docs: https://langfuse.com/faq/all/empty-trace-input-and-output
             # We need to explicitly set trace input/output for evaluation features
-            research_output = research_data_dict.get("all_research_content", "") or result_dict.get("raw_output", "")
+            research_output = research_data_dict.get("all_research_content", "") or result_dict.get(
+                "raw_output", ""
+            )
             if langfuse_trace_id and research_output:
                 try:
                     langfuse = get_langfuse_client()
@@ -478,7 +552,9 @@ async def run_research_job(
                         # Note: For OTLP traces, trace input/output should be set via OpenTelemetry attributes
                         # The Langfuse REST API doesn't support updating traces created via OTLP
                         # The trace input/output will be populated from the root observation
-                        logger.debug(f"Trace input/output will be set from OpenTelemetry span attributes for trace_id: {langfuse_trace_id[:16]}...")
+                        logger.debug(
+                            f"Trace input/output will be set from OpenTelemetry span attributes for trace_id: {langfuse_trace_id[:16]}..."
+                        )
                 except Exception as trace_update_error:
                     logger.warning(f"⚠️ Failed to update trace input/output: {trace_update_error}")
                     logger.debug("   Trace update error details:", exc_info=True)
@@ -492,10 +568,13 @@ async def run_research_job(
                 # First, use source URLs extracted from crawl results (most reliable)
                 if research_data_dict.get("source_urls"):
                     sources.extend(research_data_dict["source_urls"])
-                    logger.info("Using %s source URLs from crawl results", len(research_data_dict["source_urls"]))
+                    logger.info(
+                        "Using %s source URLs from crawl results",
+                        len(research_data_dict["source_urls"]),
+                    )
 
                 # Also extract URLs from research text (fallback)
-                url_pattern = r'https?://[^\s\)\]\>\"\'\;]+'
+                url_pattern = r"https?://[^\s\)\]\>\"\'\;]+"
 
                 # Extract from all_research_content (already includes findings + analysis)
                 # and raw_output (covers anything not in research_content)
@@ -507,11 +586,13 @@ async def run_research_job(
                         sources.extend(re.findall(url_pattern, text))
 
                 # Deduplicate, clean trailing punctuation, and validate
-                sources = list({
-                    cleaned
-                    for url in sources
-                    if (cleaned := url.rstrip('.,;:!?)')).startswith(('http://', 'https://'))
-                })
+                sources = list(
+                    {
+                        cleaned
+                        for url in sources
+                        if (cleaned := url.rstrip(".,;:!?)")).startswith(("http://", "https://"))
+                    }
+                )
 
                 if not sources:
                     logger.warning("⚠️ No valid URLs found in research output")
@@ -524,19 +605,27 @@ async def run_research_job(
                     # Parse crawl results from research findings
                     for finding in research_data_dict.get("research_findings", []):
                         content = finding.get("content", "")
-                        if content and content.strip().startswith('{'):
+                        if content and content.strip().startswith("{"):
                             try:
                                 crawl_data = json.loads(content)
                                 results = crawl_data.get("results", [])
                                 for result in results:
                                     url = result.get("url", "")
-                                    extracted_content = result.get("extracted_content") or result.get("content", "")
-                                    if url and extracted_content and len(extracted_content.strip()) > 50:
-                                        extracted_contents.append({
-                                            "url": url,
-                                            "content": extracted_content,
-                                            "extracted_content": extracted_content,
-                                        })
+                                    extracted_content = result.get(
+                                        "extracted_content"
+                                    ) or result.get("content", "")
+                                    if (
+                                        url
+                                        and extracted_content
+                                        and len(extracted_content.strip()) > 50
+                                    ):
+                                        extracted_contents.append(
+                                            {
+                                                "url": url,
+                                                "content": extracted_content,
+                                                "extracted_content": extracted_content,
+                                            }
+                                        )
                             except (json.JSONDecodeError, KeyError, TypeError):
                                 # Not JSON, skip
                                 pass
@@ -549,7 +638,9 @@ async def run_research_job(
                 # Use the OpenTelemetry trace_id_hex for evaluations
                 # This links evaluations to the trace that Langfuse receives via OTLP
                 if research_output and langfuse_trace_id:
-                    logger.info(f"🔍 Starting Langfuse evaluations for trace_id: {langfuse_trace_id[:16]}...")
+                    logger.info(
+                        f"🔍 Starting Langfuse evaluations for trace_id: {langfuse_trace_id[:16]}..."
+                    )
                     logger.debug(f"   Research output length: {len(research_output)} chars")
                     logger.debug(f"   Sources found: {len(sources)}")
                     logger.debug(f"   Extracted contents: {len(extracted_contents)}")
@@ -561,38 +652,63 @@ async def run_research_job(
                             research_output=research_output[:5000],  # Limit size
                             sources=list(set(sources))[:10],  # Deduplicate and limit
                             trace_id=langfuse_trace_id,  # Use OpenTelemetry trace ID
-                            extracted_contents=extracted_contents[:10] if extracted_contents else None,  # Limit to 10
+                            extracted_contents=extracted_contents[:10]
+                            if extracted_contents
+                            else None,  # Limit to 10
                             report=report_content[:5000] if report_content else None,  # Limit size
                         )
 
-                        eval_status = evaluation_results.get('status', 'unknown')
-                        elapsed_time = evaluation_results.get('elapsed_time', 0)
+                        eval_status = evaluation_results.get("status", "unknown")
+                        elapsed_time = evaluation_results.get("elapsed_time", 0)
 
-                        if eval_status == 'success':
-                            overall_score = evaluation_results.get('overall_score', 'N/A')
-                            logger.info(f"✅ Evaluations completed successfully in {elapsed_time:.2f}s")
-                            logger.info(f"   Overall score: {overall_score:.2f}" if isinstance(overall_score, (int, float)) else f"   Overall score: {overall_score}")
-                        elif eval_status == 'partial_success':
-                            overall_score = evaluation_results.get('overall_score', 'N/A')
-                            logger.warning(f"⚠️ Evaluations completed with partial success in {elapsed_time:.2f}s")
-                            logger.warning(f"   Overall score: {overall_score:.2f}" if isinstance(overall_score, (int, float)) else f"   Overall score: {overall_score}")
+                        if eval_status == "success":
+                            overall_score = evaluation_results.get("overall_score", "N/A")
+                            logger.info(
+                                f"✅ Evaluations completed successfully in {elapsed_time:.2f}s"
+                            )
+                            logger.info(
+                                f"   Overall score: {overall_score:.2f}"
+                                if isinstance(overall_score, (int, float))
+                                else f"   Overall score: {overall_score}"
+                            )
+                        elif eval_status == "partial_success":
+                            overall_score = evaluation_results.get("overall_score", "N/A")
+                            logger.warning(
+                                f"⚠️ Evaluations completed with partial success in {elapsed_time:.2f}s"
+                            )
+                            logger.warning(
+                                f"   Overall score: {overall_score:.2f}"
+                                if isinstance(overall_score, (int, float))
+                                else f"   Overall score: {overall_score}"
+                            )
                             # Log which evaluations failed
-                            for eval_name, eval_result in evaluation_results.get('evaluations', {}).items():
-                                if eval_result.get('status') != 'success':
-                                    logger.warning(f"   - {eval_name}: {eval_result.get('status')} - {eval_result.get('error', 'Unknown error')}")
+                            for eval_name, eval_result in evaluation_results.get(
+                                "evaluations", {}
+                            ).items():
+                                if eval_result.get("status") != "success":
+                                    logger.warning(
+                                        f"   - {eval_name}: {eval_result.get('status')} - {eval_result.get('error', 'Unknown error')}"
+                                    )
                         else:
                             logger.error(f"❌ Evaluations failed in {elapsed_time:.2f}s")
                             # Log evaluation errors
-                            for eval_name, eval_result in evaluation_results.get('evaluations', {}).items():
-                                if eval_result.get('status') != 'success':
-                                    logger.error(f"   - {eval_name}: {eval_result.get('error', 'Unknown error')}")
+                            for eval_name, eval_result in evaluation_results.get(
+                                "evaluations", {}
+                            ).items():
+                                if eval_result.get("status") != "success":
+                                    logger.error(
+                                        f"   - {eval_name}: {eval_result.get('error', 'Unknown error')}"
+                                    )
 
                     except Exception as eval_exec_error:
-                        logger.error(f"❌ Exception during evaluation execution: {eval_exec_error}", exc_info=True)
+                        logger.error(
+                            f"❌ Exception during evaluation execution: {eval_exec_error}",
+                            exc_info=True,
+                        )
                         evaluation_results = {
                             "status": "evaluation_failed",
                             "error": str(eval_exec_error),
-                            "error_type": type(eval_exec_error).__name__
+                            "error_type": type(eval_exec_error).__name__,
                         }
 
                 elif not research_output:
@@ -607,7 +723,7 @@ async def run_research_job(
                 evaluation_results = {
                     "status": "evaluation_failed",
                     "error": str(eval_error),
-                    "error_type": type(eval_error).__name__
+                    "error_type": type(eval_error).__name__,
                 }
 
             final_logs = get_job_logs(job_id)
@@ -658,4 +774,3 @@ async def run_research_job(
                 "trace_id": trace_id_hex,
             },
         )
-

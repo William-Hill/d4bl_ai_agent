@@ -22,6 +22,7 @@ def evaluate_source_relevance(
 
     if langfuse is None:
         from d4bl.services.langfuse.client import get_langfuse_eval_client
+
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping source relevance evaluation")
@@ -31,14 +32,21 @@ def evaluate_source_relevance(
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
         if not sources:
-            return {"scores": {}, "average": 0.0, "status": EvalStatus.SKIPPED, "reason": "no_sources"}
+            return {
+                "scores": {},
+                "average": 0.0,
+                "status": EvalStatus.SKIPPED,
+                "reason": "no_sources",
+            }
 
         relevance_scores: dict[str, float] = {}
         for idx, source in enumerate(sources):
             try:
                 relevance_scores[source] = keyword_relevance(query, source)
             except Exception as source_error:
-                logger.warning("Error evaluating source %s (%s...): %s", idx + 1, source[:50], source_error)
+                logger.warning(
+                    "Error evaluating source %s (%s...): %s", idx + 1, source[:50], source_error
+                )
                 relevance_scores[source] = 3.0
 
         avg_relevance = (
@@ -46,7 +54,8 @@ def evaluate_source_relevance(
         )
         eval_logger.info(
             "Source relevance — Average: %.2f, Sources evaluated: %s",
-            avg_relevance, len(relevance_scores),
+            avg_relevance,
+            len(relevance_scores),
         )
 
         if trace_id and langfuse:

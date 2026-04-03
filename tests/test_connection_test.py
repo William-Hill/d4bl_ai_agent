@@ -80,7 +80,9 @@ async def test_api_success():
 async def test_rss_valid_feed():
     mock_resp = AsyncMock()
     mock_resp.status = 200
-    mock_resp.text = AsyncMock(return_value='<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>')
+    mock_resp.text = AsyncMock(
+        return_value='<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
+    )
     mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
     mock_resp.__aexit__ = AsyncMock(return_value=False)
 

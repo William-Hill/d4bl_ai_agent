@@ -1,4 +1,5 @@
 """Tests for eval harness metric computation."""
+
 from __future__ import annotations
 
 import json
@@ -97,11 +98,13 @@ class TestLoadTestSet:
     def test_load_valid_jsonl(self, tmp_path):
         p = tmp_path / "test.jsonl"
         examples = [
-            {"messages": [
-                {"role": "system", "content": "sys"},
-                {"role": "user", "content": "question"},
-                {"role": "assistant", "content": '{"intent": "lookup"}'},
-            ]}
+            {
+                "messages": [
+                    {"role": "system", "content": "sys"},
+                    {"role": "user", "content": "question"},
+                    {"role": "assistant", "content": '{"intent": "lookup"}'},
+                ]
+            }
         ]
         p.write_text("\n".join(json.dumps(e) for e in examples))
         result = load_test_set(str(p))
@@ -116,15 +119,21 @@ class TestLoadTestSet:
         assert result == []
 
 
-
 class TestModelEvalRun:
     def test_model_has_required_columns(self):
         """ModelEvalRun should have all columns from the design spec."""
         columns = {c.name for c in ModelEvalRun.__table__.columns}
         expected = {
-            "id", "model_name", "model_version", "base_model_name",
-            "task", "test_set_hash", "metrics", "ship_decision",
-            "blocking_failures", "created_at",
+            "id",
+            "model_name",
+            "model_version",
+            "base_model_name",
+            "task",
+            "test_set_hash",
+            "metrics",
+            "ship_decision",
+            "blocking_failures",
+            "created_at",
         }
         assert expected.issubset(columns)
 

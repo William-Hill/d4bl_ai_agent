@@ -63,10 +63,7 @@ async def explore_query(
     if ctx.year:
         context_parts.append(f"Year: {ctx.year}")
 
-    augmented = (
-        f"Context: {', '.join(context_parts)}. "
-        f"Question: {request.question}"
-    )
+    augmented = f"Context: {', '.join(context_parts)}. Question: {request.question}"
 
     try:
         engine = _get_query_engine()
@@ -165,10 +162,7 @@ async def get_state_summary(
 
     racial_gap: RacialGap | None = None
     if race_rows:
-        groups = [
-            RacialGapGroup(race=r.race, value=round(r.value, 4))
-            for r in race_rows
-        ]
+        groups = [RacialGapGroup(race=r.race, value=round(r.value, 4)) for r in race_rows]
         min_val = min(r.value for r in race_rows)
         max_val = max(r.value for r in race_rows)
         max_race = next(r.race for r in race_rows if r.value == max_val)
@@ -210,9 +204,7 @@ def _build_user_prompt(req: ExplainRequest) -> str:
     """Build a structured user prompt from the explain request."""
     gap_text = ""
     if req.racial_gap:
-        groups = ", ".join(
-            f"{g.race}: {g.value}" for g in req.racial_gap.groups
-        )
+        groups = ", ".join(f"{g.race}: {g.value}" for g in req.racial_gap.groups)
         gap_text = (
             f"\nRacial breakdown: {groups}"
             f"\nMax disparity ratio: {req.racial_gap.max_ratio}"

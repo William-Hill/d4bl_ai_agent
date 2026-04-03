@@ -105,9 +105,7 @@ def initialize_langfuse() -> Langfuse | None:
                 os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = otlp_endpoint
                 logger.warning("OTLP endpoint was not set, forced to: %s", otlp_endpoint)
             else:
-                logger.warning(
-                    "Langfuse service unavailable; OTLP endpoints remain unset."
-                )
+                logger.warning("Langfuse service unavailable; OTLP endpoints remain unset.")
         else:
             logger.info("OTLP endpoint configured: %s", current_otlp_endpoint)
             if current_otlp_endpoint != otlp_endpoint:
@@ -127,9 +125,7 @@ def initialize_langfuse() -> Langfuse | None:
         return _langfuse_client
     except ImportError as e:
         logger.warning("Langfuse dependencies not installed: %s", e)
-        logger.debug(
-            "Install with: pip install langfuse openinference-instrumentation-crewai"
-        )
+        logger.debug("Install with: pip install langfuse openinference-instrumentation-crewai")
         _langfuse_init_state = False
         return None
     except Exception as e:
@@ -144,4 +140,3 @@ def get_langfuse_client() -> Langfuse | None:
     if _langfuse_init_state is None:
         _langfuse_client = initialize_langfuse()
     return _langfuse_client
-

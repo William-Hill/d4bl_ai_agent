@@ -1,4 +1,5 @@
 """Parse natural language queries into structured search intents."""
+
 from __future__ import annotations
 
 import json
@@ -44,9 +45,7 @@ class QueryParser:
 
     def __init__(self, ollama_base_url: str | None = None) -> None:
         settings = get_settings()
-        self.ollama_base_url = (
-            ollama_base_url or settings.ollama_base_url
-        ).rstrip("/")
+        self.ollama_base_url = (ollama_base_url or settings.ollama_base_url).rstrip("/")
 
     async def parse(self, query: str) -> ParsedQuery:
         """Parse a natural language query into a structured ParsedQuery.
@@ -57,9 +56,7 @@ class QueryParser:
         try:
             return await self._parse_with_llm(query)
         except Exception:
-            logger.warning(
-                "LLM query parsing failed, using fallback", exc_info=True
-            )
+            logger.warning("LLM query parsing failed, using fallback", exc_info=True)
             return self._fallback_parse(query)
 
     async def _parse_with_llm(self, query: str) -> ParsedQuery:

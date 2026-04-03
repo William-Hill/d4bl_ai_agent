@@ -4,6 +4,7 @@ JWT authentication and RBAC dependencies for FastAPI.
 Validates Supabase-issued JWTs and provides role-based access control.
 Supports both HS256 (legacy) and ES256 (JWKS) token verification.
 """
+
 from __future__ import annotations
 
 import logging

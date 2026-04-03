@@ -1,4 +1,5 @@
 """Tests for the --model flag in run_eval_harness.py."""
+
 from __future__ import annotations
 
 import pytest
@@ -29,20 +30,24 @@ class TestModelFlag:
 class TestAnalyzeFlag:
     def test_parse_args_accepts_analyze(self):
         from scripts.training.run_eval_harness import build_parser
+
         args = build_parser().parse_args(["--task", "query_parser", "--persist", "--analyze"])
         assert args.analyze is True
 
     def test_parse_args_accepts_analyze_existing(self):
         from scripts.training.run_eval_harness import build_parser
+
         args = build_parser().parse_args(["--analyze-existing", "latest", "--task", "query_parser"])
         assert args.analyze_existing == "latest"
 
     def test_analyze_defaults_to_false(self):
         from scripts.training.run_eval_harness import build_parser
+
         args = build_parser().parse_args(["--task", "query_parser"])
         assert args.analyze is False
 
     def test_analyze_existing_defaults_to_none(self):
         from scripts.training.run_eval_harness import build_parser
+
         args = build_parser().parse_args(["--task", "query_parser"])
         assert args.analyze_existing is None

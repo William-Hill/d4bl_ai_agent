@@ -135,14 +135,21 @@ async def _run_pipeline(
     parse_prompt = PARSE_PROMPT.substitute(query=question)
     parse_start = time.monotonic()
     raw_parse = await ollama_generate(
-        base_url=base_url, prompt=parse_prompt,
-        model=parser_model, temperature=0.1, timeout_seconds=30,
+        base_url=base_url,
+        prompt=parse_prompt,
+        model=parser_model,
+        temperature=0.1,
+        timeout_seconds=30,
     )
     parse_latency = round(time.monotonic() - parse_start, 3)
-    steps.append(PipelineStep(
-        step="parse", model_name=parser_model,
-        output=raw_parse, latency_seconds=parse_latency,
-    ))
+    steps.append(
+        PipelineStep(
+            step="parse",
+            model_name=parser_model,
+            output=raw_parse,
+            latency_seconds=parse_latency,
+        )
+    )
 
     # Try to extract structured query from parse output
     try:
@@ -183,14 +190,19 @@ async def _run_pipeline(
         vs = get_vector_store()
         for sq in search_queries[:3]:
             results = await vs.search_similar(
-                db=db, query_text=sq, limit=5, similarity_threshold=0.7,
+                db=db,
+                query_text=sq,
+                limit=5,
+                similarity_threshold=0.7,
             )
             vector_results.extend(results)
 
     if "structured" in data_sources:
         searcher = StructuredSearcher()
         structured_results = await searcher.search(
-            db=db, search_queries=list(search_queries[:3]), limit=5,
+            db=db,
+            search_queries=list(search_queries[:3]),
+            limit=5,
         )
 
     fusion = ResultFusion()
@@ -202,10 +214,14 @@ async def _run_pipeline(
         source_titles = [s.title[:60] for s in sources[:3]]
         sources_summary += ": " + "; ".join(source_titles)
 
-    steps.append(PipelineStep(
-        step="search", model_name="database",
-        output=sources_summary, latency_seconds=search_latency,
-    ))
+    steps.append(
+        PipelineStep(
+            step="search",
+            model_name="database",
+            output=sources_summary,
+            latency_seconds=search_latency,
+        )
+    )
 
     # Step 3: Synthesize
     if sources:
@@ -214,7 +230,8 @@ async def _run_pipeline(
             for i, s in enumerate(sources[:10])
         )
         synth_prompt = SYNTHESIS_PROMPT.substitute(
-            query=question, sources_text=sources_text,
+            query=question,
+            sources_text=sources_text,
         )
     else:
         synth_prompt = (
@@ -224,23 +241,34 @@ async def _run_pipeline(
 
     synth_start = time.monotonic()
     final_answer = await ollama_generate(
-        base_url=base_url, prompt=synth_prompt,
-        model=explainer_model, temperature=0.3, timeout_seconds=60,
+        base_url=base_url,
+        prompt=synth_prompt,
+        model=explainer_model,
+        temperature=0.3,
+        timeout_seconds=60,
     )
     synth_latency = round(time.monotonic() - synth_start, 3)
-    steps.append(PipelineStep(
-        step="synthesize", model_name=explainer_model,
-        output=final_answer, latency_seconds=synth_latency,
-    ))
+    steps.append(
+        PipelineStep(
+            step="synthesize",
+            model_name=explainer_model,
+            output=final_answer,
+            latency_seconds=synth_latency,
+        )
+    )
 
     # Step 4: Evaluate (same judge model for both paths)
     eval_prompt = _EVAL_PROMPT_TEMPLATE.format(
-        question=question, answer=final_answer[:500],
+        question=question,
+        answer=final_answer[:500],
     )
     eval_start = time.monotonic()
     raw_eval = await ollama_generate(
-        base_url=base_url, prompt=eval_prompt,
-        model=evaluator_model, temperature=0.1, timeout_seconds=30,
+        base_url=base_url,
+        prompt=eval_prompt,
+        model=evaluator_model,
+        temperature=0.1,
+        timeout_seconds=30,
     )
     eval_latency = round(time.monotonic() - eval_start, 3)
 
@@ -264,16 +292,22 @@ async def _run_pipeline(
     except (json.JSONDecodeError, TypeError, ValueError):
         logger.debug("Evaluator output is not valid JSON object (model=%s)", evaluator_model)
 
-    steps.append(PipelineStep(
-        step="evaluate", model_name=evaluator_model,
-        output=raw_eval, latency_seconds=eval_latency,
-    ))
+    steps.append(
+        PipelineStep(
+            step="evaluate",
+            model_name=evaluator_model,
+            output=raw_eval,
+            latency_seconds=eval_latency,
+        )
+    )
 
     total_latency = round(time.monotonic() - total_start, 3)
 
     return PipelinePath(
-        label=label, steps=steps,
-        final_answer=final_answer, total_latency_seconds=total_latency,
+        label=label,
+        steps=steps,
+        final_answer=final_answer,
+        total_latency_seconds=total_latency,
         eval_score=eval_score,
         eval_explanation=eval_explanation,
         eval_issues=eval_issues,
@@ -489,9 +523,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _scheduler = build_scheduler()
         async with async_session_maker() as session:
             await seed_default_schedules(session)
-            count = await load_and_register_schedules(
-                _scheduler, session, _run_scheduled_ingestion
-            )
+            count = await load_and_register_schedules(_scheduler, session, _run_scheduled_ingestion)
         _scheduler.start()
         logger.info("Scheduler started with %d schedules", count)
     except Exception as e:
@@ -772,9 +804,7 @@ async def analyze_eval_run(
 
     parse_job_uuid(run_id)
 
-    result = await db.execute(
-        select(ModelEvalRun).where(ModelEvalRun.id == run_id)
-    )
+    result = await db.execute(select(ModelEvalRun).where(ModelEvalRun.id == run_id))
     run = result.scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Eval run not found")
@@ -813,12 +843,14 @@ async def compare_models_endpoint(
     base_url = settings.ollama_base_url
 
     # Resolve pipeline models: explicit request fields take priority over defaults
-    has_explicit_models = any([
-        request.pipeline_a_parser,
-        request.pipeline_a_explainer,
-        request.pipeline_b_parser,
-        request.pipeline_b_explainer,
-    ])
+    has_explicit_models = any(
+        [
+            request.pipeline_a_parser,
+            request.pipeline_a_explainer,
+            request.pipeline_b_parser,
+            request.pipeline_b_explainer,
+        ]
+    )
 
     if has_explicit_models:
         # Validate all specified models exist in Ollama
@@ -828,7 +860,12 @@ async def compare_models_endpoint(
         pipeline_b_parser = request.pipeline_b_parser or settings.ollama_model
         pipeline_b_explainer = request.pipeline_b_explainer or settings.ollama_model
 
-        requested = {pipeline_a_parser, pipeline_a_explainer, pipeline_b_parser, pipeline_b_explainer}
+        requested = {
+            pipeline_a_parser,
+            pipeline_a_explainer,
+            pipeline_b_parser,
+            pipeline_b_explainer,
+        }
         unknown = requested - available
         if unknown:
             raise HTTPException(
@@ -876,6 +913,7 @@ async def compare_models_endpoint(
 
     if _session_maker is None:
         from d4bl.infra.database import init_db
+
         init_db()
         from d4bl.infra.database import async_session_maker as _session_maker
 
@@ -900,15 +938,14 @@ async def compare_models_endpoint(
 
     try:
         baseline_path, finetuned_path = await asyncio.gather(
-            baseline_task, finetuned_task,
+            baseline_task,
+            finetuned_task,
         )
     except Exception as exc:
         for t in (baseline_task, finetuned_task):
             t.cancel()
         logger.warning("Pipeline comparison failed", exc_info=True)
-        raise HTTPException(
-            status_code=502, detail="Model inference failed"
-        ) from exc
+        raise HTTPException(status_code=502, detail="Model inference failed") from exc
 
     return CompareResponse(
         baseline=baseline_path,

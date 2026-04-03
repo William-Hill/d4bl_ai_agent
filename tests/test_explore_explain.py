@@ -44,12 +44,8 @@ class TestExplainEndpoint:
             return_value=_mock_llm_response(llm_json),
         ):
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                resp = await client.post(
-                    "/api/explore/explain", json=EXPLAIN_PAYLOAD
-                )
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/explore/explain", json=EXPLAIN_PAYLOAD)
 
         assert resp.status_code == 200
         data = resp.json()
@@ -69,12 +65,8 @@ class TestExplainEndpoint:
             return_value=_mock_llm_response("Just plain text response."),
         ):
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                resp = await client.post(
-                    "/api/explore/explain", json=EXPLAIN_PAYLOAD
-                )
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/explore/explain", json=EXPLAIN_PAYLOAD)
 
         assert resp.status_code == 200
         data = resp.json()
@@ -89,21 +81,20 @@ class TestExplainEndpoint:
 
         llm_json = '{"narrative": "test", "methodology_note": "note", "caveats": []}'
 
-        with patch(
-            "d4bl.app.explore_insights.model_for_task",
-            return_value="d4bl-explainer",
-        ), patch(
-            "d4bl.app.explore_insights.acompletion",
-            new_callable=AsyncMock,
-            return_value=_mock_llm_response(llm_json),
-        ) as mock_acompletion:
+        with (
+            patch(
+                "d4bl.app.explore_insights.model_for_task",
+                return_value="d4bl-explainer",
+            ),
+            patch(
+                "d4bl.app.explore_insights.acompletion",
+                new_callable=AsyncMock,
+                return_value=_mock_llm_response(llm_json),
+            ) as mock_acompletion,
+        ):
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                resp = await client.post(
-                    "/api/explore/explain", json=EXPLAIN_PAYLOAD
-                )
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/explore/explain", json=EXPLAIN_PAYLOAD)
 
         assert resp.status_code == 200
         call_kwargs = mock_acompletion.call_args[1]
@@ -119,12 +110,8 @@ class TestExplainEndpoint:
             side_effect=ConnectionError("Ollama is down"),
         ):
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                resp = await client.post(
-                    "/api/explore/explain", json=EXPLAIN_PAYLOAD
-                )
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/explore/explain", json=EXPLAIN_PAYLOAD)
 
         assert resp.status_code == 503
         assert "unavailable" in resp.json()["detail"].lower()

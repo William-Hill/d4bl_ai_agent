@@ -1,6 +1,7 @@
 """
 Crawl4AI search tool for web crawling and search.
 """
+
 from __future__ import annotations
 
 import json
@@ -192,14 +193,16 @@ class Crawl4AISearchTool(BaseTool):
 
         for result in results:
             url = result.get("url", "")
-            is_pdf = url.lower().endswith('.pdf') if url else False
+            is_pdf = url.lower().endswith(".pdf") if url else False
 
             if is_valid_content(result):
                 valid_results.append(result)
             else:
                 # For PDFs with no content, try client-side extraction as fallback
                 if is_pdf and PDF_EXTRACTION_AVAILABLE:
-                    logger.info("PDF extraction failed via API, trying client-side extraction: %s", url)
+                    logger.info(
+                        "PDF extraction failed via API, trying client-side extraction: %s", url
+                    )
                     client_extracted = extract_pdf_client_side(url, timeout=self._timeout)
                     if client_extracted and is_valid_content(client_extracted):
                         valid_results.append(client_extracted)
@@ -207,10 +210,7 @@ class Crawl4AISearchTool(BaseTool):
                         continue
 
                 invalid_results.append(result)
-                logger.warning(
-                    "Filtered out crawl result with insufficient content: %s",
-                    url
-                )
+                logger.warning("Filtered out crawl result with insufficient content: %s", url)
 
         return valid_results, invalid_results
 
@@ -260,11 +260,7 @@ class Crawl4AISearchTool(BaseTool):
                     if results:
                         pdf_results.extend(results)
                 else:
-                    logger.warning(
-                        "Crawl4AI API returned %s for PDF %s",
-                        resp.status_code,
-                        pdf_url
-                    )
+                    logger.warning("Crawl4AI API returned %s for PDF %s", resp.status_code, pdf_url)
             except Exception as e:
                 logger.warning("Error processing PDF via API: %s", e)
 
@@ -287,8 +283,8 @@ class Crawl4AISearchTool(BaseTool):
         for attempt in range(max_retries):
             try:
                 # Separate PDFs from regular URLs for better handling
-                pdf_urls = [url for url in urls if url.lower().endswith('.pdf')]
-                regular_urls = [url for url in urls if not url.lower().endswith('.pdf')]
+                pdf_urls = [url for url in urls if url.lower().endswith(".pdf")]
+                regular_urls = [url for url in urls if not url.lower().endswith(".pdf")]
 
                 # Build crawl payload with PDF-specific configuration
                 crawl_payload = {"urls": urls}
@@ -299,7 +295,7 @@ class Crawl4AISearchTool(BaseTool):
                     logger.info(
                         "PDFs detected (%s PDFs, %s regular URLs), attempting extraction",
                         len(pdf_urls),
-                        len(regular_urls)
+                        len(regular_urls),
                     )
                     # Try client-side extraction for PDFs first
                     remaining_pdf_urls = []
@@ -317,7 +313,11 @@ class Crawl4AISearchTool(BaseTool):
 
                     # If we successfully extracted some PDFs, use those and only crawl remaining ones
                     if client_extracted_pdfs:
-                        logger.info("Extracted %s PDFs client-side, %s remaining for API", len(client_extracted_pdfs), len(remaining_pdf_urls))
+                        logger.info(
+                            "Extracted %s PDFs client-side, %s remaining for API",
+                            len(client_extracted_pdfs),
+                            len(remaining_pdf_urls),
+                        )
                         # Update URLs to only include remaining PDFs + regular URLs
                         urls = remaining_pdf_urls + regular_urls
                         crawl_payload["urls"] = urls
@@ -351,14 +351,28 @@ class Crawl4AISearchTool(BaseTool):
                         raw_results.extend(client_extracted_pdfs)
 
                     # If we still have PDFs that failed, try separate handling
-                    pdf_urls_in_results = [r.get("url", "") for r in raw_results if r.get("url", "").lower().endswith('.pdf')]
-                    failed_pdf_urls = [url for url in urls if url.lower().endswith('.pdf') and url not in pdf_urls_in_results]
+                    pdf_urls_in_results = [
+                        r.get("url", "")
+                        for r in raw_results
+                        if r.get("url", "").lower().endswith(".pdf")
+                    ]
+                    failed_pdf_urls = [
+                        url
+                        for url in urls
+                        if url.lower().endswith(".pdf") and url not in pdf_urls_in_results
+                    ]
                     if failed_pdf_urls:
-                        logger.info("Some PDFs failed API extraction, trying separate handling: %s", failed_pdf_urls)
+                        logger.info(
+                            "Some PDFs failed API extraction, trying separate handling: %s",
+                            failed_pdf_urls,
+                        )
                         additional_pdf_results = self._handle_pdfs_separately(failed_pdf_urls)
                         if additional_pdf_results:
                             raw_results.extend(additional_pdf_results)
-                            logger.info("Merged %s additional client-extracted PDFs", len(additional_pdf_results))
+                            logger.info(
+                                "Merged %s additional client-extracted PDFs",
+                                len(additional_pdf_results),
+                            )
 
                     # Filter out results with no valid content
                     valid_results, invalid_results = self._filter_valid_results(raw_results)
@@ -367,7 +381,7 @@ class Crawl4AISearchTool(BaseTool):
                         logger.warning(
                             "All %s crawl results were filtered out due to insufficient content. "
                             "This may indicate extraction issues.",
-                            len(raw_results)
+                            len(raw_results),
                         )
                         # Log details about why results were filtered
                         for invalid in invalid_results[:3]:  # Log first 3
@@ -376,7 +390,9 @@ class Crawl4AISearchTool(BaseTool):
                             has_html = bool(invalid.get("html") or invalid.get("cleaned_html"))
                             logger.debug(
                                 "  - %s: extracted_content=%s, has_html=%s",
-                                url, has_extracted, has_html
+                                url,
+                                has_extracted,
+                                has_html,
                             )
 
                     # Extract source URLs from valid results for later use
@@ -455,5 +471,3 @@ class Crawl4AISearchTool(BaseTool):
             },
             indent=2,
         )
-
-

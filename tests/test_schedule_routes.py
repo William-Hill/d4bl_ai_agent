@@ -13,9 +13,7 @@ def _load_router():
     if "d4bl.app" not in sys.modules:
         stub = types.ModuleType("d4bl.app")
         # Point __path__ at the actual package directory so sub-modules resolve.
-        pkg_dir = str(
-            Path(__file__).resolve().parent.parent / "src" / "d4bl" / "app"
-        )
+        pkg_dir = str(Path(__file__).resolve().parent.parent / "src" / "d4bl" / "app")
         stub.__path__ = [pkg_dir]
         stub.__package__ = "d4bl.app"
         sys.modules["d4bl.app"] = stub

@@ -28,9 +28,7 @@ class TestStructuredSearcher:
         self.searcher = StructuredSearcher()
 
     @pytest.mark.asyncio
-    async def test_search_by_keyword_returns_matching_jobs(
-        self, mock_db_session
-    ):
+    async def test_search_by_keyword_returns_matching_jobs(self, mock_db_session):
         """search() should return jobs whose query matches keywords."""
         mock_row = MagicMock()
         mock_row.job_id = uuid4()
@@ -81,9 +79,7 @@ class TestStructuredSearcher:
 
     def test_score_relevance_full_overlap(self):
         """Full keyword overlap should score 1.0."""
-        word_sets = StructuredSearcher._precompute_query_word_sets(
-            ["NIL policies Mississippi"]
-        )
+        word_sets = StructuredSearcher._precompute_query_word_sets(["NIL policies Mississippi"])
         score = self.searcher._score_relevance(
             "NIL policies Mississippi",
             word_sets,
@@ -92,9 +88,7 @@ class TestStructuredSearcher:
 
     def test_score_relevance_partial_overlap(self):
         """Partial keyword overlap should score between 0 and 1."""
-        word_sets = StructuredSearcher._precompute_query_word_sets(
-            ["NIL policies California"]
-        )
+        word_sets = StructuredSearcher._precompute_query_word_sets(["NIL policies California"])
         score = self.searcher._score_relevance(
             "Mississippi NIL policy impact",
             word_sets,
@@ -103,9 +97,7 @@ class TestStructuredSearcher:
 
     def test_extract_summary_from_dict(self):
         """Should extract summary key from result dict."""
-        summary = self.searcher._extract_summary(
-            {"summary": "NIL analysis results"}
-        )
+        summary = self.searcher._extract_summary({"summary": "NIL analysis results"})
         assert summary == "NIL analysis results"
 
     def test_extract_summary_none(self):

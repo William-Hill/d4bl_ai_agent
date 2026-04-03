@@ -1,4 +1,5 @@
 """Tests for the in-memory TTL cache used by explore endpoints."""
+
 from __future__ import annotations
 
 import time

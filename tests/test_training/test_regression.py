@@ -1,4 +1,5 @@
 """Tests for regression detection between eval runs."""
+
 from __future__ import annotations
 
 from scripts.training.run_eval_harness import detect_regressions
@@ -34,7 +35,5 @@ class TestDetectRegressions:
         """Small changes (<2%) should not trigger alerts."""
         previous = {"json_valid_rate": 0.95}
         current = {"json_valid_rate": 0.94}  # -1%, within tolerance
-        alerts = detect_regressions(
-            current, previous, task="query_parser", tolerance=0.02
-        )
+        alerts = detect_regressions(current, previous, task="query_parser", tolerance=0.02)
         assert alerts == []

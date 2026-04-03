@@ -1,6 +1,7 @@
 """
 PDF extraction utilities for client-side PDF processing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -12,16 +13,18 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_HTML_TAG_RE = re.compile(r'<[^>]+>')
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 MIN_CONTENT_LENGTH = 50
 
 # Try to import PDF extraction library for fallback
 try:
     from pypdf import PdfReader
+
     PDF_EXTRACTION_AVAILABLE = True
 except ImportError:
     try:
         from PyPDF2 import PdfReader
+
         PDF_EXTRACTION_AVAILABLE = True
     except ImportError:
         PDF_EXTRACTION_AVAILABLE = False
@@ -41,19 +44,19 @@ def is_valid_content(result: dict) -> bool:
     # Check for cleaned HTML (must have actual content, not just structure)
     cleaned_html = result.get("cleaned_html", "")
     if cleaned_html:
-        text_content = _HTML_TAG_RE.sub('', str(cleaned_html))
+        text_content = _HTML_TAG_RE.sub("", str(cleaned_html))
         if len(text_content.strip()) > MIN_CONTENT_LENGTH:
             return True
 
     # Check for raw HTML (must have substantial text content)
     html = result.get("html", "")
     if html:
-        text_content = _HTML_TAG_RE.sub('', str(html))
+        text_content = _HTML_TAG_RE.sub("", str(html))
         # Filter out common empty HTML patterns
         empty_patterns = [
-            r'^<html></html>$',
-            r'^<html><head></head><body></body></html>$',
-            r'^<html><body[^>]*></body></html>$',
+            r"^<html></html>$",
+            r"^<html><head></head><body></body></html>$",
+            r"^<html><body[^>]*></body></html>$",
         ]
         for pattern in empty_patterns:
             if re.match(pattern, str(html).strip(), re.IGNORECASE):
@@ -63,11 +66,8 @@ def is_valid_content(result: dict) -> bool:
 
     # PDF files might have null extracted_content but should be flagged
     url = result.get("url", "")
-    if url and url.lower().endswith('.pdf'):
-        logger.warning(
-            "PDF file %s has no extracted content. PDF extraction may have failed.",
-            url
-        )
+    if url and url.lower().endswith(".pdf"):
+        logger.warning("PDF file %s has no extracted content. PDF extraction may have failed.", url)
 
     return False
 
@@ -86,8 +86,8 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
 
         # Download PDF with proper headers to handle various servers
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/pdf,application/octet-stream,*/*',
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "application/pdf,application/octet-stream,*/*",
         }
 
         # Download PDF with redirect handling
@@ -96,18 +96,18 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
             timeout=timeout * 2,  # PDFs may take longer
             stream=True,
             headers=headers,
-            allow_redirects=True
+            allow_redirects=True,
         )
         response.raise_for_status()
 
         # Check content type
-        content_type = response.headers.get('Content-Type', '').lower()
-        if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
+        content_type = response.headers.get("Content-Type", "").lower()
+        if "pdf" not in content_type and not url.lower().endswith(".pdf"):
             logger.warning("URL does not appear to be a PDF (Content-Type: %s)", content_type)
             # Continue anyway, might still be a PDF
 
         # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             tmp_file.write(response.content)
             tmp_path = tmp_file.name
 
@@ -139,13 +139,15 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
             extracted_text = "\n\n".join(text_content)
 
             if not extracted_text or len(extracted_text.strip()) < MIN_CONTENT_LENGTH:
-                logger.warning("PDF extraction produced minimal content (%s chars)", len(extracted_text))
+                logger.warning(
+                    "PDF extraction produced minimal content (%s chars)", len(extracted_text)
+                )
                 return None
 
             logger.info(
                 "Successfully extracted %s characters from PDF (%s pages)",
                 len(extracted_text),
-                len(reader.pages)
+                len(reader.pages),
             )
 
             # Return in Crawl4AI-compatible format
@@ -175,4 +177,3 @@ def extract_pdf_client_side(url: str, timeout: int = 60) -> dict | None:
         logger.error("Error during client-side PDF extraction: %s", e, exc_info=True)
         logger.debug("PDF URL: %s, Error details: %s", url, str(e))
         return None
-

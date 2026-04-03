@@ -55,8 +55,7 @@ class SearXNGSearchTool(BaseTool):
         hostname = urlparse(url).hostname or ""
         hostname = hostname.lower()
         return any(
-            hostname == domain or hostname.endswith("." + domain)
-            for domain in PROBLEMATIC_DOMAINS
+            hostname == domain or hostname.endswith("." + domain) for domain in PROBLEMATIC_DOMAINS
         )
 
     def _run(self, query: str) -> str:
@@ -80,9 +79,7 @@ class SearXNGSearchTool(BaseTool):
                 )
 
                 if response.status_code != 200:
-                    return json.dumps(
-                        {"error": f"SearXNG returned HTTP {response.status_code}"}
-                    )
+                    return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
 
                 data = response.json()
                 results = data.get("results", [])

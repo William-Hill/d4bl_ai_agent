@@ -36,9 +36,7 @@ class TestQueryParser:
     """Test the QueryParser LLM-based parsing."""
 
     def setup_method(self):
-        self.parser = QueryParser(
-            ollama_base_url="http://localhost:11434"
-        )
+        self.parser = QueryParser(ollama_base_url="http://localhost:11434")
 
     @pytest.mark.asyncio
     @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
@@ -64,9 +62,7 @@ class TestQueryParser:
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session_cls.return_value = mock_session
 
-        result = await self.parser.parse(
-            "What NIL policies affect Black athletes in Mississippi?"
-        )
+        result = await self.parser.parse("What NIL policies affect Black athletes in Mississippi?")
 
         assert isinstance(result, ParsedQuery)
         assert "NIL" in result.entities
@@ -101,11 +97,13 @@ class TestQueryParser:
     @patch("d4bl.query.parser.ollama_generate", new_callable=AsyncMock)
     async def test_parse_uses_task_specific_model(self, mock_generate, mock_model):
         """Parser should call model_for_task('query_parser') and pass result to ollama_generate."""
-        mock_generate.return_value = json.dumps({
-            "entities": ["test"],
-            "search_queries": ["test query"],
-            "data_sources": ["vector"],
-        })
+        mock_generate.return_value = json.dumps(
+            {
+                "entities": ["test"],
+                "search_queries": ["test query"],
+                "data_sources": ["vector"],
+            }
+        )
         parser = QueryParser(ollama_base_url="http://localhost:11434")
         await parser.parse("test question")
 
@@ -113,4 +111,3 @@ class TestQueryParser:
         mock_generate.assert_called_once()
         call_kwargs = mock_generate.call_args[1]
         assert call_kwargs["model"] == "d4bl-query-parser"
-

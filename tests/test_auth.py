@@ -1,4 +1,5 @@
 """Tests for JWT authentication and role-checking dependencies."""
+
 from __future__ import annotations
 
 import time

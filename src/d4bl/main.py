@@ -11,32 +11,33 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 # Replace with inputs you want to test with, it will automatically
 # interpolate any tasks and agents information
 
+
 def run():
     """
     Run the crew.
     """
-    parser = argparse.ArgumentParser(description='D4BL Research and Analysis Tool')
+    parser = argparse.ArgumentParser(description="D4BL Research and Analysis Tool")
     parser.add_argument(
-        'query',
+        "query",
         type=str,
-        nargs='?',  # Make query optional
-        help='Research query or topic to investigate'
+        nargs="?",  # Make query optional
+        help="Research query or topic to investigate",
     )
     parser.add_argument(
-        '--summary',
+        "--summary",
         type=str,
-        default='detailed',
-        choices=['brief', 'detailed', 'comprehensive'],
-        help='Summary format: brief (250-500 words), detailed (1000-1500 words), or comprehensive (2000-3000 words)'
+        default="detailed",
+        choices=["brief", "detailed", "comprehensive"],
+        help="Summary format: brief (250-500 words), detailed (1000-1500 words), or comprehensive (2000-3000 words)",
     )
     parser.add_argument(
-        '--agents',
+        "--agents",
         type=str,
-        nargs='+',
+        nargs="+",
         default=None,
-        help='Select specific agents to run (e.g., --agents researcher writer). '
-             'Available agents: researcher, data_analyst, writer, fact_checker, '
-             'citation_agent, bias_detection_agent, editor, data_visualization_agent'
+        help="Select specific agents to run (e.g., --agents researcher writer). "
+        "Available agents: researcher, data_analyst, writer, fact_checker, "
+        "citation_agent, bias_detection_agent, editor, data_visualization_agent",
     )
 
     args = parser.parse_args()
@@ -46,7 +47,7 @@ def run():
         "How does algorithmic bias affect criminal justice outcomes for Black communities?",
         "What are the impacts of data-driven policing on Black neighborhoods?",
         "How can data science be used to address racial disparities in healthcare?",
-        "What role does big data play in perpetuating housing discrimination?"
+        "What role does big data play in perpetuating housing discrimination?",
     ]
 
     # If no query provided, prompt user
@@ -59,7 +60,7 @@ def run():
         while True:
             try:
                 choice = input("\nSelect a topic number (0-4): ")
-                if choice == '0':
+                if choice == "0":
                     args.query = input("\nEnter your research query: ")
                     break
                 elif choice.isdigit() and 1 <= int(choice) <= len(example_topics):
@@ -71,17 +72,17 @@ def run():
                 print("Invalid input. Please enter a number.")
 
     inputs = {
-        'query': args.query,
-        'summary_format': args.summary,
-        'current_year': str(datetime.now().year)
+        "query": args.query,
+        "summary_format": args.summary,
+        "current_year": str(datetime.now().year),
     }
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Starting research on: {args.query}")
     print(f"Summary format: {args.summary}")
     if args.agents:
         print(f"Selected agents: {', '.join(args.agents)}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     from d4bl.agents.crew import D4Bl
 
@@ -89,9 +90,9 @@ def run():
     if args.agents:
         crew_instance.selected_agents = args.agents
     result = crew_instance.crew().kickoff(inputs=inputs)
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("Research and Analysis Complete!")
-    print("="*80)
+    print("=" * 80)
     return result
 
 
@@ -99,13 +100,11 @@ def train():
     """
     Train the crew for a given number of iterations.
     """
-    inputs = {
-        "topic": "AI LLMs",
-        'current_year': str(datetime.now().year)
-    }
+    inputs = {"topic": "AI LLMs", "current_year": str(datetime.now().year)}
     from d4bl.agents.crew import D4Bl
 
     D4Bl().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
+
 
 def replay():
     """
@@ -115,18 +114,17 @@ def replay():
 
     D4Bl().crew().replay(task_id=sys.argv[1])
 
+
 def test():
     """
     Test the crew execution and returns the results.
     """
-    inputs = {
-        "topic": "AI LLMs",
-        "current_year": str(datetime.now().year)
-    }
+    inputs = {"topic": "AI LLMs", "current_year": str(datetime.now().year)}
 
     from d4bl.agents.crew import D4Bl
 
     D4Bl().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
+
 
 def run_with_trigger():
     """
@@ -139,14 +137,9 @@ def run_with_trigger():
 
     trigger_payload = json.loads(sys.argv[1])
 
-    inputs = {
-        "crewai_trigger_payload": trigger_payload,
-        "topic": "",
-        "current_year": ""
-    }
+    inputs = {"crewai_trigger_payload": trigger_payload, "topic": "", "current_year": ""}
 
     from d4bl.agents.crew import D4Bl
 
     result = D4Bl().crew().kickoff(inputs=inputs)
     return result
-

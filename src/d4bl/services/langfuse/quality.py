@@ -26,6 +26,7 @@ def evaluate_research_quality(
 
     if langfuse is None:
         from d4bl.services.langfuse.client import get_langfuse_eval_client
+
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping research quality evaluation")
@@ -39,6 +40,7 @@ def evaluate_research_quality(
 
         if llm is None:
             from d4bl.services.langfuse.llm_runner import get_eval_llm
+
             llm = get_eval_llm()
 
         prompt = quality_prompt(query, research_output, sources)
@@ -50,8 +52,12 @@ def evaluate_research_quality(
         eval_logger.info(
             "Evaluation scores — Overall: %.2f, Relevance: %.2f, Completeness: %.2f, "
             "Accuracy: %.2f, Bias: %.2f, Clarity: %.2f",
-            scores["overall"], scores["relevance"], scores["completeness"],
-            scores["accuracy"], scores["bias"], scores["clarity"],
+            scores["overall"],
+            scores["relevance"],
+            scores["completeness"],
+            scores["accuracy"],
+            scores["bias"],
+            scores["clarity"],
         )
 
         if trace_id and langfuse:
@@ -81,7 +87,9 @@ def evaluate_research_quality(
         return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
-        logger.error("Error in research quality evaluation (took %.2fs): %s", elapsed_time, e, exc_info=True)
+        logger.error(
+            "Error in research quality evaluation (took %.2fs): %s", elapsed_time, e, exc_info=True
+        )
         return {
             "error": str(e),
             "status": EvalStatus.FAILED,

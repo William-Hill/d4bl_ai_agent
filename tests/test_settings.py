@@ -12,6 +12,7 @@ from d4bl.settings import _OTEL_SUFFIX, Settings, get_settings
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fresh_settings(**env_overrides: str | None) -> Settings:
     """Create a Settings instance with specific env vars, then restore originals."""
     old = {}
@@ -35,11 +36,13 @@ def _fresh_settings(**env_overrides: str | None) -> Settings:
 # Core: env vars read at instantiation, not module import
 # ---------------------------------------------------------------------------
 
+
 class TestDeferredEnvReads:
     """Env vars must be read when Settings() is called, not when the module loads."""
 
     def test_get_settings_reads_env_at_call_time(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Setting an env var *after* import but *before* get_settings()
         should be picked up."""
@@ -53,7 +56,8 @@ class TestDeferredEnvReads:
         get_settings.cache_clear()
 
     def test_settings_constructor_picks_up_current_env(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("POSTGRES_HOST", "my-db-host")
         s = Settings()
@@ -70,6 +74,7 @@ class TestDeferredEnvReads:
 # ---------------------------------------------------------------------------
 # OTLP endpoint fallback chain
 # ---------------------------------------------------------------------------
+
 
 class TestOtlpEndpoint:
     """otlp_endpoint: explicit env > LANGFUSE_OTEL_HOST > LANGFUSE_HOST."""
@@ -128,15 +133,14 @@ class TestOtlpEndpoint:
 # CORS parsing
 # ---------------------------------------------------------------------------
 
+
 class TestCorsParsing:
     def test_single_origin(self) -> None:
         s = _fresh_settings(CORS_ALLOWED_ORIGINS="http://localhost:3000")
         assert s.cors_allowed_origins == ("http://localhost:3000",)
 
     def test_multiple_origins(self) -> None:
-        s = _fresh_settings(
-            CORS_ALLOWED_ORIGINS="http://a.com, http://b.com , http://c.com"
-        )
+        s = _fresh_settings(CORS_ALLOWED_ORIGINS="http://a.com, http://b.com , http://c.com")
         assert s.cors_allowed_origins == (
             "http://a.com",
             "http://b.com",
@@ -155,6 +159,7 @@ class TestCorsParsing:
 # ---------------------------------------------------------------------------
 # Individual field defaults
 # ---------------------------------------------------------------------------
+
 
 class TestFieldDefaults:
     """Verify sane defaults when env vars are unset."""
@@ -276,6 +281,7 @@ class TestFieldDefaults:
 # Supabase auth settings via get_settings
 # ---------------------------------------------------------------------------
 
+
 def test_supabase_auth_settings(monkeypatch):
     """Settings should expose Supabase auth fields."""
     get_settings.cache_clear()
@@ -296,6 +302,7 @@ def test_supabase_auth_settings(monkeypatch):
 # ---------------------------------------------------------------------------
 # Frozen immutability
 # ---------------------------------------------------------------------------
+
 
 class TestFrozen:
     def test_cannot_mutate(self) -> None:

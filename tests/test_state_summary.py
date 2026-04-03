@@ -44,9 +44,7 @@ class TestStateSummaryModel:
     def test_unique_constraint_columns(self):
         """The unique constraint covers the right columns."""
         for c in StateSummary.__table__.constraints:
-            if getattr(c, "name", None) == (
-                "uq_state_summary_source_state_metric_race_year"
-            ):
+            if getattr(c, "name", None) == ("uq_state_summary_source_state_metric_race_year"):
                 col_names = {col.name for col in c.columns}
                 assert col_names == {
                     "source",
@@ -284,7 +282,6 @@ class TestAggregateDoe:
         assert result[0]["value"] == pytest.approx(17.5)
         assert result[0]["sample_size"] == 4000
         assert result[0]["source"] == "doe"
-
 
     def test_state_fips_is_numeric_code_not_abbreviation(self):
         """state_fips must be a zero-padded numeric FIPS code, not a state abbreviation."""

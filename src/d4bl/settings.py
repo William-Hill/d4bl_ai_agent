@@ -7,6 +7,7 @@ not at class-definition time.  Combined with the ``@lru_cache`` on
 frozen thereafter -- but *after* the caller has had a chance to populate
 the environment.
 """
+
 from __future__ import annotations
 
 import os
@@ -84,8 +85,7 @@ class Settings:
         _set(
             "is_docker",
             os.path.exists("/.dockerenv")
-            or os.getenv("DOCKER_CONTAINER", "").strip().lower()
-            in {"1", "true", "yes", "on"},
+            or os.getenv("DOCKER_CONTAINER", "").strip().lower() in {"1", "true", "yes", "on"},
         )
 
         # LLM / Ollama
@@ -124,13 +124,10 @@ class Settings:
 
         # Build OTLP endpoint: explicit env var > otel host > langfuse host
         # Treat empty-string OTEL_EXPORTER_OTLP_ENDPOINT as unset.
-        explicit_otlp = (
-            os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or ""
-        ).strip()
+        explicit_otlp = (os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or "").strip()
         _set(
             "otlp_endpoint",
-            explicit_otlp
-            or f"{langfuse_otel_host or self.langfuse_host}{_OTEL_SUFFIX}",
+            explicit_otlp or f"{langfuse_otel_host or self.langfuse_host}{_OTEL_SUFFIX}",
         )
 
         # Database
@@ -141,17 +138,13 @@ class Settings:
         _set("postgres_db", os.getenv("POSTGRES_DB", "postgres"))
         _set(
             "db_echo",
-            os.getenv("DB_ECHO", "false").strip().lower()
-            in {"1", "true", "yes", "on"},
+            os.getenv("DB_ECHO", "false").strip().lower() in {"1", "true", "yes", "on"},
         )
 
         # CORS
         origins = tuple(
             origin
-            for origin in (
-                o.strip()
-                for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
-            )
+            for origin in (o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(","))
             if origin
         ) or ("*",)
         _set("cors_allowed_origins", origins)
@@ -187,8 +180,6 @@ class Settings:
         _set("admin_email", os.getenv("ADMIN_EMAIL"))
 
 
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-

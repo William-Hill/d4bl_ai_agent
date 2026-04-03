@@ -107,7 +107,8 @@ def get_llm_for_task(task: str) -> LLM:
     else:
         logger.warning(
             "No LLM_API_KEY set for provider '%s' (task=%s) — calls may fail",
-            provider, task,
+            provider,
+            task,
         )
 
     logger.info("Creating task-specific LLM (task=%s, model=%s)", task, task_model)
@@ -121,9 +122,7 @@ def get_available_models() -> list[dict]:
     Each model includes type ('base' or 'finetuned') and version (if available).
     """
     settings = get_settings()
-    current_model_string = build_llm_model_string(
-        settings.llm_provider, settings.llm_model
-    )
+    current_model_string = build_llm_model_string(settings.llm_provider, settings.llm_model)
     models = [
         {
             "provider": settings.llm_provider,
@@ -149,18 +148,18 @@ def get_available_models() -> list[dict]:
         if model_name and model_name not in seen:
             seen.add(model_name)
             version_raw = (
-                getattr(settings, VERSION_ATTRS.get(task, ""), "")
-                if task in VERSION_ATTRS
-                else ""
+                getattr(settings, VERSION_ATTRS.get(task, ""), "") if task in VERSION_ATTRS else ""
             )
-            models.append({
-                "provider": settings.llm_provider,
-                "model": model_name,
-                "model_string": build_llm_model_string(settings.llm_provider, model_name),
-                "is_default": False,
-                "task": task,
-                "type": "finetuned",
-                "version": version_raw or None,
-            })
+            models.append(
+                {
+                    "provider": settings.llm_provider,
+                    "model": model_name,
+                    "model_string": build_llm_model_string(settings.llm_provider, model_name),
+                    "is_default": False,
+                    "task": task,
+                    "type": "finetuned",
+                    "version": version_raw or None,
+                }
+            )
 
     return models

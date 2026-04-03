@@ -1,4 +1,5 @@
 """Evaluate the relevance of extracted content from URLs to the query."""
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,6 @@ logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
 
-
 def evaluate_content_relevance(
     query: str,
     extracted_contents: list[dict[str, Any]],
@@ -27,6 +27,7 @@ def evaluate_content_relevance(
 
     if langfuse is None:
         from d4bl.services.langfuse.client import get_langfuse_eval_client
+
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping content relevance evaluation")
@@ -36,10 +37,16 @@ def evaluate_content_relevance(
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
         if not extracted_contents:
-            return {"scores": {}, "average": 0.0, "status": EvalStatus.SKIPPED, "reason": "no_contents"}
+            return {
+                "scores": {},
+                "average": 0.0,
+                "status": EvalStatus.SKIPPED,
+                "reason": "no_contents",
+            }
 
         if llm is None:
             from d4bl.services.langfuse.llm_runner import get_eval_llm
+
             llm = get_eval_llm()
 
         relevance_scores: dict[str, dict[str, Any]] = {}
@@ -60,7 +67,11 @@ def evaluate_content_relevance(
 
                 parsed = parse_first_json_block(str(evaluation))
                 try:
-                    raw = float(parsed["relevance_score"]) if parsed and "relevance_score" in parsed else None
+                    raw = (
+                        float(parsed["relevance_score"])
+                        if parsed and "relevance_score" in parsed
+                        else None
+                    )
                 except (ValueError, TypeError):
                     raw = None
 
@@ -86,7 +97,9 @@ def evaluate_content_relevance(
 
         eval_logger.info(
             "Content relevance — Average: %.2f, URLs evaluated: %s/%s",
-            avg_relevance, len(scores_only), len(extracted_contents),
+            avg_relevance,
+            len(scores_only),
+            len(extracted_contents),
         )
 
         if trace_id and langfuse:
@@ -98,7 +111,9 @@ def evaluate_content_relevance(
                     comment=f"Average relevance of extracted content from {len(extracted_contents)} URLs",
                 )
             except Exception as score_error:
-                logger.error("Failed to log content relevance score: %s", score_error, exc_info=True)
+                logger.error(
+                    "Failed to log content relevance score: %s", score_error, exc_info=True
+                )
 
         elapsed_time = time.time() - start_time
         return {
@@ -112,14 +127,18 @@ def evaluate_content_relevance(
 
     except ValueError as ve:
         logger.error(
-            "Validation error in content relevance evaluation: %s", ve, exc_info=True,
+            "Validation error in content relevance evaluation: %s",
+            ve,
+            exc_info=True,
         )
         return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error(
             "Error in content relevance evaluation (took %.2fs): %s",
-            elapsed_time, e, exc_info=True,
+            elapsed_time,
+            e,
+            exc_info=True,
         )
         return {
             "error": str(e),

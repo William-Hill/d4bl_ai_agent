@@ -19,16 +19,12 @@ class TestResolveLangfuseHost:
 
     def test_docker_replaces_localhost_with_service_name(self):
         """In Docker, localhost should be replaced with langfuse-web."""
-        result = resolve_langfuse_host(
-            "http://localhost:3000", is_docker=True
-        )
+        result = resolve_langfuse_host("http://localhost:3000", is_docker=True)
         assert result == "http://langfuse-web:3000"
 
     def test_docker_replaces_localhost_and_adjusts_port_3002(self):
         """In Docker, localhost:3002 should become langfuse-web:3000."""
-        result = resolve_langfuse_host(
-            "http://localhost:3002", is_docker=True
-        )
+        result = resolve_langfuse_host("http://localhost:3002", is_docker=True)
         assert result == "http://langfuse-web:3000"
 
     def test_docker_without_localhost_returns_unchanged(self):
@@ -43,9 +39,7 @@ class TestCheckLangfuseServiceAvailable:
     def test_returns_false_for_unreachable_host(self):
         """Should return False when the host is not reachable."""
         with patch("urllib.request.urlopen", side_effect=OSError("Connection refused")):
-            result = check_langfuse_service_available(
-                "http://127.0.0.1:19999", timeout=0.5
-            )
+            result = check_langfuse_service_available("http://127.0.0.1:19999", timeout=0.5)
         assert result is False
 
     def test_returns_true_on_successful_health_check(self):
@@ -54,9 +48,7 @@ class TestCheckLangfuseServiceAvailable:
         with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
             result = check_langfuse_service_available("http://localhost:3000")
         assert result is True
-        mock_urlopen.assert_called_once_with(
-            "http://localhost:3000/api/public/health", timeout=3.0
-        )
+        mock_urlopen.assert_called_once_with("http://localhost:3000/api/public/health", timeout=3.0)
         mock_resp.close.assert_called_once()
 
     def test_returns_false_on_exception(self):

@@ -27,21 +27,27 @@ class TestBuildHallucinationPair:
 
     def test_first_pair_is_factual(self):
         factual_pair, _ = build_hallucination_pair(
-            self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
+            self._SEED_ROW,
+            self._FACTUAL,
+            self._HALLUCINATED,
         )
         assistant = json.loads(factual_pair["messages"][2]["content"])
         assert assistant["label"] == "FACTUAL"
 
     def test_second_pair_is_hallucinated(self):
         _, hallucinated_pair = build_hallucination_pair(
-            self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
+            self._SEED_ROW,
+            self._FACTUAL,
+            self._HALLUCINATED,
         )
         assistant = json.loads(hallucinated_pair["messages"][2]["content"])
         assert assistant["label"] == "HALLUCINATED"
 
     def test_both_pairs_use_hallucination_system_prompt(self):
         factual_pair, hall_pair = build_hallucination_pair(
-            self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
+            self._SEED_ROW,
+            self._FACTUAL,
+            self._HALLUCINATED,
         )
         expected_system = STUDENT_EVALUATOR_SYSTEMS["hallucination"]
         assert factual_pair["messages"][0]["content"] == expected_system
@@ -49,7 +55,9 @@ class TestBuildHallucinationPair:
 
     def test_factual_pair_user_has_eval_framing(self):
         factual_pair, _ = build_hallucination_pair(
-            self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
+            self._SEED_ROW,
+            self._FACTUAL,
+            self._HALLUCINATED,
         )
         user_content = factual_pair["messages"][1]["content"]
         assert user_content.startswith("Context:\n")
@@ -58,7 +66,9 @@ class TestBuildHallucinationPair:
 
     def test_hallucinated_pair_user_has_eval_framing(self):
         _, hall_pair = build_hallucination_pair(
-            self._SEED_ROW, self._FACTUAL, self._HALLUCINATED,
+            self._SEED_ROW,
+            self._FACTUAL,
+            self._HALLUCINATED,
         )
         user_content = hall_pair["messages"][1]["content"]
         assert user_content.startswith("Context:\n")
@@ -122,13 +132,17 @@ class TestGenerateQueryParserQuestionsV2:
 
     def test_returns_requested_count(self):
         result = generate_query_parser_questions_v2(
-            self._SEED_ROWS, count=5, entity_type="organization",
+            self._SEED_ROWS,
+            count=5,
+            entity_type="organization",
         )
         assert len(result) == 5
 
     def test_each_item_has_question_and_entity_type(self):
         result = generate_query_parser_questions_v2(
-            self._SEED_ROWS, count=3, entity_type="policy",
+            self._SEED_ROWS,
+            count=3,
+            entity_type="policy",
         )
         for item in result:
             assert "question" in item
@@ -137,15 +151,20 @@ class TestGenerateQueryParserQuestionsV2:
 
     def test_organization_questions_contain_org_name(self):
         result = generate_query_parser_questions_v2(
-            self._SEED_ROWS, count=5, entity_type="organization",
+            self._SEED_ROWS,
+            count=5,
+            entity_type="organization",
         )
         from scripts.training.prompts import ORG_NAMES
+
         for item in result:
             assert any(org in item["question"] for org in ORG_NAMES)
 
     def test_adversarial_json_returns_stress_questions(self):
         result = generate_query_parser_questions_v2(
-            self._SEED_ROWS, count=3, entity_type="adversarial_json",
+            self._SEED_ROWS,
+            count=3,
+            entity_type="adversarial_json",
         )
         assert len(result) == 3
         for item in result:
@@ -153,6 +172,8 @@ class TestGenerateQueryParserQuestionsV2:
 
     def test_count_zero_returns_empty(self):
         result = generate_query_parser_questions_v2(
-            self._SEED_ROWS, count=0, entity_type="organization",
+            self._SEED_ROWS,
+            count=0,
+            entity_type="organization",
         )
         assert result == []

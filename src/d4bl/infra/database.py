@@ -1,6 +1,7 @@
 """
 Database models and connection for storing research queries and results
 """
+
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -37,6 +38,7 @@ def _utc_now() -> datetime:
 
 class ResearchJob(Base):
     """Model for storing research job queries and results"""
+
     __tablename__ = "research_jobs"
 
     job_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -46,11 +48,15 @@ class ResearchJob(Base):
     status = Column(String(20), nullable=False, default="pending", index=True)
     progress = Column(Text, nullable=True)
     result = Column(JSON, nullable=True)  # Store the full result dict as JSON
-    research_data = Column(JSON, nullable=True)  # Store research data for use as reference in evaluations
+    research_data = Column(
+        JSON, nullable=True
+    )  # Store research data for use as reference in evaluations
     error = Column(Text, nullable=True)
     logs = Column(JSON, nullable=True)  # Store logs array as JSON
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
     completed_at = Column(DateTime(timezone=True), nullable=True)
     # No ForeignKey -- auth.users is managed by Supabase, not SQLAlchemy
     user_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
@@ -77,6 +83,7 @@ class ResearchJob(Base):
 
 class EvaluationResult(Base):
     """Store evaluator outputs for spans"""
+
     __tablename__ = "evaluation_results"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -111,6 +118,7 @@ class EvaluationResult(Base):
 
 class ModelEvalRun(Base):
     """Track evaluation runs per model version for regression detection."""
+
     __tablename__ = "model_eval_runs"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -143,6 +151,7 @@ class ModelEvalRun(Base):
 
 class Document(Base):
     """Parent document: one row per source file/article/report."""
+
     __tablename__ = "documents"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -156,7 +165,9 @@ class Document(Base):
     # "metadata" is reserved by SQLAlchemy's Declarative API; map to the same DB column name
     extra_metadata = Column("metadata", JSONB, default=dict)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
 
     def to_dict(self):
         return {
@@ -176,10 +187,13 @@ class Document(Base):
 
 class DocumentChunk(Base):
     """Child chunk: N chunks per document, each with its own embedding."""
+
     __tablename__ = "document_chunks"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    document_id = Column(PG_UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    document_id = Column(
+        PG_UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
     content = Column(Text, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     token_count = Column(Integer, nullable=True)
@@ -203,11 +217,12 @@ class DocumentChunk(Base):
 
 class CensusIndicator(Base):
     """Race-disaggregated Census ACS indicators by geography."""
+
     __tablename__ = "census_indicators"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     fips_code = Column(String(11), nullable=False, index=True)
-    geography_type = Column(String(10), nullable=False)   # state | county | tract
+    geography_type = Column(String(10), nullable=False)  # state | county | tract
     geography_name = Column(Text, nullable=False)
     state_fips = Column(String(2), nullable=False, index=True)
     year = Column(Integer, nullable=False)
@@ -241,6 +256,7 @@ class CensusIndicator(Base):
 
 class PolicyBill(Base):
     """State legislation tracked via OpenStates."""
+
     __tablename__ = "policy_bills"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -257,7 +273,9 @@ class PolicyBill(Base):
     last_action_date = Column(Date, nullable=True)
     url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
 
     __table_args__ = (
         # Support common filters for policy tracker views
@@ -368,9 +386,7 @@ class IngestionRun(Base):
             "trigger_type": self.trigger_type,
             "records_ingested": self.records_ingested,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": (
-                self.completed_at.isoformat() if self.completed_at else None
-            ),
+            "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
             "error_detail": self.error_detail,
         }
 
@@ -418,9 +434,7 @@ class DataLineage(Base):
             "quality_score": self.quality_score,
             "coverage_metadata": self.coverage_metadata,
             "bias_flags": self.bias_flags,
-            "retrieved_at": (
-                self.retrieved_at.isoformat() if self.retrieved_at else None
-            ),
+            "retrieved_at": (self.retrieved_at.isoformat() if self.retrieved_at else None),
         }
 
 
@@ -442,9 +456,7 @@ class KeywordMonitor(Base):
         server_default=func.now(),
     )
 
-    __table_args__ = (
-        Index("ix_keyword_monitors_enabled", "enabled"),
-    )
+    __table_args__ = (Index("ix_keyword_monitors_enabled", "enabled"),)
 
     def to_dict(self):
         return {
@@ -461,6 +473,7 @@ class KeywordMonitor(Base):
 
 class CdcHealthOutcome(Base):
     """Health outcomes from CDC PLACES."""
+
     __tablename__ = "cdc_health_outcomes"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -480,7 +493,10 @@ class CdcHealthOutcome(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "fips_code", "year", "measure", "data_value_type",
+            "fips_code",
+            "year",
+            "measure",
+            "data_value_type",
             name="uq_cdc_health_outcome_key",
         ),
         Index("ix_cdc_health_state_measure", "state_fips", "measure", "year"),
@@ -489,6 +505,7 @@ class CdcHealthOutcome(Base):
 
 class EpaEnvironmentalJustice(Base):
     """Environmental justice screening from EPA EJScreen."""
+
     __tablename__ = "epa_environmental_justice"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -508,7 +525,9 @@ class EpaEnvironmentalJustice(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "tract_fips", "year", "indicator",
+            "tract_fips",
+            "year",
+            "indicator",
             name="uq_epa_ej_key",
         ),
         Index("ix_epa_ej_state_indicator", "state_fips", "indicator", "year"),
@@ -517,6 +536,7 @@ class EpaEnvironmentalJustice(Base):
 
 class FbiCrimeStat(Base):
     """Crime statistics from FBI Crime Data Explorer."""
+
     __tablename__ = "fbi_crime_stats"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -537,10 +557,12 @@ class FbiCrimeStat(Base):
         # via COALESCE); SQLAlchemy UniqueConstraint kept for reference.
         Index(
             "uq_fbi_crime_key",
-            "state_abbrev", "offense",
+            "state_abbrev",
+            "offense",
             text("COALESCE(race, '')"),
             text("COALESCE(bias_motivation, '')"),
-            "year", "category",
+            "year",
+            "category",
             unique=True,
         ),
         Index("ix_fbi_crime_state_race_year", "state_abbrev", "race", "year"),
@@ -549,6 +571,7 @@ class FbiCrimeStat(Base):
 
 class BlsLaborStatistic(Base):
     """Labor statistics from BLS."""
+
     __tablename__ = "bls_labor_statistics"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -565,7 +588,9 @@ class BlsLaborStatistic(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "series_id", "year", "period",
+            "series_id",
+            "year",
+            "period",
             name="uq_bls_labor_key",
         ),
         Index("ix_bls_labor_metric_race_year", "metric", "race", "year"),
@@ -574,6 +599,7 @@ class BlsLaborStatistic(Base):
 
 class HudFairHousing(Base):
     """Fair housing data from HUD."""
+
     __tablename__ = "hud_fair_housing"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -591,7 +617,11 @@ class HudFairHousing(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "fips_code", "year", "indicator", "race_group_a", "race_group_b",
+            "fips_code",
+            "year",
+            "indicator",
+            "race_group_a",
+            "race_group_b",
             name="uq_hud_fair_housing_key",
         ),
         Index("ix_hud_fh_state_indicator", "state_fips", "indicator", "year"),
@@ -600,6 +630,7 @@ class HudFairHousing(Base):
 
 class UsdaFoodAccess(Base):
     """Food access data from USDA."""
+
     __tablename__ = "usda_food_access"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -619,7 +650,9 @@ class UsdaFoodAccess(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "tract_fips", "year", "indicator",
+            "tract_fips",
+            "year",
+            "indicator",
             name="uq_usda_food_access_key",
         ),
         Index("ix_usda_fa_state_indicator", "state_fips", "indicator", "year"),
@@ -628,6 +661,7 @@ class UsdaFoodAccess(Base):
 
 class DoeCivilRights(Base):
     """Civil rights data from DOE CRDC."""
+
     __tablename__ = "doe_civil_rights"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -645,7 +679,10 @@ class DoeCivilRights(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "district_id", "school_year", "metric", "race",
+            "district_id",
+            "school_year",
+            "metric",
+            "race",
             name="uq_doe_civil_rights_key",
         ),
         Index("ix_doe_cr_state_metric_race", "state", "metric", "race"),
@@ -654,6 +691,7 @@ class DoeCivilRights(Base):
 
 class PoliceViolenceIncident(Base):
     """Police violence incidents from Mapping Police Violence."""
+
     __tablename__ = "police_violence_incidents"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -674,13 +712,12 @@ class PoliceViolenceIncident(Base):
     source_url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
-    __table_args__ = (
-        Index("ix_pv_state_race_year", "state", "race", "year"),
-    )
+    __table_args__ = (Index("ix_pv_state_race_year", "state", "race", "year"),)
 
 
 class CensusDemographics(Base):
     """Decennial census race/ethnicity population counts."""
+
     __tablename__ = "census_demographics"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -696,14 +733,14 @@ class CensusDemographics(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("geo_id", "year", "race",
-                        name="uq_census_demographics_key"),
+        UniqueConstraint("geo_id", "year", "race", name="uq_census_demographics_key"),
         Index("ix_census_demo_state_year", "state_fips", "year"),
     )
 
 
 class CdcMortality(Base):
     """Mortality data from CDC WONDER / NCHS via SODA API."""
+
     __tablename__ = "cdc_mortality"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -720,7 +757,10 @@ class CdcMortality(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "geo_id", "year", "cause_of_death", "race",
+            "geo_id",
+            "year",
+            "cause_of_death",
+            "race",
             name="uq_cdc_mortality_key",
         ),
         Index("ix_cdc_mortality_state_year", "state_fips", "year", "cause_of_death", "race"),
@@ -730,6 +770,7 @@ class CdcMortality(Base):
 
 class BjsIncarceration(Base):
     """DOJ Bureau of Justice Statistics incarceration data by race."""
+
     __tablename__ = "bjs_incarceration"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -744,14 +785,22 @@ class BjsIncarceration(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("state_abbrev", "year", "facility_type", "metric", "race", "gender",
-                        name="uq_bjs_incarceration_key"),
+        UniqueConstraint(
+            "state_abbrev",
+            "year",
+            "facility_type",
+            "metric",
+            "race",
+            "gender",
+            name="uq_bjs_incarceration_key",
+        ),
         Index("ix_bjs_inc_state_race_year", "state_abbrev", "race", "year"),
     )
 
 
 class CongressVote(Base):
     """Congressional voting records from ProPublica."""
+
     __tablename__ = "congress_votes"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -770,14 +819,14 @@ class CongressVote(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("bill_id", "congress", "chamber",
-                        name="uq_congress_votes_key"),
+        UniqueConstraint("bill_id", "congress", "chamber", name="uq_congress_votes_key"),
         Index("ix_congress_votes_congress_subject", "congress", "subject"),
     )
 
 
 class VeraIncarceration(Base):
     """Vera Institute county-level incarceration trends by race."""
+
     __tablename__ = "vera_incarceration"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -794,14 +843,14 @@ class VeraIncarceration(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("fips", "year", "facility_type", "race",
-                        name="uq_vera_incarceration_key"),
+        UniqueConstraint("fips", "year", "facility_type", "race", name="uq_vera_incarceration_key"),
         Index("ix_vera_inc_state_race_year", "state", "race", "year"),
     )
 
 
 class TrafficStop(Base):
     """Stanford Open Policing Project traffic stop data by race."""
+
     __tablename__ = "traffic_stops"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -820,14 +869,14 @@ class TrafficStop(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("state", "department", "year", "race",
-                        name="uq_traffic_stops_key"),
+        UniqueConstraint("state", "department", "year", "race", name="uq_traffic_stops_key"),
         Index("ix_traffic_stops_state_race_year", "state", "race", "year"),
     )
 
 
 class EvictionData(Base):
     """Eviction Lab eviction rates by geography."""
+
     __tablename__ = "eviction_data"
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -848,8 +897,7 @@ class EvictionData(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
-        UniqueConstraint("geo_id", "year",
-                        name="uq_eviction_data_key"),
+        UniqueConstraint("geo_id", "year", name="uq_eviction_data_key"),
         Index("ix_eviction_data_state_year", "state_fips", "year"),
     )
 
@@ -938,9 +986,7 @@ def init_db():
         max_overflow=10,  # Max overflow connections
         pool_recycle=3600,  # Recycle connections after 1 hour
     )
-    async_session_maker = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def get_db() -> AsyncSession:
@@ -971,4 +1017,3 @@ async def close_db():
 
 # Import StateSummary so it is registered with Base.metadata
 from d4bl.infra.state_summary import StateSummary  # noqa: E402, F401
-
