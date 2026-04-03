@@ -198,7 +198,7 @@ class D4Bl():
         embedder_config = {
             "provider": "ollama",
             "config": {
-                "model": embedder_model,
+                "model_name": embedder_model,
                 "url": f"{ollama_base_url}/api/embeddings"
             }
         }

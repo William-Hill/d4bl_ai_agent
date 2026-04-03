@@ -5,10 +5,10 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/settings.yml:/etc/searxng/settings.template.yml:ro
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080
-      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-please-change-in-production}
+    entrypoint: ["/bin/sh", "-c", "cp /etc/searxng/settings.template.yml /etc/searxng/settings.yml && exec /usr/local/searxng/entrypoint.sh"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]

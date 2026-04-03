@@ -49,9 +49,9 @@ class ResearchJob(Base):
     research_data = Column(JSON, nullable=True)  # Store research data for use as reference in evaluations
     error = Column(Text, nullable=True)
     logs = Column(JSON, nullable=True)  # Store logs array as JSON
-    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
-    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     # No ForeignKey -- auth.users is managed by Supabase, not SQLAlchemy
     user_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
 
@@ -90,7 +90,7 @@ class EvaluationResult(Base):
     input_text = Column(Text, nullable=True)
     output_text = Column(Text, nullable=True)
     context_text = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
 
     def to_dict(self):
         return {
@@ -215,7 +215,7 @@ class CensusIndicator(Base):
     metric = Column(String(100), nullable=False)
     value = Column(Float, nullable=False)
     margin_of_error = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         # Composite index to support common query filters
@@ -256,8 +256,8 @@ class PolicyBill(Base):
     introduced_date = Column(Date, nullable=True)
     last_action_date = Column(Date, nullable=True)
     url = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
-    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
 
     __table_args__ = (
         # Support common filters for policy tracker views
@@ -476,7 +476,7 @@ class CdcHealthOutcome(Base):
     low_confidence_limit = Column(Float, nullable=True)
     high_confidence_limit = Column(Float, nullable=True)
     total_population = Column(Integer, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -504,7 +504,7 @@ class EpaEnvironmentalJustice(Base):
     population = Column(Integer, nullable=True)
     minority_pct = Column(Float, nullable=True)
     low_income_pct = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -530,7 +530,7 @@ class FbiCrimeStat(Base):
     year = Column(Integer, nullable=False)
     value = Column(Float, nullable=False)
     population = Column(Integer, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         # Functional unique index is created in migration (handles NULLs
@@ -561,7 +561,7 @@ class BlsLaborStatistic(Base):
     period = Column(String(10), nullable=False)
     value = Column(Float, nullable=False)
     footnotes = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -587,7 +587,7 @@ class HudFairHousing(Base):
     value = Column(Float, nullable=False)
     race_group_a = Column(String(50), nullable=True)
     race_group_b = Column(String(50), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -615,7 +615,7 @@ class UsdaFoodAccess(Base):
     population = Column(Integer, nullable=True)
     poverty_rate = Column(Float, nullable=True)
     median_income = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -641,7 +641,7 @@ class DoeCivilRights(Base):
     race = Column(String(50), nullable=False)
     value = Column(Float, nullable=False)
     total_enrollment = Column(Integer, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -672,7 +672,7 @@ class PoliceViolenceIncident(Base):
     criminal_charges = Column(String(200), nullable=True)
     agency = Column(String(200), nullable=True)
     source_url = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         Index("ix_pv_state_race_year", "state", "race", "year"),
@@ -693,7 +693,7 @@ class CensusDemographics(Base):
     race = Column(String(50), nullable=False)
     population = Column(Integer, nullable=True)
     pct_of_total = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("geo_id", "year", "race",
@@ -716,7 +716,7 @@ class CdcMortality(Base):
     race = Column(String(100), nullable=False, default="total")
     deaths = Column(Integer, nullable=True)
     age_adjusted_rate = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint(
@@ -741,7 +741,7 @@ class BjsIncarceration(Base):
     race = Column(String(50), nullable=False)
     gender = Column(String(20), nullable=False)
     value = Column(Float, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("state_abbrev", "year", "facility_type", "metric", "race", "gender",
@@ -767,7 +767,7 @@ class CongressVote(Base):
     no_votes = Column(Integer, nullable=True)
     topic_tags = Column(JSON, nullable=True)
     url = Column(String(500), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("bill_id", "congress", "chamber",
@@ -791,7 +791,7 @@ class VeraIncarceration(Base):
     population = Column(Integer, nullable=True)
     total_pop = Column(Integer, nullable=True)
     rate_per_100k = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("fips", "year", "facility_type", "race",
@@ -817,7 +817,7 @@ class TrafficStop(Base):
     citation_issued = Column(Integer, nullable=True)
     search_rate = Column(Float, nullable=True)
     hit_rate = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("state", "department", "year", "race",
@@ -845,7 +845,7 @@ class EvictionData(Base):
     eviction_rate = Column(Float, nullable=True)
     eviction_filing_rate = Column(Float, nullable=True)
     pct_nonwhite = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("geo_id", "year",
