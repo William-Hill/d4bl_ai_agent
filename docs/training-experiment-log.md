@@ -15,6 +15,7 @@
 | 3 | 2026-03-29 | v2 Qwen 3.5 upgrade | Qwen3.5-4B | Base model upgrade, v2 training data |
 | 4 | 2026-03-31 | v3 document layer + subtask dispatch | Qwen3.5-4B | Parser entity F1 +16pp, evaluator 0%->84% |
 | 5 | 2026-04-01 | v3.1 expanded state coverage (FAILED) | Qwen3.5-4B | Domain re-adaptation broke evaluator output format |
+| 6 | 2026-04-03 | v3.0 full retrain (clean slate) | Qwen3.5-4B | Hallucination 87%, parser entity F1 75%, all adapters co-adapted |
 
 ## Cumulative Cost
 
@@ -24,7 +25,8 @@
 | 2. Sprint 2.5 JSON fix | ~$15.00 | ~$4.00 | ~$38.00 |
 | 3. v2 Qwen 3.5 upgrade | $0.02 (resume) | ~$4.00 | ~$42.02 |
 | 4. v3 document layer | $0.59 | ~$4.00 | ~$46.61 |
-| 5. v3.1 expanded states (FAILED) | $0.59 | ~$4.00 | **~$51.20** |
+| 5. v3.1 expanded states (FAILED) | $0.59 | ~$4.00 | ~$51.20 |
+| 6. v3.0 full retrain | $0.00 | ~$4.00 | **~$55.20** |
 
 ---
 
@@ -305,6 +307,96 @@ Reverted to the v3 evaluator GGUF (March 31 training run) which produces correct
 | Doc hallucination pair generation (175 Claude calls) | $0.59 |
 | Colab A100 training (~48 min) | ~$4.00 |
 | **Total (wasted)** | **~$4.59** |
+
+---
+
+## Experiment 6: v3.0 Full Retrain (Clean Slate)
+
+**Date:** 2026-04-03
+**Status:** Partial ship — hallucination passes, parser/relevance need work
+
+### Observation
+
+The v3.1 attempt (Experiment 5) overwrote the `domain_merged` checkpoint. All task adapters were invalidated since they were LoRA deltas trained against the v3 domain base. A full retrain from scratch was needed.
+
+### Hypothesis
+
+Retraining ALL phases (domain adaptation + 3 task adapters) on the expanded corpus (44,235 passages) from a clean state would produce co-adapted adapters that work correctly together, unlike v3.1 which only retrained the evaluator.
+
+### Methodology
+
+1. Cleared ALL stale training state from Drive (kept only `training_data_final/`)
+2. Full training on Colab A100: domain → parser → explainer → evaluator → GGUF export
+3. Used `--force` flag to ignore any cached checkpoints
+4. Backed up `domain_merged` to versioned Drive directory (`d4bl_training_v3_domain_merged_backup/`)
+5. Registered all 7 Ollama models (3 main + 4 evaluator subtasks)
+
+#### Training health (all 4/4 phases passed)
+
+| Phase | Train Loss | Eval Loss | Overfit Ratio | Duration |
+|-------|-----------|-----------|---------------|----------|
+| Domain Adaptation | 0.481 | — | — | 59m 42s |
+| Query Parser | 0.323 | 0.320 | 0.99 | 8m 37s |
+| Data Explainer | 0.679 | 0.753 | 1.11 | 7m 40s |
+| Evaluator | 0.549 | 0.603 | 1.10 | 30m 43s |
+
+Total training time: 2h 02m. GGUF exports: 3 × 2.52 GB (Q4_K_M).
+
+### Results
+
+| Metric | v3 (Exp 4) | v3.1 (Exp 5, broken) | v3.0 retrain (this) | Ship threshold |
+|--------|-----------|---------------------|---------------------|----------------|
+| hallucination_accuracy | 84% | 0.5% | **87.11%** | ≥ 85% ✓ |
+| relevance_mae | 1.53 | 4.00 | 2.70 | ≤ 0.80 ✗ |
+| entity_f1 | 91% | — | 74.88% | ≥ 80% ✗ |
+| json_valid (parser) | 98% | — | 96.30% | — |
+| json_valid (explainer) | 100% | — | 100% | — |
+| p95 latency (parser) | — | — | 5170ms | ≤ 1000ms ✗ |
+| p95 latency (explainer) | — | — | 13751ms | ≤ 3000ms ✗ |
+
+### Analysis
+
+**Hallucination accuracy (87.11%)** crosses the 85% ship threshold for the first time. This is a genuine improvement over v3's 84%, likely from the expanded corpus providing more diverse factual grounding patterns.
+
+**Entity F1 (74.88%)** regressed from v3's 91%. Possible causes:
+- The expanded domain corpus shifted the base model's entity recognition behavior
+- All adapters were retrained from scratch — the parser lost some of v3's co-adaptation
+- Needs investigation: compare predicted vs expected entities to identify specific failure modes
+
+**Relevance MAE (2.70)** is worse than v3's 1.53. The eval harness now correctly dispatches to subtask-specific models (d4bl-evaluator-relevance), which may use a different scoring scale than expected. Scoring calibration mismatch under investigation.
+
+**Latency** is dominated by Qwen 3.5's `<think>` reasoning blocks (empty, ~10 tokens overhead) plus the natural generation speed of a 4B model on Mac hardware (~60 tok/s). The `<think>` blocks cannot be disabled for custom GGUF files — tested: Ollama API `think: false`, Modelfile `PARAMETER think false`, and `/no_think` system prompt token. None work. Latency thresholds need adjustment for local inference or require cloud GPU deployment.
+
+### Infrastructure fixes discovered during eval
+
+1. **Stale editable install**: `pip install -e .` pointed to a different directory (`d4bl-fix-169`). All code changes to `ollama_client.py` and `validation/model_output.py` were invisible. Fixed by re-running `pip install -e .` in the correct repo.
+2. **`ollama_generate` missing `num_predict`**: The Ollama API client only sent `temperature` in options. Added `num_predict: 2048` to prevent JSON truncation.
+3. **Modelfile `num_predict` not honored**: `ollama create` doesn't reliably apply Modelfile parameters to custom GGUFs. Workaround: send `num_predict` explicitly in every API call.
+4. **Subtask evaluator models not registered**: `register_models.py` only registered 3 main models. Added all 4 subtask evaluator models (hallucination, relevance, bias, equity-framing).
+5. **Validator missing fields**: `_KNOWN_EVAL_FIELDS` didn't include `label` or `reasoning` (v3 training output schema). Added both.
+6. **Think block stripping**: Added `_THINK_RE` regex to `_extract_json()` for defensive stripping of `<think>` blocks before JSON parsing.
+
+### Lessons Learned
+
+1. **Always verify the editable install target** after switching branches or worktrees. `pip show <pkg>` reveals the actual source directory.
+2. **Explicit API options > Modelfile parameters** for custom GGUFs. Don't rely on Modelfile `PARAMETER` for Ollama inference — pass options in every API call.
+3. **Qwen 3.5 thinking mode cannot be disabled** for custom GGUF files. It's baked into the model weights. Stripping in post-processing is the only reliable approach.
+4. **Register ALL models the eval harness needs** before running evals. The subtask dispatch silently falls back to the wrong model if subtask models aren't registered.
+
+### Next Steps
+
+- Investigate relevance scoring scale mismatch (model vs test set conventions)
+- Investigate entity F1 regression (compare predicted vs expected entity lists)
+- Adjust ship criteria latency thresholds for local vs deployed inference
+- Consider Qwen 2.5 (no thinking mode) or smaller quantization for latency-sensitive deployment
+
+### Cost
+
+| Item | Cost |
+|------|------|
+| Training data generation | $0.00 (reused v3 data) |
+| Colab A100 training (~2h) | ~$4.00 |
+| **Total** | **~$4.00** |
 
 ---
 

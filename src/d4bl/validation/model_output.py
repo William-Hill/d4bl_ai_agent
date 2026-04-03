@@ -23,11 +23,12 @@ _VALID_INTENTS = {"compare", "trend", "lookup", "aggregate"}
 # Public alias for external use
 VALID_INTENTS = _VALID_INTENTS
 _JSON_RE = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.DOTALL)
+_THINK_RE = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
 
 def _extract_json(raw: str) -> tuple[dict | None, str | None]:
     """Try to parse a JSON object from raw text, including extracting from wrapper text."""
-    raw = raw.strip()
+    raw = _THINK_RE.sub("", raw).strip()
     try:
         obj = json.loads(raw)
         if not isinstance(obj, dict):
@@ -130,6 +131,8 @@ def validate_evaluator_output(raw: str) -> ValidationResult:
         "context",
         "evaluation",
         "supporting_evidence",
+        "label",
+        "reasoning",
     }
 
     errors = []

@@ -1,7 +1,7 @@
 FROM ./d4bl-evaluator-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.1
 PARAMETER num_ctx 4096
-PARAMETER num_predict 512
+PARAMETER num_predict 2048
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
 Evaluate the model output against the provided context and return a structured JSON judgment. Respond with ONLY valid JSON. Do not use thinking tags or reasoning blocks.<|im_end|>

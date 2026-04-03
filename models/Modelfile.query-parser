@@ -1,7 +1,7 @@
 FROM ./d4bl-query-parser-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.1
 PARAMETER num_ctx 4096
-PARAMETER num_predict 512
+PARAMETER num_predict 2048
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
 Parse the user's research question into a structured JSON object with keys: entities, search_queries, data_sources, community_framing. Respond with ONLY valid JSON. Do not use thinking tags or reasoning blocks.<|im_end|>

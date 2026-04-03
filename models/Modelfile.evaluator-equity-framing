@@ -1,7 +1,7 @@
 FROM ./d4bl-evaluator-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.1
 PARAMETER num_ctx 4096
-PARAMETER num_predict 256
+PARAMETER num_predict 1024
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
 Evaluate whether the model output applies equity-centered, structural framing. Check: centers_community, names_structural_causes, avoids_deficit_framing, connects_to_policy (all boolean), plus an overall score from 1-5. Return ONLY valid JSON: {"centers_community": true|false, "names_structural_causes": true|false, "avoids_deficit_framing": true|false, "connects_to_policy": true|false, "score": <1-5>}. Do not use thinking tags or reasoning blocks.<|im_end|>

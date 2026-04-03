@@ -49,11 +49,54 @@ MODELS = {
         ),
         "validator": validate_evaluator_output,
     },
+    "d4bl-evaluator-hallucination": {
+        "modelfile": "Modelfile.evaluator-hallucination",
+        "gguf": "d4bl-evaluator-qwen35-q4_k_m.gguf",
+        "smoke_prompt": (
+            'Context: The poverty rate for Black residents in Mississippi is 28.4%.\n'
+            'Output: The poverty rate for Black residents in Mississippi is 28.4%.'
+        ),
+        "validator": validate_evaluator_output,
+    },
+    "d4bl-evaluator-relevance": {
+        "modelfile": "Modelfile.evaluator-relevance",
+        "gguf": "d4bl-evaluator-qwen35-q4_k_m.gguf",
+        "smoke_prompt": (
+            'Context: Racial disparities in policing in Chicago.\n'
+            'Output: Black residents in Chicago face disproportionate police stops.'
+        ),
+        "validator": validate_evaluator_output,
+    },
+    "d4bl-evaluator-bias": {
+        "modelfile": "Modelfile.evaluator-bias",
+        "gguf": "d4bl-evaluator-qwen35-q4_k_m.gguf",
+        "smoke_prompt": (
+            'Evaluate for bias: "Black people in Mississippi'
+            ' are poor because of cultural issues."'
+        ),
+        "validator": validate_evaluator_output,
+    },
+    "d4bl-evaluator-equity-framing": {
+        "modelfile": "Modelfile.evaluator-equity-framing",
+        "gguf": "d4bl-evaluator-qwen35-q4_k_m.gguf",
+        "smoke_prompt": (
+            'Evaluate framing: "Systemic redlining and disinvestment'
+            ' drove wealth gaps in Black communities."'
+        ),
+        "validator": validate_evaluator_output,
+    },
 }
 
 
 def run_ollama_create(model_name: str, modelfile_path: Path) -> bool:
     """Register a model with Ollama via `ollama create`."""
+    # Remove existing model first so parameters are refreshed
+    subprocess.run(
+        ["ollama", "rm", model_name],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     try:
         result = subprocess.run(
             ["ollama", "create", model_name, "-f", str(modelfile_path)],
@@ -75,24 +118,29 @@ def run_ollama_create(model_name: str, modelfile_path: Path) -> bool:
 
 
 def run_smoke_test(model_name: str, prompt: str) -> str | None:
-    """Run a quick inference test and return the response."""
+    """Run a quick inference test via the Ollama API."""
+    import json as _json
+
     try:
-        result = subprocess.run(
-            ["ollama", "run", model_name, prompt],
-            capture_output=True,
-            text=True,
-            timeout=120,
+        import urllib.request
+
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=_json.dumps({
+                "model": model_name,
+                "prompt": prompt,
+                "stream": False,
+                "think": False,
+                "options": {"num_predict": 2048},
+            }).encode(),
+            headers={"Content-Type": "application/json"},
         )
-    except FileNotFoundError:
-        print("  Smoke test FAILED: `ollama` CLI not found in PATH")
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            body = _json.loads(resp.read())
+        return body.get("response", "").strip()
+    except Exception as exc:
+        print(f"  Smoke test FAILED: {exc}")
         return None
-    except subprocess.TimeoutExpired:
-        print("  Smoke test FAILED: `ollama run` timed out")
-        return None
-    if result.returncode != 0:
-        print(f"  Smoke test FAILED: {result.stderr.strip()}")
-        return None
-    return result.stdout.strip()
 
 
 def main() -> int:
@@ -154,6 +202,7 @@ def main() -> int:
             results[name] = "FAILED (smoke test)"
             continue
 
+        print(f"  Response length: {len(response)} chars")
         validation = cfg["validator"](response)
         if validation.valid:
             results[name] = "OK"
@@ -163,7 +212,7 @@ def main() -> int:
                 f"WARNING (invalid output: {validation.errors})"
             )
             print(f"  Smoke test WARNING: {validation.errors}")
-            print(f"  Raw output: {response[:200]}")
+            print(f"  Raw output: {response[:500]}")
 
     # Summary
     print(f"\n{'='*50}")
