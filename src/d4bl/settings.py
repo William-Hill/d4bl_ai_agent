@@ -155,7 +155,7 @@ class Settings:
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
 
         # Embedder provider (for CrewAI memory)
-        embedder_provider_raw = os.getenv("EMBEDDER_PROVIDER", "ollama").lower()
+        embedder_provider_raw = os.getenv("EMBEDDER_PROVIDER", "ollama").strip().lower()
         allowed_embedders = {"ollama", "google"}
         if embedder_provider_raw not in allowed_embedders:
             raise ValueError(

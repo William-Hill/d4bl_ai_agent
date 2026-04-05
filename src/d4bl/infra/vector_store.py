@@ -1,7 +1,6 @@
 """
 Vector storage service for saving scraped content to Supabase with embeddings.
 """
-
 from __future__ import annotations
 
 import json
@@ -21,37 +20,22 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """Service for storing and retrieving scraped content with vector embeddings."""
 
-    def __init__(
-        self, ollama_base_url: str | None = None, embedder_model: str = "mxbai-embed-large"
-    ) -> None:
+    def __init__(self, ollama_base_url: str | None = None, embedder_model: str = "mxbai-embed-large") -> None:
         """
         Initialize the vector store.
-
+        
         Args:
             ollama_base_url: Base URL for Ollama API (defaults to env var or settings)
-            embedder_model: Model name for embeddings (default: mxbai-embed-large for Ollama)
+            embedder_model: Model name for embeddings (default: mxbai-embed-large)
         """
         settings = get_settings()
-        self.embedder_provider = settings.embedder_provider
         self.ollama_base_url = (ollama_base_url or settings.ollama_base_url).rstrip("/")
         self.embedder_model = embedder_model
-
-        # Validate Google embedder configuration
-        if self.embedder_provider == "google":
-            if not settings.llm_api_key:
-                raise ValueError(
-                    "Google embedder selected but LLM_API_KEY is not set. "
-                    "Please set the LLM_API_KEY environment variable."
-                )
-            self.google_api_key = settings.llm_api_key
-            self.google_model = "models/gemini-embedding-001"
-            self.embedding_dimension = 768  # gemini-embedding-001 produces 768-dimensional vectors
-        else:
-            self.embedding_dimension = 1024  # mxbai-embed-large produces 1024-dimensional vectors
+        self.embedding_dimension = 1024  # mxbai-embed-large produces 1024-dimensional vectors
 
     def _format_embedding(self, embedding: list[float]) -> str:
         """Format embedding list as a pgvector-compatible string."""
-        return "[" + ",".join(str(x) for x in embedding) + "]"
+        return '[' + ','.join(str(x) for x in embedding) + ']'
 
     @staticmethod
     def _row_to_content_dict(row) -> dict[str, Any]:
@@ -68,7 +52,7 @@ class VectorStore:
 
     async def generate_embedding(self, text_input: str) -> list[float]:
         """
-        Generate embedding vector for the given text.
+        Generate embedding vector for the given text using Ollama.
 
         Args:
             text_input: Text to embed
@@ -81,51 +65,24 @@ class VectorStore:
                 text_input = text_input[:6000]
                 logger.warning("Text truncated to 6000 characters for embedding")
 
-            if self.embedder_provider == "google":
-                # Use Google Generative AI embeddings
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/{self.google_model}:embedContent",
-                        json={
-                            "model": self.google_model,
-                            "content": {"parts": [{"text": text_input}]},
-                        },
-                        headers={"x-goog-api-key": self.google_api_key},
-                        timeout=aiohttp.ClientTimeout(total=30),
-                    ) as response:
-                        if response.status != 200:
-                            body = await response.text()
-                            error_msg = f"Google embedding API returned {response.status}: {body}"
-                            logger.error(error_msg)
-                            raise RuntimeError(error_msg)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.ollama_base_url}/api/embeddings",
+                    json={"model": self.embedder_model, "prompt": text_input},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as response:
+                    if response.status != 200:
+                        body = await response.text()
+                        error_msg = f"Ollama embedding API returned {response.status}: {body}"
+                        logger.error(error_msg)
+                        raise RuntimeError(error_msg)
 
-                        result = await response.json()
+                    result = await response.json()
 
-                embedding = result.get("embedding", {}).get("values")
+            embedding = result.get("embedding")
 
-                if not embedding:
-                    raise ValueError("No embedding in Google response")
-
-            else:
-                # Use Ollama embeddings
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{self.ollama_base_url}/api/embeddings",
-                        json={"model": self.embedder_model, "prompt": text_input},
-                        timeout=aiohttp.ClientTimeout(total=30),
-                    ) as response:
-                        if response.status != 200:
-                            body = await response.text()
-                            error_msg = f"Ollama embedding API returned {response.status}: {body}"
-                            logger.error(error_msg)
-                            raise RuntimeError(error_msg)
-
-                        result = await response.json()
-
-                embedding = result.get("embedding")
-
-                if not embedding:
-                    raise ValueError("No embedding in Ollama response")
+            if not embedding:
+                raise ValueError("No embedding in Ollama response")
 
             if len(embedding) != self.embedding_dimension:
                 logger.warning(
@@ -155,7 +112,7 @@ class VectorStore:
     ) -> UUID | None:
         """
         Store scraped content with its embedding in the vector database.
-
+        
         Args:
             db: Database session
             job_id: Research job ID this content belongs to
@@ -163,7 +120,7 @@ class VectorStore:
             content: Text content to store
             content_type: Type of content (e.g., 'html', 'pdf', 'markdown')
             metadata: Additional metadata to store
-
+            
         Returns:
             UUID of the stored record, or None if storage failed
         """
@@ -198,7 +155,7 @@ class VectorStore:
                     "content_type": content_type,
                     "metadata": metadata_json,
                     "embedding": embedding_str,
-                },
+                }
             )
 
             record_id = result.scalar_one()
@@ -220,12 +177,12 @@ class VectorStore:
     ) -> int:
         """
         Store multiple scraped content items in batch.
-
+        
         Args:
             db: Database session
             job_id: Research job ID
             items: List of dicts with keys: url, content, content_type (optional), metadata (optional)
-
+            
         Returns:
             Number of successfully stored items
         """
@@ -256,14 +213,14 @@ class VectorStore:
     ) -> list[dict[str, Any]]:
         """
         Search for similar content using vector similarity.
-
+        
         Args:
             db: Database session
             query_text: Text to search for
             job_id: Optional job ID to filter results
             limit: Maximum number of results
             similarity_threshold: Minimum cosine similarity (0-1)
-
+            
         Returns:
             List of matching records with similarity scores
         """
@@ -272,7 +229,9 @@ class VectorStore:
             query_embedding_str = self._format_embedding(query_embedding)
 
             # Build query with optional job_id filter
-            where_clauses = ["1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold"]
+            where_clauses = [
+                "1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold"
+            ]
             params: dict[str, Any] = {
                 "query_embedding": query_embedding_str,
                 "threshold": similarity_threshold,
@@ -318,12 +277,12 @@ class VectorStore:
     ) -> list[dict[str, Any]]:
         """
         Get all scraped content for a specific job.
-
+        
         Args:
             db: Database session
             job_id: Research job ID
             limit: Optional limit on number of results
-
+            
         Returns:
             List of records
         """
@@ -359,3 +318,4 @@ def get_vector_store() -> VectorStore:
     if _vector_store is None:
         _vector_store = VectorStore()
     return _vector_store
+
