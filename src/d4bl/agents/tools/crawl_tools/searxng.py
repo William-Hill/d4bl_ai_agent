@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 from crewai.tools import BaseTool
+from httpx import ConnectError, HTTPStatusError, TimeoutException
 from pydantic import BaseModel, Field, field_validator
 
 from .utils import PROBLEMATIC_DOMAINS
@@ -86,17 +87,18 @@ class SearXNGSearchTool(BaseTool):
                         },
                     )
 
-                    # Non-retryable client errors (4xx)
-                    if 400 <= response.status_code < 500:
-                        return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
-
-                    # Retryable server errors (5xx)
-                    if response.status_code >= 500:
-                        raise httpx.HTTPStatusError(
-                            f"Server error: {response.status_code}",
+                    # Retryable transient client errors (408 Request Timeout, 429 Too Many Requests)
+                    # and server errors (5xx) — raise to trigger retry loop
+                    if response.status_code in (408, 429) or response.status_code >= 500:
+                        raise HTTPStatusError(
+                            f"Retryable HTTP {response.status_code}",
                             request=response.request,
                             response=response,
                         )
+
+                    # Other non-retryable client errors (4xx)
+                    if 400 <= response.status_code < 500:
+                        return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
 
                     if response.status_code != 200:
                         return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
@@ -123,29 +125,31 @@ class SearXNGSearchTool(BaseTool):
                     filtered = filtered[: self.max_results]
 
                     logger.info(
-                        "SearXNG: query=%r category=%s results=%d",
-                        query,
+                        "SearXNG: query_len=%d category=%s results=%d",
+                        len(query),
                         self.default_category,
                         len(filtered),
                     )
 
                     return json.dumps(filtered, indent=2)
 
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            except (TimeoutException, ConnectError, HTTPStatusError) as e:
                 is_last_attempt = attempt == max_retries - 1
                 if is_last_attempt:
                     logger.exception(
-                        "SearXNG search failed after %d attempts for query: %s", max_retries, query
+                        "SearXNG search failed after %d attempts (query_len=%d)",
+                        max_retries,
+                        len(query),
                     )
                     return json.dumps({"error": f"Search failed after {max_retries} retries: {str(e)}"})
 
-                # Exponential backoff with jitter
+                # Exponential backoff
                 delay = base_delay * (2**attempt)
                 logger.warning(
-                    "SearXNG search attempt %d/%d failed for query %r: %s. Retrying in %.1fs...",
+                    "SearXNG search attempt %d/%d failed (query_len=%d): %s. Retrying in %.1fs...",
                     attempt + 1,
                     max_retries,
-                    query,
+                    len(query),
                     str(e),
                     delay,
                 )
@@ -153,5 +157,5 @@ class SearXNGSearchTool(BaseTool):
 
             except Exception as e:
                 # Non-retryable errors (e.g., JSON decode errors)
-                logger.exception("SearXNG search failed for query: %s", query)
+                logger.exception("SearXNG search failed (query_len=%d)", len(query))
                 return json.dumps({"error": f"Search failed: {str(e)}"})
