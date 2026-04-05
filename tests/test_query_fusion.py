@@ -43,9 +43,7 @@ class TestQueryResult:
 
 class TestResultFusion:
     def setup_method(self):
-        self.fusion = ResultFusion(
-            ollama_base_url="http://localhost:11434"
-        )
+        self.fusion = ResultFusion(ollama_base_url="http://localhost:11434")
 
     def test_merge_and_rank_combines_sources(self):
         """Should merge vector and structured results."""
@@ -76,9 +74,7 @@ class TestResultFusion:
             ),
         ]
 
-        merged = self.fusion.merge_and_rank(
-            vector_results, structured_results
-        )
+        merged = self.fusion.merge_and_rank(vector_results, structured_results)
         assert len(merged) == 3
         source_types = {s.source_type for s in merged}
         assert "vector" in source_types
@@ -169,10 +165,15 @@ class TestResultFusion:
         """Fusion should use the explainer model for synthesis."""
         mock_generate.return_value = "Test answer"
         fusion = ResultFusion(ollama_base_url="http://localhost:11434")
-        sources = [SourceReference(
-            url="http://example.com", title="Test", snippet="test",
-            source_type="vector", relevance_score=0.9,
-        )]
+        sources = [
+            SourceReference(
+                url="http://example.com",
+                title="Test",
+                snippet="test",
+                source_type="vector",
+                relevance_score=0.9,
+            )
+        ]
         await fusion.synthesize("test query", sources)
 
         mock_model.assert_called_once_with("explainer")

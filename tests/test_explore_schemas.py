@@ -120,4 +120,3 @@ def test_explore_response():
     assert resp.national_average == 10.5
     assert len(resp.rows) == 1
     assert resp.available_races == []
-

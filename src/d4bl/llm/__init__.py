@@ -21,4 +21,3 @@ __all__ = [
     "reset_ollama_llm",
     "ollama_generate",
 ]
-

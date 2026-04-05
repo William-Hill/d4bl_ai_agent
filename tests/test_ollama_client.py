@@ -12,7 +12,8 @@ class TestOllamaGenerate:
 
     @staticmethod
     def _make_aiohttp_mocks(
-        response_body: dict, status: int = 200,
+        response_body: dict,
+        status: int = 200,
     ) -> MagicMock:
         """Build mock aiohttp session + response."""
         mock_response = MagicMock()
@@ -32,9 +33,7 @@ class TestOllamaGenerate:
     @patch("d4bl.llm.ollama_client.aiohttp.ClientSession")
     async def test_returns_response_text(self, mock_session_cls):
         """Should return the 'response' field from Ollama."""
-        mock_session = self._make_aiohttp_mocks(
-            {"response": "Hello world"}
-        )
+        mock_session = self._make_aiohttp_mocks({"response": "Hello world"})
         mock_session_cls.return_value = mock_session
 
         result = await ollama_generate(

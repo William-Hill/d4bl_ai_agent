@@ -1,4 +1,5 @@
 """Run LLM evaluations against completed research jobs stored in PostgreSQL."""
+
 from __future__ import annotations
 
 import asyncio
@@ -23,25 +24,17 @@ def _extract_eval_inputs(job: ResearchJob) -> dict | None:
     """
     raw_result = job.result or {}
     research_output = (
-        str(raw_result.get("raw_output", "")).strip()
-        if isinstance(raw_result, dict)
-        else ""
+        str(raw_result.get("raw_output", "")).strip() if isinstance(raw_result, dict) else ""
     )
     if not research_output:
         return None
 
-    research_data = (
-        job.research_data if isinstance(job.research_data, dict) else {}
-    )
+    research_data = job.research_data if isinstance(job.research_data, dict) else {}
     findings_raw = research_data.get("research_findings")
     findings = findings_raw if isinstance(findings_raw, list) else []
     sources_raw = research_data.get("source_urls")
     sources = sources_raw if isinstance(sources_raw, list) else []
-    report = (
-        raw_result.get("report")
-        if isinstance(raw_result, dict)
-        else None
-    )
+    report = raw_result.get("report") if isinstance(raw_result, dict) else None
 
     return {
         "query": job.query,
@@ -53,7 +46,8 @@ def _extract_eval_inputs(job: ResearchJob) -> dict | None:
             {"url": f.get("url", ""), "content": f.get("content", "")}
             for f in findings
             if isinstance(f, dict) and "url" in f
-        ] or None,
+        ]
+        or None,
     }
 
 
@@ -114,9 +108,7 @@ async def run_evals_and_log(
 
         logger.info("Evaluating %d research job(s)...", len(jobs))
 
-        results = await asyncio.gather(
-            *[_evaluate_job(j) for j in jobs], return_exceptions=True
-        )
+        results = await asyncio.gather(*[_evaluate_job(j) for j in jobs], return_exceptions=True)
 
     for job, outcome in zip(jobs, results, strict=True):
         if isinstance(outcome, BaseException):

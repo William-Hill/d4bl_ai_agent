@@ -13,9 +13,7 @@ from d4bl.query.structured import StructuredResult
 
 class TestQueryEngine:
     def setup_method(self):
-        self.engine = QueryEngine(
-            ollama_base_url="http://localhost:11434"
-        )
+        self.engine = QueryEngine(ollama_base_url="http://localhost:11434")
 
     @pytest.mark.asyncio
     async def test_query_orchestrates_full_pipeline(self, mock_db_session):
@@ -82,9 +80,7 @@ class TestQueryEngine:
         self.engine.fusion.synthesize.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_query_vector_only_when_parser_says_so(
-        self, mock_db_session
-    ):
+    async def test_query_vector_only_when_parser_says_so(self, mock_db_session):
         """query() should skip structured search if parser says vector only."""
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
@@ -97,9 +93,7 @@ class TestQueryEngine:
         self.engine.vector_store.search_similar = AsyncMock(return_value=[])
         self.engine.structured_searcher.search = AsyncMock(return_value=[])
         self.engine.fusion.synthesize = AsyncMock(
-            return_value=QueryResult(
-                answer="No results", sources=[], query="test"
-            )
+            return_value=QueryResult(answer="No results", sources=[], query="test")
         )
 
         await self.engine.query(db=mock_db_session, question="test")
@@ -108,9 +102,7 @@ class TestQueryEngine:
         self.engine.structured_searcher.search.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_query_structured_only_when_parser_says_so(
-        self, mock_db_session
-    ):
+    async def test_query_structured_only_when_parser_says_so(self, mock_db_session):
         """query() should skip vector search if parser says structured only."""
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
@@ -123,22 +115,16 @@ class TestQueryEngine:
         self.engine.vector_store.search_similar = AsyncMock(return_value=[])
         self.engine.structured_searcher.search = AsyncMock(return_value=[])
         self.engine.fusion.synthesize = AsyncMock(
-            return_value=QueryResult(
-                answer="No results", sources=[], query="how many jobs ran"
-            )
+            return_value=QueryResult(answer="No results", sources=[], query="how many jobs ran")
         )
 
-        await self.engine.query(
-            db=mock_db_session, question="how many jobs ran"
-        )
+        await self.engine.query(db=mock_db_session, question="how many jobs ran")
 
         self.engine.vector_store.search_similar.assert_not_called()
         self.engine.structured_searcher.search.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_query_passes_job_id_to_vector_search(
-        self, mock_db_session
-    ):
+    async def test_query_passes_job_id_to_vector_search(self, mock_db_session):
         """query() should forward job_id to vector store search."""
         self.engine.parser.parse = AsyncMock(
             return_value=ParsedQuery(
@@ -150,15 +136,11 @@ class TestQueryEngine:
         )
         self.engine.vector_store.search_similar = AsyncMock(return_value=[])
         self.engine.fusion.synthesize = AsyncMock(
-            return_value=QueryResult(
-                answer="No results", sources=[], query="test"
-            )
+            return_value=QueryResult(answer="No results", sources=[], query="test")
         )
 
         job_id = "abc-123"
-        await self.engine.query(
-            db=mock_db_session, question="test", job_id=job_id
-        )
+        await self.engine.query(db=mock_db_session, question="test", job_id=job_id)
 
         call_kwargs = self.engine.vector_store.search_similar.call_args[1]
         assert call_kwargs["job_id"] == job_id

@@ -1,4 +1,5 @@
 """In-memory TTL cache for explore API endpoints."""
+
 from __future__ import annotations
 
 import logging
@@ -19,9 +20,7 @@ class ExploreCache:
     patterns in calling code may require external synchronization.
     """
 
-    def __init__(
-        self, ttl_seconds: int = _DEFAULT_TTL, maxsize: int = _DEFAULT_MAXSIZE
-    ):
+    def __init__(self, ttl_seconds: int = _DEFAULT_TTL, maxsize: int = _DEFAULT_MAXSIZE):
         self._cache: TTLCache = TTLCache(maxsize=maxsize, ttl=ttl_seconds)
         self._last_ingestion_ts: float = 0.0
 

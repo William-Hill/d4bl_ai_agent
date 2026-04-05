@@ -1,6 +1,5 @@
 """Tests for CensusIndicator and PolicyBill ORM models."""
 
-
 from d4bl.infra.database import CensusIndicator, PolicyBill
 
 

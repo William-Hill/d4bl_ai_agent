@@ -1,4 +1,5 @@
 """Tests for app-level helper functions."""
+
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -71,6 +72,7 @@ class TestJobLogsBounded:
 class TestCorsSettings:
     def test_cors_origins_from_env(self, monkeypatch):
         from d4bl.settings import get_settings
+
         get_settings.cache_clear()
 
         monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://example.com")
@@ -80,6 +82,7 @@ class TestCorsSettings:
 
     def test_cors_origins_default_star(self, monkeypatch):
         from d4bl.settings import get_settings
+
         get_settings.cache_clear()
 
         monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)

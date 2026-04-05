@@ -2,6 +2,7 @@
 Error handling utilities for CrewAI agents and tools.
 Provides retry logic, exponential backoff, and graceful error recovery.
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,11 +14,12 @@ from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class RetryStrategy(Enum):
     """Retry strategies for different error types."""
+
     EXPONENTIAL_BACKOFF = "exponential_backoff"
     LINEAR_BACKOFF = "linear_backoff"
     FIXED_DELAY = "fixed_delay"
@@ -35,7 +37,7 @@ def retry_with_backoff(
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator that retries a function with exponential backoff.
-    
+
     Args:
         max_retries: Maximum number of retry attempts
         initial_delay: Initial delay in seconds before first retry
@@ -44,10 +46,11 @@ def retry_with_backoff(
         retry_on: Tuple of exception types to retry on
         on_retry: Optional callback function called on each retry (exception, attempt_number)
         on_failure: Optional callback function called on final failure (exception)
-    
+
     Returns:
         Decorated function with retry logic
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -85,6 +88,7 @@ def retry_with_backoff(
             raise RuntimeError("Unexpected error in retry logic")
 
         return wrapper
+
     return decorator
 
 
@@ -96,13 +100,13 @@ def safe_execute(
 ) -> T | None:
     """
     Safely execute a function, catching all exceptions and returning a default value.
-    
+
     Args:
         func: Function to execute
         default_return: Value to return on error (if None, exception is re-raised)
         error_message: Custom error message to log
         log_error: Whether to log the error
-    
+
     Returns:
         Function result or default_return on error
     """
@@ -133,7 +137,7 @@ class ErrorRecoveryStrategy:
         return {
             "error": str(error),
             "partial_results": context.get("partial_results", []),
-            "status": "partial_failure"
+            "status": "partial_failure",
         }
 
     @staticmethod
@@ -146,4 +150,3 @@ class ErrorRecoveryStrategy:
             context["query"] = simplified_query
             # This would need to be called from the retry decorator
         return None
-

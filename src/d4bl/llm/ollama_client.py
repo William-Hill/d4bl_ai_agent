@@ -1,4 +1,5 @@
 """Shared async helper for Ollama /api/generate calls."""
+
 from __future__ import annotations
 
 import logging
@@ -72,9 +73,7 @@ async def ollama_generate(
         ) as response:
             if response.status != 200:
                 body = await response.text()
-                raise RuntimeError(
-                    f"Ollama returned status {response.status}: {body}"
-                )
+                raise RuntimeError(f"Ollama returned status {response.status}: {body}")
             data = await response.json()
 
     text = data.get("response", "").strip()

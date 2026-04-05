@@ -28,9 +28,17 @@ class TestPolicyBillToDocument:
         assert doc["text"] == "Protects tenants from unfair eviction."
 
     def test_handles_missing_summary(self):
-        bill = {"id": 1, "title": "Some Bill", "summary": None, "state": "AK",
-                "status": "introduced", "topic_tags": [], "session": "2025",
-                "url": None, "bill_number": "SB 1"}
+        bill = {
+            "id": 1,
+            "title": "Some Bill",
+            "summary": None,
+            "state": "AK",
+            "status": "introduced",
+            "topic_tags": [],
+            "session": "2025",
+            "url": None,
+            "bill_number": "SB 1",
+        }
         doc = policy_bill_to_document(bill)
         assert doc["text"] == ""
 

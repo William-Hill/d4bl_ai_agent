@@ -7,6 +7,7 @@ not at class-definition time.  Combined with the ``@lru_cache`` on
 frozen thereafter -- but *after* the caller has had a chance to populate
 the environment.
 """
+
 from __future__ import annotations
 
 import os
@@ -58,6 +59,9 @@ class Settings:
     llm_model: str = field(init=False)
     llm_api_key: str | None = field(init=False)
 
+    # -- Embedder provider (for CrewAI memory) --
+    embedder_provider: str = field(init=False)
+
     # -- Fine-tuned task models (empty = use llm_model / ollama_model) --
     query_parser_model: str = field(init=False)
     explainer_model: str = field(init=False)
@@ -81,8 +85,7 @@ class Settings:
         _set(
             "is_docker",
             os.path.exists("/.dockerenv")
-            or os.getenv("DOCKER_CONTAINER", "").strip().lower()
-            in {"1", "true", "yes", "on"},
+            or os.getenv("DOCKER_CONTAINER", "").strip().lower() in {"1", "true", "yes", "on"},
         )
 
         # LLM / Ollama
@@ -121,13 +124,10 @@ class Settings:
 
         # Build OTLP endpoint: explicit env var > otel host > langfuse host
         # Treat empty-string OTEL_EXPORTER_OTLP_ENDPOINT as unset.
-        explicit_otlp = (
-            os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or ""
-        ).strip()
+        explicit_otlp = (os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or "").strip()
         _set(
             "otlp_endpoint",
-            explicit_otlp
-            or f"{langfuse_otel_host or self.langfuse_host}{_OTEL_SUFFIX}",
+            explicit_otlp or f"{langfuse_otel_host or self.langfuse_host}{_OTEL_SUFFIX}",
         )
 
         # Database
@@ -138,17 +138,13 @@ class Settings:
         _set("postgres_db", os.getenv("POSTGRES_DB", "postgres"))
         _set(
             "db_echo",
-            os.getenv("DB_ECHO", "false").strip().lower()
-            in {"1", "true", "yes", "on"},
+            os.getenv("DB_ECHO", "false").strip().lower() in {"1", "true", "yes", "on"},
         )
 
         # CORS
         origins = tuple(
             origin
-            for origin in (
-                o.strip()
-                for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
-            )
+            for origin in (o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(","))
             if origin
         ) or ("*",)
         _set("cors_allowed_origins", origins)
@@ -157,6 +153,16 @@ class Settings:
         _set("llm_provider", os.getenv("LLM_PROVIDER", "ollama").lower())
         _set("llm_model", os.getenv("LLM_MODEL", "mistral"))
         _set("llm_api_key", os.getenv("LLM_API_KEY"))
+
+        # Embedder provider (for CrewAI memory)
+        embedder_provider_raw = os.getenv("EMBEDDER_PROVIDER", "ollama").strip().lower()
+        allowed_embedders = {"ollama", "google"}
+        if embedder_provider_raw not in allowed_embedders:
+            raise ValueError(
+                f"Invalid EMBEDDER_PROVIDER: '{embedder_provider_raw}'. "
+                f"Allowed values are: {', '.join(sorted(allowed_embedders))}"
+            )
+        _set("embedder_provider", embedder_provider_raw)
 
         # Fine-tuned task models
         _set("query_parser_model", os.getenv("QUERY_PARSER_MODEL", ""))
@@ -172,7 +178,6 @@ class Settings:
         _set("supabase_jwt_secret", os.getenv("SUPABASE_JWT_SECRET"))
         _set("supabase_service_role_key", os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
         _set("admin_email", os.getenv("ADMIN_EMAIL"))
-
 
 
 @lru_cache(maxsize=1)

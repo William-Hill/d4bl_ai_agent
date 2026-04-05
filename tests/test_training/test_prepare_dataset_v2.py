@@ -69,10 +69,12 @@ class TestApplySwapAugmentation:
         assert result[0] == snapshot
 
     def test_swapped_pair_has_reversed_sections(self):
-        pairs = [_make_pair(
-            "Context:\nthe context data\n\nModel output:\nthe model response",
-            '{"score": 4}',
-        )]
+        pairs = [
+            _make_pair(
+                "Context:\nthe context data\n\nModel output:\nthe model response",
+                '{"score": 4}',
+            )
+        ]
         result = apply_swap_augmentation(pairs)
         swapped_user = result[1]["messages"][1]["content"]
         assert swapped_user.index("Model output:") < swapped_user.index("Context:")

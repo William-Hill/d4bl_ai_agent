@@ -1,4 +1,5 @@
 """Tests verifying the Census ACS endpoint returns ExploreResponse shape."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

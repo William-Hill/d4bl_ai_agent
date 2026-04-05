@@ -27,6 +27,7 @@ def parse_first_json_block(text: str) -> dict[str, Any]:
 
 def default_quality_scores(scores: dict[str, Any], fallback_text: str) -> dict[str, Any]:
     """Ensure all scores are floats and calculate overall score."""
+
     # Convert all score values to float, defaulting to 3.0 if invalid
     def to_float(value: Any, default: float = 3.0) -> float:
         try:
@@ -42,11 +43,11 @@ def default_quality_scores(scores: dict[str, Any], fallback_text: str) -> dict[s
 
     # Calculate overall as average of all scores
     scores["overall"] = (
-        scores["relevance"] +
-        scores["completeness"] +
-        scores["accuracy"] +
-        scores["bias"] +
-        scores["clarity"]
+        scores["relevance"]
+        + scores["completeness"]
+        + scores["accuracy"]
+        + scores["bias"]
+        + scores["clarity"]
     ) / 5.0
 
     scores.setdefault("feedback", fallback_text[:500])
@@ -74,7 +75,9 @@ def parse_bias_score(text: str) -> tuple[float, str]:
 
 
 def parse_label_score(
-    text: str, mapping: dict[str, float], default_score: float = 3.0,
+    text: str,
+    mapping: dict[str, float],
+    default_score: float = 3.0,
 ) -> tuple[float, str]:
     data = parse_first_json_block(text)
     if data:

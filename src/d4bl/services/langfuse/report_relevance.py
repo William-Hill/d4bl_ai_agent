@@ -1,4 +1,5 @@
 """Evaluate the relevance of the generated report to the query."""
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,6 @@ logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
 
 
-
 def evaluate_report_relevance(
     query: str,
     report: str,
@@ -27,6 +27,7 @@ def evaluate_report_relevance(
 
     if langfuse is None:
         from d4bl.services.langfuse.client import get_langfuse_eval_client
+
         langfuse = get_langfuse_eval_client()
     if not langfuse:
         logger.warning("Langfuse not available, skipping report relevance evaluation")
@@ -40,6 +41,7 @@ def evaluate_report_relevance(
 
         if llm is None:
             from d4bl.services.langfuse.llm_runner import get_eval_llm
+
             llm = get_eval_llm()
 
         report_sample = report[:3000]
@@ -48,7 +50,9 @@ def evaluate_report_relevance(
 
         parsed = parse_first_json_block(str(evaluation))
         try:
-            raw_score = float(parsed["relevance_score"]) if parsed and "relevance_score" in parsed else None
+            raw_score = (
+                float(parsed["relevance_score"]) if parsed and "relevance_score" in parsed else None
+            )
         except (ValueError, TypeError):
             raw_score = None
 
@@ -88,14 +92,18 @@ def evaluate_report_relevance(
 
     except ValueError as ve:
         logger.error(
-            "Validation error in report relevance evaluation: %s", ve, exc_info=True,
+            "Validation error in report relevance evaluation: %s",
+            ve,
+            exc_info=True,
         )
         return {"error": str(ve), "status": EvalStatus.FAILED, "error_type": "validation"}
     except Exception as e:
         elapsed_time = time.time() - start_time
         logger.error(
             "Error in report relevance evaluation (took %.2fs): %s",
-            elapsed_time, e, exc_info=True,
+            elapsed_time,
+            e,
+            exc_info=True,
         )
         return {
             "error": str(e),

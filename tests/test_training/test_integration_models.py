@@ -24,9 +24,7 @@ from scripts.training.validate_model_output import (
 def _get_ollama_models() -> set[str] | None:
     """Return loaded model names, or None if Ollama is unreachable."""
     try:
-        result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             return None
         lines = result.stdout.strip().splitlines()
@@ -63,9 +61,7 @@ def _run_model(model_name: str, prompt: str, timeout: int = 120) -> str:
     return result.stdout.strip()
 
 
-skip_no_ollama = pytest.mark.skipif(
-    not _ollama_available(), reason="Ollama not running"
-)
+skip_no_ollama = pytest.mark.skipif(not _ollama_available(), reason="Ollama not running")
 
 
 class TestModelLoaded:
@@ -73,21 +69,25 @@ class TestModelLoaded:
 
     def test_none_models_returns_false(self, monkeypatch):
         import tests.test_training.test_integration_models as mod
+
         monkeypatch.setattr(mod, "_OLLAMA_MODELS", None)
         assert not _model_loaded("foo")
 
     def test_bare_name_match(self, monkeypatch):
         import tests.test_training.test_integration_models as mod
+
         monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"foo"})
         assert _model_loaded("foo")
 
     def test_latest_suffix_match(self, monkeypatch):
         import tests.test_training.test_integration_models as mod
+
         monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"foo:latest"})
         assert _model_loaded("foo")
 
     def test_no_match(self, monkeypatch):
         import tests.test_training.test_integration_models as mod
+
         monkeypatch.setattr(mod, "_OLLAMA_MODELS", {"bar:latest"})
         assert not _model_loaded("foo")
 
@@ -145,28 +145,32 @@ class TestExplainerIntegration:
             pytest.skip(f"Model {self.MODEL} not registered in Ollama")
 
     def test_single_metric_explanation(self):
-        prompt = json.dumps({
-            "metric": "poverty_rate",
-            "geography": "Mississippi",
-            "race": "Black",
-            "value": 28.4,
-            "comparison_value": 10.6,
-            "comparison_race": "White",
-            "year": 2022,
-        })
+        prompt = json.dumps(
+            {
+                "metric": "poverty_rate",
+                "geography": "Mississippi",
+                "race": "Black",
+                "value": 28.4,
+                "comparison_value": 10.6,
+                "comparison_race": "White",
+                "year": 2022,
+            }
+        )
         response = _run_model(self.MODEL, prompt, timeout=180)
         result = validate_explainer_output(response)
         assert result.valid, f"Invalid output: {result.errors}\nRaw: {response[:500]}"
         assert len(result.parsed["narrative"]) > 50, "Narrative too short"
 
     def test_outputs_valid_json(self):
-        prompt = json.dumps({
-            "metric": "median_household_income",
-            "geography": "Alabama",
-            "race": "Black",
-            "value": 35400,
-            "year": 2022,
-        })
+        prompt = json.dumps(
+            {
+                "metric": "median_household_income",
+                "geography": "Alabama",
+                "race": "Black",
+                "value": 35400,
+                "year": 2022,
+            }
+        )
         response = _run_model(self.MODEL, prompt, timeout=180)
         result = validate_explainer_output(response)
         assert result.parsed is not None, f"Could not parse JSON from: {response[:500]}"
@@ -251,7 +255,9 @@ class TestModelLatency:
     def test_explainer_responds_under_30s(self):
         """Explainer P95 target: <3s. Allow 30s for cold start."""
         start = time.monotonic()
-        prompt = json.dumps({"metric": "poverty_rate", "geography": "Alabama", "value": 18.2, "year": 2022})
+        prompt = json.dumps(
+            {"metric": "poverty_rate", "geography": "Alabama", "value": 18.2, "year": 2022}
+        )
         _run_model("d4bl-explainer", prompt, timeout=30)
         elapsed = time.monotonic() - start
         assert elapsed < 30, f"Explainer took {elapsed:.1f}s (target: <30s with cold start)"

@@ -1,4 +1,5 @@
 """Tests for model comparison endpoint schemas and behavior."""
+
 from __future__ import annotations
 
 import json
@@ -40,11 +41,13 @@ class TestCompareEndpoint:
 
         test_app = _override_auth(app)
 
-        parse_output = json.dumps({
-            "entities": ["Mississippi"],
-            "search_queries": ["median income Mississippi"],
-            "data_sources": ["vector"],
-        })
+        parse_output = json.dumps(
+            {
+                "entities": ["Mississippi"],
+                "search_queries": ["median income Mississippi"],
+                "data_sources": ["vector"],
+            }
+        )
         synth_output = "The median income reflects structural inequity."
 
         async def mock_generate(
@@ -84,9 +87,21 @@ class TestCompareEndpoint:
         baseline_path = PipelinePath(
             label="Base Model",
             steps=[
-                PipelineStep(step="parse", model_name="mistral", output=parse_output, latency_seconds=1.0),
-                PipelineStep(step="search", model_name="database", output="Found 0 sources", latency_seconds=0.1),
-                PipelineStep(step="synthesize", model_name="mistral", output=synth_output, latency_seconds=2.0),
+                PipelineStep(
+                    step="parse", model_name="mistral", output=parse_output, latency_seconds=1.0
+                ),
+                PipelineStep(
+                    step="search",
+                    model_name="database",
+                    output="Found 0 sources",
+                    latency_seconds=0.1,
+                ),
+                PipelineStep(
+                    step="synthesize",
+                    model_name="mistral",
+                    output=synth_output,
+                    latency_seconds=2.0,
+                ),
             ],
             final_answer=synth_output,
             total_latency_seconds=3.1,
@@ -94,9 +109,24 @@ class TestCompareEndpoint:
         finetuned_path = PipelinePath(
             label="Fine-Tuned",
             steps=[
-                PipelineStep(step="parse", model_name="d4bl-query_parser", output=parse_output, latency_seconds=0.5),
-                PipelineStep(step="search", model_name="database", output="Found 0 sources", latency_seconds=0.1),
-                PipelineStep(step="synthesize", model_name="d4bl-explainer", output=synth_output, latency_seconds=1.5),
+                PipelineStep(
+                    step="parse",
+                    model_name="d4bl-query_parser",
+                    output=parse_output,
+                    latency_seconds=0.5,
+                ),
+                PipelineStep(
+                    step="search",
+                    model_name="database",
+                    output="Found 0 sources",
+                    latency_seconds=0.1,
+                ),
+                PipelineStep(
+                    step="synthesize",
+                    model_name="d4bl-explainer",
+                    output=synth_output,
+                    latency_seconds=1.5,
+                ),
             ],
             final_answer=synth_output,
             total_latency_seconds=2.1,
@@ -167,8 +197,12 @@ class TestCompareEndpointWithModels:
             label="Pipeline A",
             steps=[
                 PipelineStep(step="parse", model_name="mistral", output="{}", latency_seconds=1.0),
-                PipelineStep(step="search", model_name="database", output="Found 0", latency_seconds=0.1),
-                PipelineStep(step="synthesize", model_name="mistral", output="Answer", latency_seconds=2.0),
+                PipelineStep(
+                    step="search", model_name="database", output="Found 0", latency_seconds=0.1
+                ),
+                PipelineStep(
+                    step="synthesize", model_name="mistral", output="Answer", latency_seconds=2.0
+                ),
             ],
             final_answer="Answer",
             total_latency_seconds=3.1,
@@ -176,9 +210,18 @@ class TestCompareEndpointWithModels:
         finetuned_path = PipelinePath(
             label="Pipeline B",
             steps=[
-                PipelineStep(step="parse", model_name="d4bl-query-parser", output="{}", latency_seconds=0.5),
-                PipelineStep(step="search", model_name="database", output="Found 0", latency_seconds=0.1),
-                PipelineStep(step="synthesize", model_name="d4bl-explainer", output="Answer", latency_seconds=1.5),
+                PipelineStep(
+                    step="parse", model_name="d4bl-query-parser", output="{}", latency_seconds=0.5
+                ),
+                PipelineStep(
+                    step="search", model_name="database", output="Found 0", latency_seconds=0.1
+                ),
+                PipelineStep(
+                    step="synthesize",
+                    model_name="d4bl-explainer",
+                    output="Answer",
+                    latency_seconds=1.5,
+                ),
             ],
             final_answer="Answer",
             total_latency_seconds=2.1,
@@ -192,21 +235,27 @@ class TestCompareEndpointWithModels:
         try:
             with (
                 patch("d4bl.app.api._run_pipeline", side_effect=mock_run_pipeline),
-                patch("d4bl.app.api.get_available_models", return_value=[
-                    {"model": "mistral", "type": "base"},
-                    {"model": "d4bl-query-parser", "type": "finetuned"},
-                    {"model": "d4bl-explainer", "type": "finetuned"},
-                ]),
+                patch(
+                    "d4bl.app.api.get_available_models",
+                    return_value=[
+                        {"model": "mistral", "type": "base"},
+                        {"model": "d4bl-query-parser", "type": "finetuned"},
+                        {"model": "d4bl-explainer", "type": "finetuned"},
+                    ],
+                ),
             ):
                 transport = ASGITransport(app=test_app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    resp = await client.post("/api/compare", json={
-                        "prompt": "What is poverty rate?",
-                        "pipeline_a_parser": "mistral",
-                        "pipeline_a_explainer": "mistral",
-                        "pipeline_b_parser": "d4bl-query-parser",
-                        "pipeline_b_explainer": "d4bl-explainer",
-                    })
+                    resp = await client.post(
+                        "/api/compare",
+                        json={
+                            "prompt": "What is poverty rate?",
+                            "pipeline_a_parser": "mistral",
+                            "pipeline_a_explainer": "mistral",
+                            "pipeline_b_parser": "d4bl-query-parser",
+                            "pipeline_b_explainer": "d4bl-explainer",
+                        },
+                    )
 
             assert resp.status_code == 200
             data = resp.json()
@@ -222,18 +271,24 @@ class TestCompareEndpointWithModels:
         test_app = _override_auth(app)
 
         try:
-            with patch("d4bl.app.api.get_available_models", return_value=[
-                {"model": "mistral", "type": "base"},
-            ]):
+            with patch(
+                "d4bl.app.api.get_available_models",
+                return_value=[
+                    {"model": "mistral", "type": "base"},
+                ],
+            ):
                 transport = ASGITransport(app=test_app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    resp = await client.post("/api/compare", json={
-                        "prompt": "test",
-                        "pipeline_a_parser": "nonexistent-model",
-                        "pipeline_a_explainer": "mistral",
-                        "pipeline_b_parser": "mistral",
-                        "pipeline_b_explainer": "mistral",
-                    })
+                    resp = await client.post(
+                        "/api/compare",
+                        json={
+                            "prompt": "test",
+                            "pipeline_a_parser": "nonexistent-model",
+                            "pipeline_a_explainer": "mistral",
+                            "pipeline_b_parser": "mistral",
+                            "pipeline_b_explainer": "mistral",
+                        },
+                    )
 
             assert resp.status_code == 400
             assert "nonexistent-model" in resp.json()["detail"]

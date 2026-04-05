@@ -33,13 +33,13 @@ DEFAULT_SCHEDULES: dict[str, str] = {
     "bjs": "0 0 1 11 *",
     "police_violence": "0 6 * * 1",
     # Web content (Sprint 2)
-    "rss": "0 6 * * *",           # Daily at 6 AM
-    "news": "0 6 * * *",          # Daily at 6 AM
-    "web": "0 6 * * 1",           # Weekly Monday at 6 AM
+    "rss": "0 6 * * *",  # Daily at 6 AM
+    "news": "0 6 * * *",  # Daily at 6 AM
+    "web": "0 6 * * 1",  # Weekly Monday at 6 AM
     # New data sources (Sprint 2)
-    "county_health": "0 0 15 3 *", # Annually March 15
-    "usaspending": "0 0 1 * *",    # Monthly 1st
-    "vera": "0 0 1 1,4,7,10 *",   # Quarterly
+    "county_health": "0 0 15 3 *",  # Annually March 15
+    "usaspending": "0 0 1 * *",  # Monthly 1st
+    "vera": "0 0 1 1,4,7,10 *",  # Quarterly
 }
 
 
@@ -59,19 +59,19 @@ def build_scheduler() -> AsyncIOScheduler:
 
 async def seed_default_schedules(session: AsyncSession) -> int:
     """Insert default schedules if the table is empty. Returns count seeded."""
-    result = await session.execute(
-        select(IngestionSchedule).limit(1)
-    )
+    result = await session.execute(select(IngestionSchedule).limit(1))
     if result.scalar_one_or_none() is not None:
         return 0
 
     count = 0
     for source_key, cron_expr in DEFAULT_SCHEDULES.items():
-        session.add(IngestionSchedule(
-            source_key=source_key,
-            cron_expression=cron_expr,
-            enabled=True,
-        ))
+        session.add(
+            IngestionSchedule(
+                source_key=source_key,
+                cron_expression=cron_expr,
+                enabled=True,
+            )
+        )
         count += 1
     await session.commit()
     logger.info("Seeded %d default ingestion schedules", count)
@@ -117,9 +117,7 @@ async def load_and_register_schedules(
             )
             registered += 1
         except Exception:
-            logger.exception(
-                "Failed to register schedule for %s", sched.source_key
-            )
+            logger.exception("Failed to register schedule for %s", sched.source_key)
 
     return registered
 
@@ -131,9 +129,7 @@ async def update_schedule_status(
 ) -> None:
     """Update last_run_at and last_status for a schedule."""
     result = await session.execute(
-        select(IngestionSchedule).where(
-            IngestionSchedule.source_key == source_key
-        )
+        select(IngestionSchedule).where(IngestionSchedule.source_key == source_key)
     )
     sched = result.scalar_one_or_none()
     if sched:

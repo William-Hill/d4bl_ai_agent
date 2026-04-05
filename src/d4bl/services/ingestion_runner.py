@@ -99,9 +99,7 @@ async def run_ingestion_task(
     from d4bl.infra.database import IngestionRun
 
     async with session_factory() as session:
-        result = await session.execute(
-            select(IngestionRun).where(IngestionRun.id == run_id)
-        )
+        result = await session.execute(select(IngestionRun).where(IngestionRun.id == run_id))
         run = result.scalar_one_or_none()
         if run is None:
             logger.error("IngestionRun %s not found, aborting task", run_id)
@@ -116,9 +114,7 @@ async def run_ingestion_task(
             run.status = "completed"
             run.records_ingested = records if records is not None else 0
         except Exception as exc:
-            logger.exception(
-                "Ingestion script %s failed for run %s", module_name, run_id
-            )
+            logger.exception("Ingestion script %s failed for run %s", module_name, run_id)
             run.status = "failed"
             run.error_detail = str(exc)
 

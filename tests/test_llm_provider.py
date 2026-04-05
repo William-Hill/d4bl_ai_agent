@@ -1,4 +1,5 @@
 """Tests for d4bl.llm.provider — multi-provider LLM factory."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -7,19 +8,26 @@ from unittest.mock import MagicMock, patch
 class TestBuildLlmModelString:
     def test_ollama_provider(self) -> None:
         from d4bl.llm.provider import build_llm_model_string
+
         assert build_llm_model_string("ollama", "mistral") == "ollama/mistral"
 
     def test_gemini_provider(self) -> None:
         from d4bl.llm.provider import build_llm_model_string
+
         assert build_llm_model_string("gemini", "gemini-2.5-flash") == "gemini/gemini-2.5-flash"
 
     def test_openai_provider(self) -> None:
         from d4bl.llm.provider import build_llm_model_string
+
         assert build_llm_model_string("openai", "gpt-4o-mini") == "openai/gpt-4o-mini"
 
     def test_anthropic_provider(self) -> None:
         from d4bl.llm.provider import build_llm_model_string
-        assert build_llm_model_string("anthropic", "claude-haiku-4-5-20251001") == "anthropic/claude-haiku-4-5-20251001"
+
+        assert (
+            build_llm_model_string("anthropic", "claude-haiku-4-5-20251001")
+            == "anthropic/claude-haiku-4-5-20251001"
+        )
 
 
 class TestGetLlm:
@@ -27,6 +35,7 @@ class TestGetLlm:
     @patch("d4bl.llm.provider.LLM")
     def test_ollama_sets_base_url(self, mock_llm_cls, mock_get_settings) -> None:
         from d4bl.llm.provider import get_llm, reset_llm
+
         reset_llm()
         mock_settings = MagicMock()
         mock_settings.llm_provider = "ollama"
@@ -47,6 +56,7 @@ class TestGetLlm:
     @patch("d4bl.llm.provider.LLM")
     def test_gemini_sets_api_key(self, mock_llm_cls, mock_get_settings) -> None:
         from d4bl.llm.provider import get_llm, reset_llm
+
         reset_llm()
         mock_settings = MagicMock()
         mock_settings.llm_provider = "gemini"
@@ -69,6 +79,7 @@ class TestGetAvailableModels:
     @patch("d4bl.llm.provider.get_settings")
     def test_returns_configured_model(self, mock_get_settings) -> None:
         from d4bl.llm.provider import get_available_models
+
         mock_settings = MagicMock()
         mock_settings.llm_provider = "gemini"
         mock_settings.llm_model = "gemini-2.5-flash"
@@ -89,6 +100,7 @@ class TestGetLlmForTask:
     @patch("d4bl.llm.provider.LLM")
     def test_returns_task_specific_llm(self, mock_llm_cls, mock_get_settings, mock_oc_settings):
         from d4bl.llm.provider import get_llm_for_task
+
         mock_get_settings.return_value.evaluator_model = "d4bl-evaluator"
         mock_get_settings.return_value.llm_provider = "ollama"
         mock_get_settings.return_value.llm_model = "mistral"
@@ -107,6 +119,7 @@ class TestGetLlmForTask:
     @patch("d4bl.llm.provider.get_llm")
     def test_falls_back_to_default_llm(self, mock_get_llm, mock_get_settings):
         from d4bl.llm.provider import get_llm_for_task
+
         mock_get_settings.return_value.evaluator_model = ""
         mock_get_settings.return_value.llm_provider = "ollama"
         sentinel = object()
@@ -120,6 +133,7 @@ class TestGetAvailableModelsTypeVersion:
     @patch("d4bl.llm.provider.get_settings")
     def test_default_model_has_base_type(self, mock_get_settings) -> None:
         from d4bl.llm.provider import get_available_models
+
         mock_settings = MagicMock()
         mock_settings.llm_provider = "ollama"
         mock_settings.llm_model = "mistral"
@@ -136,6 +150,7 @@ class TestGetAvailableModelsTypeVersion:
     @patch("d4bl.llm.provider.get_settings")
     def test_finetuned_model_has_type_and_version(self, mock_get_settings) -> None:
         from d4bl.llm.provider import get_available_models
+
         mock_settings = MagicMock()
         mock_settings.llm_provider = "ollama"
         mock_settings.llm_model = "mistral"
@@ -154,6 +169,7 @@ class TestGetAvailableModelsTypeVersion:
     @patch("d4bl.llm.provider.get_settings")
     def test_finetuned_without_version_returns_none(self, mock_get_settings) -> None:
         from d4bl.llm.provider import get_available_models
+
         mock_settings = MagicMock()
         mock_settings.llm_provider = "ollama"
         mock_settings.llm_model = "mistral"
@@ -168,4 +184,3 @@ class TestGetAvailableModelsTypeVersion:
         parser = next(m for m in models if m["task"] == "query_parser")
         assert parser["type"] == "finetuned"
         assert parser["version"] is None
-

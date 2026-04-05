@@ -12,9 +12,7 @@ class TestQueryEndpoint:
     @pytest.mark.asyncio
     @patch("d4bl.app.api.get_query_engine")
     @patch("d4bl.app.api.get_db")
-    async def test_post_query_returns_answer(
-        self, mock_get_db, mock_get_engine, override_auth
-    ):
+    async def test_post_query_returns_answer(self, mock_get_db, mock_get_engine, override_auth):
         """POST /api/query should return a synthesized answer."""
         app = override_auth
 
@@ -40,14 +38,10 @@ class TestQueryEndpoint:
         mock_get_engine.return_value = mock_engine
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/query",
-                json={
-                    "question": "What NIL policies affect Black athletes in Mississippi?"
-                },
+                json={"question": "What NIL policies affect Black athletes in Mississippi?"},
             )
 
         assert response.status_code == 200
@@ -60,16 +54,12 @@ class TestQueryEndpoint:
         assert data["sources"][0]["source_type"] == "vector"
 
     @pytest.mark.asyncio
-    async def test_post_query_missing_question_returns_422(
-        self, override_auth
-    ):
+    async def test_post_query_missing_question_returns_422(self, override_auth):
         """POST /api/query with no question field should return 422."""
         app = override_auth
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post("/api/query", json={})
 
         assert response.status_code == 422

@@ -1,4 +1,5 @@
 """Fuse vector and structured search results into a synthesized answer."""
+
 from __future__ import annotations
 
 import logging
@@ -71,9 +72,7 @@ class ResultFusion:
 
     def __init__(self, ollama_base_url: str | None = None) -> None:
         settings = get_settings()
-        self.ollama_base_url = (
-            ollama_base_url or settings.ollama_base_url
-        ).rstrip("/")
+        self.ollama_base_url = (ollama_base_url or settings.ollama_base_url).rstrip("/")
 
     def merge_and_rank(
         self,
@@ -109,9 +108,7 @@ class ResultFusion:
                 continue
             seen_job_ids.add(job_key)
 
-            prov_name, prov_quality, prov_notes = _summarize_provenance(
-                sr.provenance
-            )
+            prov_name, prov_quality, prov_notes = _summarize_provenance(sr.provenance)
 
             sources.append(
                 SourceReference(
@@ -152,17 +149,13 @@ class ResultFusion:
 
         return QueryResult(answer=answer, sources=sources, query=query)
 
-    async def _generate_answer(
-        self, query: str, sources: list[SourceReference]
-    ) -> str:
+    async def _generate_answer(self, query: str, sources: list[SourceReference]) -> str:
         """Use the fine-tuned explainer model (or fallback) to synthesize an answer."""
         sources_text = "\n".join(
             f"[{i + 1}] ({s.source_type}) {s.title}\n{s.snippet}"
             for i, s in enumerate(sources[:10])
         )
-        prompt = SYNTHESIS_PROMPT.substitute(
-            query=query, sources_text=sources_text
-        )
+        prompt = SYNTHESIS_PROMPT.substitute(query=query, sources_text=sources_text)
 
         return await ollama_generate(
             base_url=self.ollama_base_url,

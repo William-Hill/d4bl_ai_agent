@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @CrewBase
-class D4Bl():
+class D4Bl:
     """D4Bl crew with enhanced error handling and reliability"""
 
     agents: list[BaseAgent]
@@ -61,7 +61,7 @@ class D4Bl():
     @before_kickoff
     def before_kickoff_function(self, inputs):
         """Ensure output directory exists before running the crew"""
-        os.makedirs('output', exist_ok=True)
+        os.makedirs("output", exist_ok=True)
         logger.info("Starting D4BL research crew")
 
         # Validate inputs
@@ -69,7 +69,7 @@ class D4Bl():
             raise ValueError("Query is required for research")
 
         # Log input validation
-        logger.info("Research query validated (length=%d)", len(inputs.get('query', '')))
+        logger.info("Research query validated (length=%d)", len(inputs.get("query", "")))
         return inputs
 
     def _make_simple_agent(self, config_key: str, **kwargs: Any) -> Agent:
@@ -101,7 +101,7 @@ class D4Bl():
             )
 
         return Agent(
-            config=self.agents_config['researcher'],
+            config=self.agents_config["researcher"],
             llm=get_llm(),
             tools=[search_tool],
             verbose=True,
@@ -110,98 +110,109 @@ class D4Bl():
 
     @agent
     def data_analyst(self) -> Agent:
-        return self._make_simple_agent('data_analyst', max_retries=3)
+        return self._make_simple_agent("data_analyst", max_retries=3)
 
     @agent
     def writer(self) -> Agent:
-        return self._make_simple_agent('writer')
+        return self._make_simple_agent("writer")
 
     @agent
     def editor(self) -> Agent:
-        return self._make_simple_agent('editor')
+        return self._make_simple_agent("editor")
 
     @agent
     def fact_checker(self) -> Agent:
-        return self._make_simple_agent('fact_checker')
+        return self._make_simple_agent("fact_checker")
 
     @agent
     def citation_agent(self) -> Agent:
-        return self._make_simple_agent('citation_agent')
+        return self._make_simple_agent("citation_agent")
 
     @agent
     def bias_detection_agent(self) -> Agent:
-        return self._make_simple_agent('bias_detection_agent')
+        return self._make_simple_agent("bias_detection_agent")
 
     @agent
     def data_visualization_agent(self) -> Agent:
-        return self._make_simple_agent('data_visualization_agent')
+        return self._make_simple_agent("data_visualization_agent")
 
     @task
     def research_task(self) -> Task:
         return Task(
-            config=self.tasks_config['research_task'], # type: ignore[index]
+            config=self.tasks_config["research_task"],  # type: ignore[index]
         )
 
     @task
     def analysis_task(self) -> Task:
         return Task(
-            config=self.tasks_config['analysis_task'], # type: ignore[index]
+            config=self.tasks_config["analysis_task"],  # type: ignore[index]
         )
 
     @task
     def writing_task(self) -> Task:
         return Task(
-            config=self.tasks_config['writing_task'], # type: ignore[index]
-            output_file='output/report.md'  # This is the file that will contain the final report
+            config=self.tasks_config["writing_task"],  # type: ignore[index]
+            output_file="output/report.md",  # This is the file that will contain the final report
         )
 
     @task
     def fact_checker_task(self) -> Task:
         return Task(
-            config=self.tasks_config['fact_checker_task'], # type: ignore[index]
+            config=self.tasks_config["fact_checker_task"],  # type: ignore[index]
         )
 
     @task
     def citation_task(self) -> Task:
         return Task(
-            config=self.tasks_config['citation_task'], # type: ignore[index]
+            config=self.tasks_config["citation_task"],  # type: ignore[index]
         )
 
     @task
     def bias_detection_task(self) -> Task:
         return Task(
-            config=self.tasks_config['bias_detection_task'], # type: ignore[index]
+            config=self.tasks_config["bias_detection_task"],  # type: ignore[index]
         )
 
     @task
     def editor_task(self) -> Task:
         return Task(
-            config=self.tasks_config['editor_task'], # type: ignore[index]
-            output_file='output/report_edited.md'  # This is the file that will contain the edited report
+            config=self.tasks_config["editor_task"],  # type: ignore[index]
+            output_file="output/report_edited.md",  # This is the file that will contain the edited report
         )
 
     @task
     def data_visualization_task(self) -> Task:
         return Task(
-            config=self.tasks_config['data_visualization_task'], # type: ignore[index]
+            config=self.tasks_config["data_visualization_task"],  # type: ignore[index]
         )
 
     @crew
     def crew(self) -> Crew:
         """Creates the D4Bl crew"""
-        ollama_base_url = get_settings().ollama_base_url
-        embedder_model = "mxbai-embed-large"
+        settings = get_settings()
+        embedder_provider = settings.embedder_provider
 
-        # Construct the embedder configuration
-        # CrewAI requires explicit embedder config to avoid defaulting to OpenAI
-        # Note: Use "url" pointing to /api/embeddings endpoint, not "base_url"
-        embedder_config = {
-            "provider": "ollama",
-            "config": {
-                "model_name": embedder_model,
-                "url": f"{ollama_base_url}/api/embeddings"
+        if embedder_provider == "google":
+            if not settings.llm_api_key:
+                raise ValueError(
+                    "Google embedder selected but LLM_API_KEY is not set. "
+                    "Please set the LLM_API_KEY environment variable."
+                )
+            embedder_config = {
+                "provider": "google-generativeai",
+                "config": {
+                    "api_key": settings.llm_api_key,
+                    "model_name": "models/gemini-embedding-001",
+                },
             }
-        }
+        else:
+            embedder_config = {
+                "provider": "ollama",
+                "config": {
+                    "model_name": "mxbai-embed-large",
+                    "url": f"{settings.ollama_base_url}/api/embeddings",
+                },
+            }
 
         # Filter agents and tasks if selected_agents is specified
         agents_to_use = self.agents
@@ -220,9 +231,7 @@ class D4Bl():
                     f"Valid agents are: {', '.join(sorted(valid_agents))}"
                 )
 
-            agent_methods = {
-                name: getattr(self, name) for name in self.AGENT_TASK_MAP
-            }
+            agent_methods = {name: getattr(self, name) for name in self.AGENT_TASK_MAP}
             agents_to_use = [
                 agent_methods[agent_name]()
                 for agent_name in selected
@@ -236,9 +245,7 @@ class D4Bl():
                 if agent_name in self.AGENT_TASK_MAP
             }
 
-            task_methods = {
-                t: getattr(self, t) for t in self.AGENT_TASK_MAP.values()
-            }
+            task_methods = {t: getattr(self, t) for t in self.AGENT_TASK_MAP.values()}
 
             # Iterate TASK_ORDER to preserve deterministic sequential order
             tasks_to_use = [
@@ -262,4 +269,3 @@ class D4Bl():
             memory=True,  # Enable basic memory system (short-term, long-term, entity memory)
             embedder=embedder_config,
         )
-

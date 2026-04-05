@@ -104,6 +104,6 @@ class TestEvaluatorValidation:
         assert result.valid
 
     def test_empty_object_invalid(self):
-        raw = '{}'
+        raw = "{}"
         result = validate_evaluator_output(raw)
         assert not result.valid

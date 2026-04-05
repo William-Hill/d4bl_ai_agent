@@ -1,4 +1,5 @@
 """Base evaluation helper — captures the common evaluator boilerplate."""
+
 from __future__ import annotations
 
 import logging
@@ -17,6 +18,7 @@ class EvalStatus(str, Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
     PARTIAL_SUCCESS = "partial_success"
+
 
 logger = logging.getLogger(__name__)
 eval_logger = logging.getLogger(f"{__name__}.evaluations")
@@ -57,6 +59,7 @@ def run_llm_evaluation(
     # Lazily resolve dependencies when not injected
     if langfuse is None:
         from d4bl.services.langfuse.client import get_langfuse_eval_client
+
         langfuse = get_langfuse_eval_client()
 
     if not langfuse:
@@ -70,13 +73,12 @@ def run_llm_evaluation(
     try:
         if llm is None:
             from d4bl.services.langfuse.llm_runner import get_eval_llm
+
             llm = get_eval_llm()
 
         llm_start = time.time()
         raw_response = call_llm_text(llm, prompt, max_retries=2, retry_delay=2.0)
-        eval_logger.debug(
-            "%s LLM call completed in %.2fs", eval_name, time.time() - llm_start
-        )
+        eval_logger.debug("%s LLM call completed in %.2fs", eval_name, time.time() - llm_start)
 
         score, feedback = parse_fn(str(raw_response))
         score = max(1.0, min(5.0, float(score)))
@@ -95,7 +97,9 @@ def run_llm_evaluation(
             except Exception as score_error:
                 logger.error(
                     "Failed to log %s score to Langfuse: %s",
-                    eval_name, score_error, exc_info=True,
+                    eval_name,
+                    score_error,
+                    exc_info=True,
                 )
 
         elapsed_time = time.time() - start_time
@@ -118,9 +122,7 @@ def run_llm_evaluation(
         }
     except Exception as e:
         elapsed_time = time.time() - start_time
-        logger.error(
-            "Error in %s (took %.2fs): %s", eval_name, elapsed_time, e, exc_info=True
-        )
+        logger.error("Error in %s (took %.2fs): %s", eval_name, elapsed_time, e, exc_info=True)
         return {
             "error": str(e),
             "status": EvalStatus.FAILED,

@@ -1,4 +1,5 @@
 """Tests for user_id ownership on ResearchJob."""
+
 from __future__ import annotations
 
 from uuid import uuid4

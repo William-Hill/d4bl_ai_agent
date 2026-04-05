@@ -28,9 +28,7 @@ def get_langfuse_eval_client() -> Langfuse | None:
         langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
         settings = get_settings()
-        langfuse_host = resolve_langfuse_host(
-            settings.langfuse_host, settings.is_docker
-        )
+        langfuse_host = resolve_langfuse_host(settings.langfuse_host, settings.is_docker)
 
         logger.debug("Initializing Langfuse client - Host: %s", langfuse_host)
 

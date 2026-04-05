@@ -6,4 +6,3 @@ is imported and available as an attribute on `d4bl.app`.
 """
 
 from . import api  # noqa: F401  (re-export for test patching)
-

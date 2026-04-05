@@ -1,4 +1,5 @@
 """Orchestrates the full NL query pipeline."""
+
 from __future__ import annotations
 
 import logging
@@ -81,11 +82,7 @@ class QueryEngine:
             )
 
         # 3. Merge and rank results
-        sources = self.fusion.merge_and_rank(
-            vector_results, structured_results
-        )
+        sources = self.fusion.merge_and_rank(vector_results, structured_results)
 
         # 4. Synthesize answer
-        return await self.fusion.synthesize(
-            query=question, sources=sources
-        )
+        return await self.fusion.synthesize(query=question, sources=sources)

@@ -11,12 +11,8 @@ from d4bl.app.auth import CurrentUser, get_current_user
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_ADMIN_ID = "00000000-0000-0000-0000-000000000002"
 
-MOCK_USER = CurrentUser(
-    id=UUID(TEST_USER_ID), email="user@test.com", role="user"
-)
-MOCK_ADMIN = CurrentUser(
-    id=UUID(TEST_ADMIN_ID), email="admin@test.com", role="admin"
-)
+MOCK_USER = CurrentUser(id=UUID(TEST_USER_ID), email="user@test.com", role="user")
+MOCK_ADMIN = CurrentUser(id=UUID(TEST_ADMIN_ID), email="admin@test.com", role="admin")
 
 
 @pytest.fixture

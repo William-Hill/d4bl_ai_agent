@@ -1,6 +1,7 @@
 """
 Pydantic schemas shared by the FastAPI application.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -557,4 +558,3 @@ class AnalyzeResponse(BaseModel):
 
     run_id: str
     suggestions: dict
-

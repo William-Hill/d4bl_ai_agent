@@ -95,53 +95,113 @@ def run_comprehensive_evaluation(
 
     # --- Build evaluation specs (core + optional) ---
     eval_specs: list[tuple[str, Callable[..., dict[str, Any]], dict[str, Any]]] = [
-        ("quality", evaluate_research_quality, dict(
-            query=query, research_output=research_output, sources=sources,
-            trace_id=trace_id, llm=llm, langfuse=langfuse,
-        )),
-        ("source_relevance", evaluate_source_relevance, dict(
-            query=query, sources=sources, trace_id=trace_id, langfuse=langfuse,
-        )),
-        ("hallucination", evaluate_hallucination, dict(
-            query=query, answer=research_output, context=context,
-            trace_id=trace_id, llm=llm, langfuse=langfuse,
-        )),
-        ("reference", evaluate_reference, dict(
-            query=query, answer=research_output, context=context,
-            trace_id=trace_id, llm=llm, langfuse=langfuse,
-        )),
-        ("bias", evaluate_bias_detection, dict(
-            research_output=research_output, query=query,
-            trace_id=trace_id, llm=llm, langfuse=langfuse,
-        )),
+        (
+            "quality",
+            evaluate_research_quality,
+            dict(
+                query=query,
+                research_output=research_output,
+                sources=sources,
+                trace_id=trace_id,
+                llm=llm,
+                langfuse=langfuse,
+            ),
+        ),
+        (
+            "source_relevance",
+            evaluate_source_relevance,
+            dict(
+                query=query,
+                sources=sources,
+                trace_id=trace_id,
+                langfuse=langfuse,
+            ),
+        ),
+        (
+            "hallucination",
+            evaluate_hallucination,
+            dict(
+                query=query,
+                answer=research_output,
+                context=context,
+                trace_id=trace_id,
+                llm=llm,
+                langfuse=langfuse,
+            ),
+        ),
+        (
+            "reference",
+            evaluate_reference,
+            dict(
+                query=query,
+                answer=research_output,
+                context=context,
+                trace_id=trace_id,
+                llm=llm,
+                langfuse=langfuse,
+            ),
+        ),
+        (
+            "bias",
+            evaluate_bias_detection,
+            dict(
+                research_output=research_output,
+                query=query,
+                trace_id=trace_id,
+                llm=llm,
+                langfuse=langfuse,
+            ),
+        ),
     ]
 
     # Add optional evaluations when their preconditions are met
     if extracted_contents and len(extracted_contents) > 0:
-        eval_specs.append(("content_relevance", evaluate_content_relevance, dict(
-            query=query, extracted_contents=extracted_contents,
-            trace_id=trace_id, llm=llm, langfuse=langfuse,
-        )))
+        eval_specs.append(
+            (
+                "content_relevance",
+                evaluate_content_relevance,
+                dict(
+                    query=query,
+                    extracted_contents=extracted_contents,
+                    trace_id=trace_id,
+                    llm=llm,
+                    langfuse=langfuse,
+                ),
+            )
+        )
     else:
         eval_logger.info("No extracted contents, skipping content relevance")
         results["evaluations"]["content_relevance"] = {
-            "status": EvalStatus.SKIPPED, "reason": "no_extracted_contents",
+            "status": EvalStatus.SKIPPED,
+            "reason": "no_extracted_contents",
         }
 
     if report and report.strip():
-        eval_specs.append(("report_relevance", evaluate_report_relevance, dict(
-            query=query, report=report,
-            trace_id=trace_id, llm=llm, langfuse=langfuse,
-        )))
+        eval_specs.append(
+            (
+                "report_relevance",
+                evaluate_report_relevance,
+                dict(
+                    query=query,
+                    report=report,
+                    trace_id=trace_id,
+                    llm=llm,
+                    langfuse=langfuse,
+                ),
+            )
+        )
     else:
         eval_logger.info("No report provided, skipping report relevance")
         results["evaluations"]["report_relevance"] = {
-            "status": EvalStatus.SKIPPED, "reason": "no_report",
+            "status": EvalStatus.SKIPPED,
+            "reason": "no_report",
         }
 
     # --- Run all evaluations in parallel (finding 3.1) ---
     def _run_eval(
-        name: str, func: Callable[..., dict[str, Any]], kwargs: dict[str, Any],
+        name: str,
+        func: Callable[..., dict[str, Any]],
+        kwargs: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
         eval_logger.info("Running %s evaluation...", name)
         try:
@@ -153,8 +213,7 @@ def run_comprehensive_evaluation(
     eval_timeout_s = 120
     executor = ThreadPoolExecutor(max_workers=len(eval_specs))
     futures = {
-        executor.submit(_run_eval, name, func, kwargs): name
-        for name, func, kwargs in eval_specs
+        executor.submit(_run_eval, name, func, kwargs): name for name, func, kwargs in eval_specs
     }
     try:
         for future in as_completed(futures, timeout=eval_timeout_s):
@@ -162,7 +221,8 @@ def run_comprehensive_evaluation(
             results["evaluations"][name] = result
     except TimeoutError:
         logger.error(
-            "Evaluation batch timed out after %ss", eval_timeout_s,
+            "Evaluation batch timed out after %ss",
+            eval_timeout_s,
         )
         for future, name in futures.items():
             if not future.done():
@@ -211,12 +271,10 @@ def run_comprehensive_evaluation(
     results["elapsed_time"] = elapsed_time
 
     skipped_evals = sum(
-        1 for r in results["evaluations"].values()
-        if r.get("status") == EvalStatus.SKIPPED
+        1 for r in results["evaluations"].values() if r.get("status") == EvalStatus.SKIPPED
     )
     successful_evals = sum(
-        1 for r in results["evaluations"].values()
-        if r.get("status") == EvalStatus.SUCCESS
+        1 for r in results["evaluations"].values() if r.get("status") == EvalStatus.SUCCESS
     )
     ran_evals = len(results["evaluations"]) - skipped_evals
 
@@ -229,7 +287,9 @@ def run_comprehensive_evaluation(
         results["status"] = EvalStatus.SUCCESS
         eval_logger.info("=" * 60)
         eval_logger.info(
-            "All %s evaluations passed in %.2fs", ran_evals, elapsed_time,
+            "All %s evaluations passed in %.2fs",
+            ran_evals,
+            elapsed_time,
         )
         eval_logger.info("=" * 60)
     elif successful_evals > 0:
@@ -237,7 +297,9 @@ def run_comprehensive_evaluation(
         eval_logger.warning("=" * 60)
         eval_logger.warning(
             "%s/%s evaluations passed in %.2fs",
-            successful_evals, ran_evals, elapsed_time,
+            successful_evals,
+            ran_evals,
+            elapsed_time,
         )
         eval_logger.warning("=" * 60)
     else:

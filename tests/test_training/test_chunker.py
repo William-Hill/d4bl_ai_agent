@@ -13,8 +13,12 @@ class TestChunkText:
         assert chunks[0]["token_count"] > 0
 
     def test_splits_on_sentence_boundary(self):
-        sentences = ["Sentence number one. ", "Sentence number two. ",
-                     "Sentence number three. ", "Sentence number four. "]
+        sentences = [
+            "Sentence number one. ",
+            "Sentence number two. ",
+            "Sentence number three. ",
+            "Sentence number four. ",
+        ]
         text = "".join(sentences)
         chunks = chunk_text(text, target_tokens=10)
         assert len(chunks) >= 2

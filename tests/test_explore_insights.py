@@ -241,9 +241,7 @@ class TestExploreQuery:
         monkeypatch.setattr(ei_mod, "_get_query_engine", lambda: mock_engine)
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/explore/query",
                 json={
@@ -272,9 +270,7 @@ class TestExploreQuery:
         assert "State FIPS: 28" in question_arg
 
     @pytest.mark.asyncio
-    async def test_explore_query_503_on_failure(
-        self, override_auth, monkeypatch
-    ):
+    async def test_explore_query_503_on_failure(self, override_auth, monkeypatch):
         app = override_auth
         from d4bl.infra.database import get_db
 
@@ -286,18 +282,14 @@ class TestExploreQuery:
         app.dependency_overrides[get_db] = override_get_db
 
         mock_engine = MagicMock()
-        mock_engine.query = AsyncMock(
-            side_effect=RuntimeError("LLM unavailable")
-        )
+        mock_engine.query = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
 
         import d4bl.app.explore_insights as ei_mod
 
         monkeypatch.setattr(ei_mod, "_get_query_engine", lambda: mock_engine)
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/explore/query",
                 json={

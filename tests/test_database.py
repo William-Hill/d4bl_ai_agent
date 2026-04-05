@@ -1,4 +1,5 @@
 """Tests for database model defaults and helpers."""
+
 from d4bl.infra.database import (
     CensusIndicator,
     EvaluationResult,
@@ -17,6 +18,7 @@ class TestUtcNow:
 
     def test_utc_now_is_utc(self):
         from datetime import timezone
+
         result = _utc_now()
         assert result.tzinfo == timezone.utc
 

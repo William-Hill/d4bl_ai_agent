@@ -1,4 +1,5 @@
 """Tests for POST /api/eval-runs/{id}/analyze endpoint."""
+
 from __future__ import annotations
 
 import uuid
@@ -10,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 
 def _override_auth(app):
     from d4bl.app.auth import get_current_user
+
     app.dependency_overrides[get_current_user] = lambda: {
         "sub": "test-user-id",
         "email": "test@test.com",

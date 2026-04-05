@@ -34,9 +34,7 @@ RECORD_ID = uuid4()
 LINEAGE_ID = uuid4()
 NOW = datetime.now(timezone.utc)
 
-MOCK_ADMIN = CurrentUser(
-    id=uuid4(), email="admin@test.com", role="admin"
-)
+MOCK_ADMIN = CurrentUser(id=uuid4(), email="admin@test.com", role="admin")
 
 
 def _make_source(**overrides) -> MagicMock:
@@ -198,27 +196,30 @@ class TestE2EIngestionPipeline:
         )
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
+
         async def _refresh(obj):
             obj.id = RUN_ID
 
         mock_session.refresh = AsyncMock(side_effect=_refresh)
 
-        with patch(
-            "d4bl.app.data_routes.resolve_source",
-            return_value="ingest_census_acs",
-        ), patch(
-            "d4bl.app.data_routes.run_ingestion_task",
-            new_callable=AsyncMock,
-        ), patch(
-            "d4bl.app.data_routes.asyncio.create_task",
+        with (
+            patch(
+                "d4bl.app.data_routes.resolve_source",
+                return_value="ingest_census_acs",
+            ),
+            patch(
+                "d4bl.app.data_routes.run_ingestion_task",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "d4bl.app.data_routes.asyncio.create_task",
+            ),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test",
             ) as client:
-                resp = await client.post(
-                    f"/api/data/sources/{SOURCE_ID}/trigger"
-                )
+                resp = await client.post(f"/api/data/sources/{SOURCE_ID}/trigger")
 
         assert resp.status_code == 202
         body = resp.json()
@@ -232,18 +233,14 @@ class TestE2EIngestionPipeline:
         lineage = _make_lineage()
 
         mock_result = MagicMock()
-        mock_result.all = MagicMock(
-            return_value=[(lineage, "Census ACS", "api")]
-        )
+        mock_result.all = MagicMock(return_value=[(lineage, "Census ACS", "api")])
         mock_session.execute = AsyncMock(return_value=mock_result)
 
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            resp = await client.get(
-                f"/api/data/lineage/census_indicators/{RECORD_ID}"
-            )
+            resp = await client.get(f"/api/data/lineage/census_indicators/{RECORD_ID}")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -260,9 +257,7 @@ class TestE2EIngestionPipeline:
         source = _make_source()
 
         mock_result = MagicMock()
-        mock_result.all = MagicMock(
-            return_value=[(source, "completed", NOW, 150)]
-        )
+        mock_result.all = MagicMock(return_value=[(source, "completed", NOW, 150)])
         mock_session.execute = AsyncMock(return_value=mock_result)
 
         async with AsyncClient(
@@ -305,9 +300,7 @@ class TestE2EIngestionPipeline:
                 transport=ASGITransport(app=app),
                 base_url="http://test",
             ) as client:
-                resp = await client.post(
-                    f"/api/data/sources/{SOURCE_ID}/test"
-                )
+                resp = await client.post(f"/api/data/sources/{SOURCE_ID}/test")
 
         assert resp.status_code == 200
         body = resp.json()

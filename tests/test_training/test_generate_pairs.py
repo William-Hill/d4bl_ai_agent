@@ -81,10 +81,7 @@ class TestWritePairsJsonl:
         assert count == 0
 
     def test_each_line_is_valid_json(self):
-        pairs = [
-            {"messages": [{"role": "user", "content": f"msg {i}"}]}
-            for i in range(3)
-        ]
+        pairs = [{"messages": [{"role": "user", "content": f"msg {i}"}]} for i in range(3)]
         buf = io.StringIO()
         write_pairs_jsonl(pairs, buf)
         buf.seek(0)
@@ -261,7 +258,7 @@ class TestValidateJson:
 
     def test_json_array_returns_none(self):
         # We only handle objects (dicts), not bare arrays
-        result = _validate_json('[1, 2, 3]')
+        result = _validate_json("[1, 2, 3]")
         assert result is None
 
     def test_json_with_numbers_and_booleans(self):

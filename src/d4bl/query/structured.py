@@ -1,4 +1,5 @@
 """Search structured PostgreSQL data (research jobs, evaluations)."""
+
 from __future__ import annotations
 
 import logging
@@ -89,12 +90,8 @@ class StructuredSearcher:
                     query=row.query,
                     status=row.status,
                     summary=self._extract_summary(row.result),
-                    created_at=row.created_at.isoformat()
-                    if row.created_at
-                    else "",
-                    relevance_score=self._score_relevance(
-                        row.query, query_word_sets
-                    ),
+                    created_at=row.created_at.isoformat() if row.created_at else "",
+                    relevance_score=self._score_relevance(row.query, query_word_sets),
                 )
                 for row in rows
             ]
@@ -115,11 +112,7 @@ class StructuredSearcher:
         search_queries: list[str],
     ) -> list[frozenset[str]]:
         """Precompute lowercased word sets for search queries."""
-        return [
-            frozenset(sq.lower().split())
-            for sq in search_queries
-            if sq.strip()
-        ]
+        return [frozenset(sq.lower().split()) for sq in search_queries if sq.strip()]
 
     def _score_relevance(
         self,
@@ -173,9 +166,7 @@ class StructuredSearcher:
                 provenance_list.append(
                     ProvenanceInfo(
                         data_source_name=source_name,
-                        quality_score=(
-                            round(avg_quality, 2) if avg_quality else None
-                        ),
+                        quality_score=(round(avg_quality, 2) if avg_quality else None),
                     )
                 )
             return provenance_list

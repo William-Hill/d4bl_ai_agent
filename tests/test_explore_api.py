@@ -1,4 +1,5 @@
 """Tests for /api/explore/* endpoints."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -307,7 +308,12 @@ class TestHudEndpoint:
 
         mock_result = MagicMock()
         mock_result.mappings.return_value.all.return_value = [
-            {"state_fips": "28", "avg_value": 0.45, "indicator": "Dissimilarity Index", "year": 2020}
+            {
+                "state_fips": "28",
+                "avg_value": 0.45,
+                "indicator": "Dissimilarity Index",
+                "year": 2020,
+            }
         ]
 
         mock_db = AsyncMock()
@@ -604,20 +610,23 @@ class TestAllExploreEndpointsStandardShape:
     """Verify all 12 explore endpoints return the standardized ExploreResponse shape."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("path", [
-        "/api/explore/indicators",
-        "/api/explore/cdc",
-        "/api/explore/epa",
-        "/api/explore/fbi",
-        "/api/explore/bls",
-        "/api/explore/hud",
-        "/api/explore/usda",
-        "/api/explore/doe",
-        "/api/explore/police-violence",
-        "/api/explore/census-demographics",
-        "/api/explore/cdc-mortality",
-        "/api/explore/bjs",
-    ])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/explore/indicators",
+            "/api/explore/cdc",
+            "/api/explore/epa",
+            "/api/explore/fbi",
+            "/api/explore/bls",
+            "/api/explore/hud",
+            "/api/explore/usda",
+            "/api/explore/doe",
+            "/api/explore/police-violence",
+            "/api/explore/census-demographics",
+            "/api/explore/cdc-mortality",
+            "/api/explore/bjs",
+        ],
+    )
     async def test_explore_endpoint_returns_standard_shape(self, override_auth, path):
         """All explore endpoints return ExploreResponse shape even with empty data."""
         app = override_auth
@@ -643,7 +652,9 @@ class TestAllExploreEndpointsStandardShape:
         body = res.json()
         assert isinstance(body["rows"], list), f"{path}: rows should be a list"
         assert "national_average" in body, f"{path}: missing national_average"
-        assert isinstance(body["available_metrics"], list), f"{path}: available_metrics should be list"
+        assert isinstance(body["available_metrics"], list), (
+            f"{path}: available_metrics should be list"
+        )
         assert isinstance(body["available_years"], list), f"{path}: available_years should be list"
         assert isinstance(body["available_races"], list), f"{path}: available_races should be list"
 
@@ -712,4 +723,3 @@ class TestStatesEndpoint:
         assert data[0]["state_fips"] == "28"
         assert data[0]["state_name"] == "Mississippi"
         assert data[0]["bill_count"] == 7
-

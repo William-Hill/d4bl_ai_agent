@@ -33,9 +33,7 @@ def _log_task_exception(task: asyncio.Task) -> None:
     """Log unhandled exceptions from background tasks."""
     _background_tasks.discard(task)
     if not task.cancelled() and task.exception():
-        logger.error(
-            "Background task failed: %s", task.exception(), exc_info=task.exception()
-        )
+        logger.error("Background task failed: %s", task.exception(), exc_info=task.exception())
 
 
 @router.get("/api/admin/schedules")
@@ -76,9 +74,7 @@ async def create_or_update_schedule(
 
     # Check for existing schedule with this source_key
     result = await db.execute(
-        select(IngestionSchedule).where(
-            IngestionSchedule.source_key == source_key
-        )
+        select(IngestionSchedule).where(IngestionSchedule.source_key == source_key)
     )
     existing = result.scalar_one_or_none()
 
@@ -114,9 +110,7 @@ async def delete_schedule(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an ingestion schedule."""
-    result = await db.execute(
-        select(IngestionSchedule).where(IngestionSchedule.id == schedule_id)
-    )
+    result = await db.execute(select(IngestionSchedule).where(IngestionSchedule.id == schedule_id))
     schedule = result.scalar_one_or_none()
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -133,9 +127,7 @@ async def trigger_schedule(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger an ingestion schedule immediately."""
-    result = await db.execute(
-        select(IngestionSchedule).where(IngestionSchedule.id == schedule_id)
-    )
+    result = await db.execute(select(IngestionSchedule).where(IngestionSchedule.id == schedule_id))
     schedule = result.scalar_one_or_none()
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -157,9 +149,7 @@ async def trigger_schedule(
     db.add(run)
     await db.commit()
 
-    task = asyncio.create_task(
-        run_ingestion_task(run_id, module_name, async_session_maker)
-    )
+    task = asyncio.create_task(run_ingestion_task(run_id, module_name, async_session_maker))
     _background_tasks.add(task)
     task.add_done_callback(_log_task_exception)
 
