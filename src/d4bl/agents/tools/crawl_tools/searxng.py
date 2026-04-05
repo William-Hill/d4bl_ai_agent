@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from urllib.parse import urlparse
 
 import httpx
 from crewai.tools import BaseTool
+from httpx import ConnectError, HTTPStatusError, TimeoutException
 from pydantic import BaseModel, Field, field_validator
 
 from .utils import PROBLEMATIC_DOMAINS
@@ -59,7 +61,10 @@ class SearXNGSearchTool(BaseTool):
         )
 
     def _run(self, query: str) -> str:
-        """Execute a search query against SearXNG.
+        """Execute a search query against SearXNG with retry logic.
+
+        Retries on timeout and transient failures (5xx errors, connection errors)
+        with exponential backoff. Non-retryable errors (4xx) are returned immediately.
 
         Args:
             query: The search query string.
@@ -67,50 +72,90 @@ class SearXNGSearchTool(BaseTool):
         Returns:
             JSON string of results: [{"title": ..., "url": ..., "content": ...}]
         """
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.base_url}/search",
-                    params={
-                        "q": query,
-                        "format": "json",
-                        "categories": self.default_category,
-                    },
-                )
+        max_retries = 3
+        base_delay = 1.0  # seconds
 
-                if response.status_code != 200:
-                    return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
-
-                data = response.json()
-                results = data.get("results", [])
-
-                # Filter problematic URLs and build output list
-                filtered = []
-                for r in results:
-                    url = r.get("url", "")
-                    if self._is_problematic_url(url):
-                        logger.info("Skipping paywalled/problematic URL: %s", url)
-                        continue
-                    filtered.append(
-                        {
-                            "title": r.get("title", ""),
-                            "url": url,
-                            "content": r.get("content", ""),
-                        }
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    response = client.get(
+                        f"{self.base_url}/search",
+                        params={
+                            "q": query,
+                            "format": "json",
+                            "categories": self.default_category,
+                        },
                     )
 
-                # Limit results
-                filtered = filtered[: self.max_results]
+                    # Retryable transient client errors (408 Request Timeout, 429 Too Many Requests)
+                    # and server errors (5xx) — raise to trigger retry loop
+                    if response.status_code in (408, 429) or response.status_code >= 500:
+                        raise HTTPStatusError(
+                            f"Retryable HTTP {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
 
-                logger.info(
-                    "SearXNG: query=%r category=%s results=%d",
-                    query,
-                    self.default_category,
-                    len(filtered),
+                    # Other non-retryable client errors (4xx)
+                    if 400 <= response.status_code < 500:
+                        return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
+
+                    if response.status_code != 200:
+                        return json.dumps({"error": f"SearXNG returned HTTP {response.status_code}"})
+
+                    data = response.json()
+                    results = data.get("results", [])
+
+                    # Filter problematic URLs and build output list
+                    filtered = []
+                    for r in results:
+                        url = r.get("url", "")
+                        if self._is_problematic_url(url):
+                            logger.info("Skipping paywalled/problematic URL: %s", url)
+                            continue
+                        filtered.append(
+                            {
+                                "title": r.get("title", ""),
+                                "url": url,
+                                "content": r.get("content", ""),
+                            }
+                        )
+
+                    # Limit results
+                    filtered = filtered[: self.max_results]
+
+                    logger.info(
+                        "SearXNG: query_len=%d category=%s results=%d",
+                        len(query),
+                        self.default_category,
+                        len(filtered),
+                    )
+
+                    return json.dumps(filtered, indent=2)
+
+            except (TimeoutException, ConnectError, HTTPStatusError) as e:
+                is_last_attempt = attempt == max_retries - 1
+                if is_last_attempt:
+                    logger.exception(
+                        "SearXNG search failed after %d attempts (query_len=%d)",
+                        max_retries,
+                        len(query),
+                    )
+                    return json.dumps({"error": f"Search failed after {max_retries} retries: {str(e)}"})
+
+                # Exponential backoff
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    "SearXNG search attempt %d/%d failed (query_len=%d): %s. Retrying in %.1fs...",
+                    attempt + 1,
+                    max_retries,
+                    len(query),
+                    str(e),
+                    delay,
                 )
+                time.sleep(delay)
 
-                return json.dumps(filtered, indent=2)
-
-        except Exception as e:
-            logger.exception("SearXNG search failed for query: %s", query)
-            return json.dumps({"error": f"Search failed: {str(e)}"})
+            except Exception as e:
+                # Non-retryable errors (e.g., JSON decode errors)
+                logger.exception("SearXNG search failed (query_len=%d)", len(query))
+                return json.dumps({"error": f"Search failed: {str(e)}"})
