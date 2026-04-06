@@ -26,6 +26,7 @@ export default function Home() {
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
@@ -53,6 +54,7 @@ export default function Home() {
           case 'progress':
             updateLogs(data);
             setProgress(data.message || 'Processing...');
+            setPhase(data.phase ?? null);
             break;
           case 'status':
             updateLogs(data);
@@ -62,11 +64,13 @@ export default function Home() {
             updateLogs(data);
             setProgress('Research completed!');
             setResults(data.result);
+            setPhase(null);
             setJobId(null);
             break;
           case 'error':
             updateLogs(data);
             setError(data.error || data.message || 'An error occurred during research');
+            setPhase(null);
             setJobId(null);
             break;
           default:
@@ -253,6 +257,7 @@ export default function Home() {
                   <ProgressCard
                     progress={progress}
                     isConnected={isConnected}
+                    phase={phase}
                   />
                   <LiveLogs logs={liveLogs} />
                 </>
