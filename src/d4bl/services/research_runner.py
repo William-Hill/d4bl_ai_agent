@@ -13,13 +13,18 @@ import queue
 import re
 import sys
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
+import httpx
 from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.agents.crew import D4Bl
+
+if TYPE_CHECKING:
+    from d4bl.settings import Settings
 from d4bl.app.websocket_manager import (
     create_log_queue,
     get_job_logs,
@@ -135,6 +140,55 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
         )
 
     return validation_result
+
+
+async def warmup_searxng(settings: Settings) -> bool:
+    """Ping SearXNG /healthz to wake Fly.io machine. Returns True if healthy."""
+    if settings.search_provider != "searxng" or not settings.searxng_base_url:
+        return False
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{settings.searxng_base_url}/healthz", timeout=15.0
+            )
+            if resp.is_success:
+                logger.info("SearXNG warmup: %s (status %d)", settings.searxng_base_url, resp.status_code)
+                return True
+            else:
+                logger.warning("SearXNG warmup unhealthy: %s (status %d)", settings.searxng_base_url, resp.status_code)
+                return False
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as exc:
+        logger.warning("SearXNG warmup failed (will proceed anyway): %s", exc)
+        return False
+
+
+def _make_notify_progress(job_id: str, trace_id_hex: str | None):
+    """Create a notify_progress coroutine for a given job. Testable factory."""
+
+    async def notify_progress(progress_msg: str, phase: str | None = None) -> None:
+        """Update DB status and push progress via WebSocket in one call."""
+        async for db in get_db():
+            try:
+                await update_job_status(db, job_id, "running", progress=progress_msg)
+                break
+            except Exception as update_err:
+                logger.error("Error updating job status: %s", update_err, exc_info=True)
+                break
+
+        ws_payload = {
+            "type": "progress",
+            "job_id": job_id,
+            "status": "running",
+            "message": progress_msg,
+            "progress": progress_msg,
+            "trace_id": trace_id_hex,
+        }
+        if phase is not None:
+            ws_payload["phase"] = phase
+        await send_websocket_update(job_id, ws_payload)
+
+    return notify_progress
 
 
 class LiveOutputHandler:
@@ -277,20 +331,6 @@ async def run_research_job(
                 print(f"Error updating job status: {update_err}")
                 break
 
-    async def notify_progress(progress_msg: str) -> None:
-        """Update DB status and push progress via WebSocket in one call."""
-        await set_status(progress_msg)
-        await send_websocket_update(
-            job_id,
-            {
-                "type": "progress",
-                "job_id": job_id,
-                "status": "running",
-                "progress": progress_msg,
-                "trace_id": trace_id_hex,
-            },
-        )
-
     try:
         with tracer.start_as_current_span(
             "d4bl.research_job", attributes=span_attributes
@@ -298,15 +338,23 @@ async def run_research_job(
             span_context = job_span.get_span_context()
             trace_id_hex = format(span_context.trace_id, "032x")
 
-            await notify_progress("Initializing research crew...")
+            notify_progress = _make_notify_progress(job_id, trace_id_hex)
+
+            # -- Warmup SearXNG (wakes Fly.io machine) --
+            from d4bl.settings import get_settings
+
+            settings = get_settings()
+            if settings.search_provider == "searxng" and settings.searxng_base_url:
+                await notify_progress("Warming up search services...", phase="warmup")
+                await warmup_searxng(settings)
+
+            await notify_progress("Initializing research crew...", phase="init")
 
             inputs = {
                 "query": query,
                 "summary_format": summary_format,
                 "current_year": str(datetime.now().year),
             }
-
-            await notify_progress("Starting research task...")
 
             try:
                 crew_instance = D4Bl()
@@ -316,6 +364,8 @@ async def run_research_job(
                 error_msg = f"Failed to initialize crew: {exc}"
                 logger.error("Failed to initialize crew: %s", exc, exc_info=True)
                 raise Exception(error_msg) from exc
+
+            await notify_progress("Starting research task...", phase="research")
 
             original_stdout = sys.stdout
             original_stderr = sys.stderr
@@ -395,7 +445,7 @@ async def run_research_job(
                     pass
                 remove_log_queue(job_id)
 
-            await notify_progress("Research completed, processing results...")
+            await notify_progress("Research completed, processing results...", phase="evaluation")
 
             result_dict = {
                 "raw_output": str(result.raw) if hasattr(result, "raw") else str(result),
