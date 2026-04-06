@@ -356,8 +356,6 @@ async def run_research_job(
                 "current_year": str(datetime.now().year),
             }
 
-            await notify_progress("Starting research task...", phase="research")
-
             try:
                 crew_instance = D4Bl()
                 if selected_agents:
@@ -366,6 +364,8 @@ async def run_research_job(
                 error_msg = f"Failed to initialize crew: {exc}"
                 logger.error("Failed to initialize crew: %s", exc, exc_info=True)
                 raise Exception(error_msg) from exc
+
+            await notify_progress("Starting research task...", phase="research")
 
             original_stdout = sys.stdout
             original_stderr = sys.stderr

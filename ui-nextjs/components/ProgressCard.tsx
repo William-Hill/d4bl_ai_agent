@@ -36,7 +36,7 @@ export default function ProgressCard({ progress, isConnected, phase }: ProgressC
       </h2>
       <div className="space-y-4">
         <div className="w-full bg-[#1a1a1a] rounded-full h-2">
-          <div className={`${barColor} h-2 rounded-full w-full animate-pulse`} />
+          <div className={`${barColor} h-2 rounded-full w-full ${isConnected ? 'animate-pulse' : ''}`} />
         </div>
         <div className="flex items-center justify-between" role="status" aria-live="polite" aria-atomic="true">
           <p className="text-gray-200 font-medium">{progress || 'Processing...'}</p>

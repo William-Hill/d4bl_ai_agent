@@ -59,6 +59,7 @@ export default function Home() {
           case 'status':
             updateLogs(data);
             setProgress(data.status || 'Processing...');
+            setPhase(null);
             break;
           case 'complete':
             updateLogs(data);
@@ -82,6 +83,13 @@ export default function Home() {
       }
     }
   }, [lastMessage, updateLogs]);
+
+  // Clear stale phase when WebSocket disconnects
+  useEffect(() => {
+    if (!isConnected) {
+      setPhase(null);
+    }
+  }, [isConnected]);
 
   // Fallback: Poll job status if WebSocket is not connected
   useEffect(() => {
