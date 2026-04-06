@@ -22,8 +22,12 @@ export default function ProgressCard({ progress, isConnected, phase }: ProgressC
       ? 'Warming up...'
       : 'Connected';
 
-  // Progress bar: amber during warmup, green otherwise
-  const barColor = isWarmup ? 'bg-amber-500/50' : 'bg-[#00ff32]/50';
+  // Progress bar: stopped when disconnected, amber during warmup, green otherwise
+  const barColor = !isConnected
+    ? 'bg-red-500/50'
+    : isWarmup
+      ? 'bg-amber-500/50'
+      : 'bg-[#00ff32]/50';
 
   return (
     <div className="bg-[#333333] border border-[#404040] rounded-lg p-8 shadow-sm">
