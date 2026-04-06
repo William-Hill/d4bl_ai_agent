@@ -9,17 +9,6 @@ import pytest
 
 
 @pytest.fixture
-def mock_websocket_updates():
-    """Capture all WebSocket updates sent during a job."""
-    updates = []
-
-    async def capture_update(job_id, data):
-        updates.append(data)
-
-    return updates, capture_update
-
-
-@pytest.fixture
 def mock_settings_searxng():
     """Settings with SearXNG configured."""
     settings = MagicMock()
@@ -47,7 +36,8 @@ class TestWarmupPing:
 
         with patch("d4bl.services.research_runner.httpx.AsyncClient") as MockClient:
             mock_client = AsyncMock()
-            mock_client.get = AsyncMock(return_value=MagicMock(status_code=200))
+            mock_resp = MagicMock(status_code=200, is_success=True)
+            mock_client.get = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -57,6 +47,22 @@ class TestWarmupPing:
                 "http://searxng:8080/healthz", timeout=15.0
             )
             assert result is True
+
+    @pytest.mark.asyncio
+    async def test_warmup_returns_false_on_unhealthy_status(self, mock_settings_searxng):
+        """Warmup returns False on non-2xx /healthz responses."""
+        from d4bl.services.research_runner import warmup_searxng
+
+        with patch("d4bl.services.research_runner.httpx.AsyncClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_resp = MagicMock(status_code=503, is_success=False)
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await warmup_searxng(mock_settings_searxng)
+
+            assert result is False
 
     @pytest.mark.asyncio
     async def test_warmup_skipped_when_not_searxng(self, mock_settings_no_searxng):
@@ -178,3 +184,4 @@ class TestPhaseInProgress:
 
             assert len(captured) == 1
             assert "phase" not in captured[0]
+

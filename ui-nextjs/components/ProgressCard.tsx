@@ -7,25 +7,23 @@ interface ProgressCardProps {
 }
 
 export default function ProgressCard({ progress, isConnected, phase }: ProgressCardProps) {
-  const isWarmup = phase === 'warmup';
+  const isWarmup = isConnected && phase === 'warmup';
 
-  // Dot: amber pulsing during warmup, green when connected, red when disconnected
-  const dotClass = isWarmup
-    ? 'bg-amber-500 animate-pulse'
-    : isConnected
-      ? 'bg-[#00ff32]'
-      : 'bg-red-500';
+  // Disconnected always wins, then warmup, then connected
+  const dotClass = !isConnected
+    ? 'bg-red-500'
+    : isWarmup
+      ? 'bg-amber-500 animate-pulse'
+      : 'bg-[#00ff32]';
 
-  const statusLabel = isWarmup
-    ? 'Warming up...'
-    : isConnected
-      ? 'Connected'
-      : 'Disconnected';
+  const statusLabel = !isConnected
+    ? 'Disconnected'
+    : isWarmup
+      ? 'Warming up...'
+      : 'Connected';
 
   // Progress bar: amber during warmup, green otherwise
-  const baseBar = 'h-2 rounded-full w-full animate-pulse';
-  const colorClass = isWarmup ? 'bg-amber-500/50' : 'bg-[#00ff32]/50';
-  const barClass = `${colorClass} ${baseBar}`;
+  const barColor = isWarmup ? 'bg-amber-500/50' : 'bg-[#00ff32]/50';
 
   return (
     <div className="bg-[#333333] border border-[#404040] rounded-lg p-8 shadow-sm">
@@ -34,9 +32,9 @@ export default function ProgressCard({ progress, isConnected, phase }: ProgressC
       </h2>
       <div className="space-y-4">
         <div className="w-full bg-[#1a1a1a] rounded-full h-2">
-          <div className={barClass} />
+          <div className={`${barColor} h-2 rounded-full w-full animate-pulse`} />
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" role="status" aria-live="polite" aria-atomic="true">
           <p className="text-gray-200 font-medium">{progress || 'Processing...'}</p>
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${dotClass}`} />

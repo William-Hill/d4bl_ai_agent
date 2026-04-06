@@ -152,8 +152,12 @@ async def warmup_searxng(settings: Settings) -> bool:
             resp = await client.get(
                 f"{settings.searxng_base_url}/healthz", timeout=15.0
             )
-            logger.info("SearXNG warmup: %s (status %d)", settings.searxng_base_url, resp.status_code)
-            return resp.is_success
+            if resp.is_success:
+                logger.info("SearXNG warmup: %s (status %d)", settings.searxng_base_url, resp.status_code)
+                return True
+            else:
+                logger.warning("SearXNG warmup unhealthy: %s (status %d)", settings.searxng_base_url, resp.status_code)
+                return False
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as exc:
         logger.warning("SearXNG warmup failed (will proceed anyway): %s", exc)
         return False
