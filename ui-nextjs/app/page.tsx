@@ -84,13 +84,6 @@ export default function Home() {
     }
   }, [lastMessage, updateLogs]);
 
-  // Clear stale phase when WebSocket disconnects
-  useEffect(() => {
-    if (!isConnected) {
-      setPhase(null);
-    }
-  }, [isConnected]);
-
   // Fallback: Poll job status if WebSocket is not connected
   useEffect(() => {
     if (jobId && !isConnected) {
