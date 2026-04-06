@@ -13,6 +13,7 @@ import queue
 import re
 import sys
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 import httpx
@@ -21,6 +22,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.agents.crew import D4Bl
+
+if TYPE_CHECKING:
+    from d4bl.settings import Settings
 from d4bl.app.websocket_manager import (
     create_log_queue,
     get_job_logs,
@@ -138,7 +142,7 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
     return validation_result
 
 
-async def warmup_searxng(settings) -> bool:
+async def warmup_searxng(settings: Settings) -> bool:
     """Ping SearXNG /healthz to wake Fly.io machine. Returns True if healthy."""
     if settings.search_provider != "searxng" or not settings.searxng_base_url:
         return False
@@ -149,7 +153,7 @@ async def warmup_searxng(settings) -> bool:
                 f"{settings.searxng_base_url}/healthz", timeout=15.0
             )
             logger.info("SearXNG warmup: %s (status %d)", settings.searxng_base_url, resp.status_code)
-            return True
+            return resp.is_success
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as exc:
         logger.warning("SearXNG warmup failed (will proceed anyway): %s", exc)
         return False
@@ -165,7 +169,7 @@ def _make_notify_progress(job_id: str, trace_id_hex: str | None):
                 await update_job_status(db, job_id, "running", progress=progress_msg)
                 break
             except Exception as update_err:
-                print(f"Error updating job status: {update_err}")
+                logger.error("Error updating job status: %s", update_err, exc_info=True)
                 break
 
         ws_payload = {

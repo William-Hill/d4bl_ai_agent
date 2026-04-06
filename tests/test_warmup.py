@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -13,7 +12,6 @@ import pytest
 def mock_websocket_updates():
     """Capture all WebSocket updates sent during a job."""
     updates = []
-    original_send = None
 
     async def capture_update(job_id, data):
         updates.append(data)
