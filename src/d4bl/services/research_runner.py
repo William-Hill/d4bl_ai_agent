@@ -15,6 +15,7 @@ import sys
 from datetime import datetime
 from uuid import UUID
 
+import httpx
 from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -135,6 +136,51 @@ def validate_research_relevance(query: str, output: str, agent_name: str = "Unkn
         )
 
     return validation_result
+
+
+async def warmup_searxng(settings) -> bool:
+    """Ping SearXNG /healthz to wake Fly.io machine. Returns True if healthy."""
+    if settings.search_provider != "searxng" or not settings.searxng_base_url:
+        return False
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{settings.searxng_base_url}/healthz", timeout=15.0
+            )
+            logger.info("SearXNG warmup: %s (status %d)", settings.searxng_base_url, resp.status_code)
+            return True
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as exc:
+        logger.warning("SearXNG warmup failed (will proceed anyway): %s", exc)
+        return False
+
+
+def _make_notify_progress(job_id: str, trace_id_hex: str | None):
+    """Create a notify_progress coroutine for a given job. Testable factory."""
+
+    async def notify_progress(progress_msg: str, phase: str | None = None) -> None:
+        """Update DB status and push progress via WebSocket in one call."""
+        async for db in get_db():
+            try:
+                await update_job_status(db, job_id, "running", progress=progress_msg)
+                break
+            except Exception as update_err:
+                print(f"Error updating job status: {update_err}")
+                break
+
+        ws_payload = {
+            "type": "progress",
+            "job_id": job_id,
+            "status": "running",
+            "message": progress_msg,
+            "progress": progress_msg,
+            "trace_id": trace_id_hex,
+        }
+        if phase is not None:
+            ws_payload["phase"] = phase
+        await send_websocket_update(job_id, ws_payload)
+
+    return notify_progress
 
 
 class LiveOutputHandler:
@@ -277,20 +323,6 @@ async def run_research_job(
                 print(f"Error updating job status: {update_err}")
                 break
 
-    async def notify_progress(progress_msg: str) -> None:
-        """Update DB status and push progress via WebSocket in one call."""
-        await set_status(progress_msg)
-        await send_websocket_update(
-            job_id,
-            {
-                "type": "progress",
-                "job_id": job_id,
-                "status": "running",
-                "progress": progress_msg,
-                "trace_id": trace_id_hex,
-            },
-        )
-
     try:
         with tracer.start_as_current_span(
             "d4bl.research_job", attributes=span_attributes
@@ -298,7 +330,17 @@ async def run_research_job(
             span_context = job_span.get_span_context()
             trace_id_hex = format(span_context.trace_id, "032x")
 
-            await notify_progress("Initializing research crew...")
+            notify_progress = _make_notify_progress(job_id, trace_id_hex)
+
+            # -- Warmup SearXNG (wakes Fly.io machine) --
+            from d4bl.settings import get_settings
+
+            settings = get_settings()
+            if settings.search_provider == "searxng" and settings.searxng_base_url:
+                await notify_progress("Warming up search services...", phase="warmup")
+                await warmup_searxng(settings)
+
+            await notify_progress("Initializing research crew...", phase="init")
 
             inputs = {
                 "query": query,
@@ -306,7 +348,7 @@ async def run_research_job(
                 "current_year": str(datetime.now().year),
             }
 
-            await notify_progress("Starting research task...")
+            await notify_progress("Starting research task...", phase="research")
 
             try:
                 crew_instance = D4Bl()
@@ -395,7 +437,7 @@ async def run_research_job(
                     pass
                 remove_log_queue(job_id)
 
-            await notify_progress("Research completed, processing results...")
+            await notify_progress("Research completed, processing results...", phase="evaluation")
 
             result_dict = {
                 "raw_output": str(result.raw) if hasattr(result, "raw") else str(result),
