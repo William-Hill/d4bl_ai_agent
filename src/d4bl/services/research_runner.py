@@ -247,6 +247,7 @@ async def update_job_status(
     logs: list[str] | None = None,
     trace_id: str | None = None,
     evaluation_results: dict | None = None,
+    usage: dict | None = None,
 ) -> None:
     """Persist job state updates to the database."""
     try:
@@ -273,6 +274,8 @@ async def update_job_status(
             job.logs = logs
         if trace_id:
             job.trace_id = trace_id
+        if usage is not None:
+            job.usage = usage
         if status in ["completed", "error"]:
             job.completed_at = datetime.utcnow()
         job.updated_at = datetime.utcnow()
@@ -310,6 +313,7 @@ async def run_research_job(
         logs: list[str] | None = None,
         trace_override: str | None = None,
         evaluation_results: dict | None = None,
+        usage: dict | None = None,
     ) -> None:
         trace_value = trace_override or trace_id_hex
         async for db in get_db():
@@ -325,6 +329,7 @@ async def run_research_job(
                     logs=logs,
                     trace_id=trace_value,
                     evaluation_results=evaluation_results,
+                    usage=usage,
                 )
                 break
             except Exception as update_err:  # noqa: BLE001
@@ -444,6 +449,23 @@ async def run_research_job(
                 except asyncio.CancelledError:
                     pass
                 remove_log_queue(job_id)
+
+            # Extract LLM token usage and estimate cost
+            from d4bl.services.cost_tracker import extract_usage
+
+            usage_dict = extract_usage(
+                result,
+                provider=settings.llm_provider,
+                model=settings.llm_model,
+            )
+            if usage_dict:
+                logger.info(
+                    "Token usage: %d total (%d prompt + %d completion), est. $%.4f",
+                    usage_dict["total_tokens"],
+                    usage_dict["prompt_tokens"],
+                    usage_dict["completion_tokens"],
+                    usage_dict["estimated_cost_usd"],
+                )
 
             await notify_progress("Research completed, processing results...", phase="evaluation")
 
@@ -789,6 +811,7 @@ async def run_research_job(
                 research_data=research_data_dict,
                 logs=final_logs,
                 evaluation_results=evaluation_results,
+                usage=usage_dict,
             )
 
             await send_websocket_update(

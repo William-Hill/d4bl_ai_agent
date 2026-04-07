@@ -58,6 +58,7 @@ class ResearchJob(Base):
         DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    usage = Column(JSONB, nullable=True)  # LLM token usage + estimated cost
     # No ForeignKey -- auth.users is managed by Supabase, not SQLAlchemy
     user_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
 
@@ -74,6 +75,7 @@ class ResearchJob(Base):
             "research_data": self.research_data,
             "error": self.error,
             "logs": self.logs,
+            "usage": self.usage,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,

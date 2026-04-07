@@ -45,6 +45,17 @@ export interface ResearchTaskOutput {
   output?: string;
 }
 
+/** LLM token usage and estimated cost for a research job. */
+export interface UsageInfo {
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  successful_requests: number;
+  estimated_cost_usd: number;
+  model?: string;
+  provider?: string;
+}
+
 /** Result payload returned when a research job completes. */
 export interface ResearchResult {
   report?: string;
