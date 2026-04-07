@@ -167,7 +167,7 @@ export const EXPERIMENTS: Experiment[] = RAW_EXPERIMENTS.reduce<Experiment[]>((a
   const prev = acc.length > 0 ? acc[acc.length - 1].cumulativeCost : 0;
   acc.push({
     ...exp,
-    cumulativeCost: +(prev + exp.cost.claudeApi + exp.cost.colabCompute).toFixed(2),
+    cumulativeCost: +(prev + exp.cost.total).toFixed(2),
   });
   return acc;
 }, []);
