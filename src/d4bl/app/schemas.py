@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ResearchRequest(BaseModel):
@@ -34,11 +34,11 @@ class ResearchResponse(BaseModel):
 class UsageInfo(BaseModel):
     """LLM token usage and estimated cost for a research job."""
 
-    total_tokens: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    successful_requests: int = 0
-    estimated_cost_usd: float = 0.0
+    total_tokens: int = Field(default=0, ge=0)
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    successful_requests: int = Field(default=0, ge=0)
+    estimated_cost_usd: float = Field(default=0.0, ge=0.0)
     model: str | None = None
     provider: str | None = None
 

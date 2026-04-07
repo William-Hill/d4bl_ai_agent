@@ -62,7 +62,7 @@ export default function ResultsCard({ results, usage }: ResultsCardProps) {
         <h2 className="text-2xl font-bold text-white">
           Research Results
         </h2>
-        {usage && usage.total_tokens > 0 && (
+        {usage && (usage.total_tokens > 0 || usage.estimated_cost_usd > 0) && (
           <div className="flex items-center gap-4 text-sm text-gray-400">
             <span>{usage.total_tokens.toLocaleString()} tokens</span>
             {usage.estimated_cost_usd > 0 && (

@@ -40,11 +40,13 @@ def _estimate_cost(
     if provider == "ollama":
         return 0.0
 
-    # Try exact match first, then prefix match
+    # Try exact match first, then prefix match on bare model name
     pricing = _PRICING.get(model)
     if pricing is None:
+        model_name = model.split("/")[-1] if "/" in model else model
         for key in _PRICING:
-            if model.startswith(key.split("/")[-1]):
+            key_name = key.split("/")[-1]
+            if model_name.startswith(key_name):
                 pricing = _PRICING[key]
                 break
 
@@ -52,7 +54,10 @@ def _estimate_cost(
         pricing = _DEFAULT_PRICING
         logger.debug("No pricing entry for model=%s, using default", model)
 
-    cost = (prompt_tokens * pricing["prompt"] + completion_tokens * pricing["completion"]) / 1_000_000
+    cost = (
+        prompt_tokens * pricing["prompt"]
+        + completion_tokens * pricing["completion"]
+    ) / 1_000_000
     return round(cost, 6)
 
 

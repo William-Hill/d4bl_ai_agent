@@ -451,21 +451,25 @@ async def run_research_job(
                 remove_log_queue(job_id)
 
             # Extract LLM token usage and estimate cost
-            from d4bl.services.cost_tracker import extract_usage
+            try:
+                from d4bl.services.cost_tracker import extract_usage
 
-            usage_dict = extract_usage(
-                result,
-                provider=settings.llm_provider,
-                model=settings.llm_model,
-            )
-            if usage_dict:
-                logger.info(
-                    "Token usage: %d total (%d prompt + %d completion), est. $%.4f",
-                    usage_dict["total_tokens"],
-                    usage_dict["prompt_tokens"],
-                    usage_dict["completion_tokens"],
-                    usage_dict["estimated_cost_usd"],
+                usage_dict = extract_usage(
+                    result,
+                    provider=settings.llm_provider,
+                    model=settings.llm_model,
                 )
+                if usage_dict:
+                    logger.info(
+                        "Token usage: %d total (%d prompt + %d completion), est. $%.4f",
+                        usage_dict["total_tokens"],
+                        usage_dict["prompt_tokens"],
+                        usage_dict["completion_tokens"],
+                        usage_dict["estimated_cost_usd"],
+                    )
+            except Exception as exc:
+                logger.warning("Failed to extract usage data: %s", exc)
+                usage_dict = None
 
             await notify_progress("Research completed, processing results...", phase="evaluation")
 

@@ -67,6 +67,12 @@ export default function Home() {
             setProgress('Research completed!');
             setResults(data.result);
             setPhase(null);
+            // Fetch usage from job status before clearing jobId
+            if (jobId) {
+              getJobStatus(jobId)
+                .then((status) => setUsage(status.usage ?? null))
+                .catch((err) => console.error('Failed to fetch usage:', err));
+            }
             setJobId(null);
             break;
           case 'error':
