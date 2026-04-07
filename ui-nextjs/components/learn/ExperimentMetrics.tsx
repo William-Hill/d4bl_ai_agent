@@ -2,23 +2,15 @@
 
 import {
   EXPERIMENTS,
+  METRIC_KEYS,
   METRIC_LABELS,
   PERCENT_METRICS,
   LOWER_IS_BETTER,
   SHIP_THRESHOLDS,
+  type ExperimentMetrics,
 } from '@/lib/experiments';
 
-/** All metric keys that appear in at least one experiment. */
-const METRIC_KEYS = [
-  'integration_tests',
-  'json_valid_rate',
-  'entity_f1',
-  'data_source_accuracy',
-  'hallucination_accuracy',
-  'relevance_mae',
-] as const;
-
-type MetricKey = (typeof METRIC_KEYS)[number];
+type MetricKey = keyof ExperimentMetrics;
 
 function formatValue(key: MetricKey, value: string | number | undefined): string {
   if (value === undefined) return '-';

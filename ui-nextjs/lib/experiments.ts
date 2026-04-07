@@ -33,7 +33,7 @@ export interface Experiment {
   lessons: string[];
 }
 
-export const EXPERIMENTS: Experiment[] = [
+const RAW_EXPERIMENTS: Omit<Experiment, 'cumulativeCost'>[] = [
   {
     id: 1,
     date: '2026-03-23',
@@ -48,7 +48,6 @@ export const EXPERIMENTS: Experiment[] = [
       json_valid_rate: 30,
     },
     cost: { claudeApi: 15, colabCompute: 4, total: 19 },
-    cumulativeCost: 19,
     lessons: [
       'Insufficient training data (~115 examples) causes narrative output instead of JSON',
       'Incorrect chat template tokenization loses structure',
@@ -68,7 +67,6 @@ export const EXPERIMENTS: Experiment[] = [
       json_valid_rate: 95,
     },
     cost: { claudeApi: 15, colabCompute: 4, total: 19 },
-    cumulativeCost: 38,
     lessons: [
       'Training data volume and chat template formatting were the primary drivers',
       'Ollama double-wraps ChatML templates — needs explicit TEMPLATE directive',
@@ -90,7 +88,6 @@ export const EXPERIMENTS: Experiment[] = [
       hallucination_accuracy: 0,
     },
     cost: { claudeApi: 0.02, colabCompute: 4, total: 4.02 },
-    cumulativeCost: 42.02,
     lessons: [
       'Evaluator 0% was a system prompt mismatch, not model failure',
       'Inference prompt must match the training prompt exactly for multi-task models',
@@ -113,7 +110,6 @@ export const EXPERIMENTS: Experiment[] = [
       relevance_mae: 1.53,
     },
     cost: { claudeApi: 0.59, colabCompute: 4, total: 4.59 },
-    cumulativeCost: 46.61,
     lessons: [
       'Document layer passages taught the model document-style text patterns',
       'Community framing pairs drove parser entity_f1 from 56.83% to 72.66%',
@@ -135,7 +131,6 @@ export const EXPERIMENTS: Experiment[] = [
       relevance_mae: 4.0,
     },
     cost: { claudeApi: 0.59, colabCompute: 4, total: 4.59 },
-    cumulativeCost: 51.2,
     lessons: [
       'Never re-run domain adaptation without retraining ALL task adapters',
       'Preserve domain_merged checkpoint before any re-training run',
@@ -159,7 +154,6 @@ export const EXPERIMENTS: Experiment[] = [
       relevance_mae: 2.7,
     },
     cost: { claudeApi: 0, colabCompute: 4, total: 4 },
-    cumulativeCost: 55.2,
     lessons: [
       'Always verify the editable install target after switching branches/worktrees',
       'Explicit API options > Modelfile parameters for custom GGUFs',
@@ -168,6 +162,26 @@ export const EXPERIMENTS: Experiment[] = [
     ],
   },
 ];
+
+export const EXPERIMENTS: Experiment[] = RAW_EXPERIMENTS.reduce<Experiment[]>((acc, exp) => {
+  const prev = acc.length > 0 ? acc[acc.length - 1].cumulativeCost : 0;
+  acc.push({
+    ...exp,
+    cumulativeCost: +(prev + exp.cost.claudeApi + exp.cost.colabCompute).toFixed(2),
+  });
+  return acc;
+}, []);
+
+/** All metric keys that appear in at least one experiment. */
+export const METRIC_KEYS: (keyof ExperimentMetrics)[] = [
+  'integration_tests',
+  'json_valid_rate',
+  'entity_f1',
+  'data_source_accuracy',
+  'hallucination_accuracy',
+  'relevance_mae',
+];
+
 
 /** Metrics that should be displayed as percentages (value is 0-100). */
 export const PERCENT_METRICS = new Set([

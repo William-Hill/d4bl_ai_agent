@@ -26,13 +26,13 @@ const STATUS_CONFIG: Record<
   },
 };
 
-function ExperimentCard({ experiment }: { experiment: Experiment }) {
+function ExperimentCard({ experiment, isLast }: { experiment: Experiment; isLast: boolean }) {
   const status = STATUS_CONFIG[experiment.status];
 
   return (
-    <div className="relative pl-8 pb-8 last:pb-0">
+    <div className={`relative pl-8 ${isLast ? 'pb-0' : 'pb-8'}`}>
       {/* Timeline connector line */}
-      <div className="absolute left-[11px] top-6 bottom-0 w-px bg-[#404040] last:hidden" />
+      {!isLast && <div className="absolute left-[11px] top-6 bottom-0 w-px bg-[#404040]" />}
 
       {/* Timeline dot */}
       <div
@@ -85,8 +85,8 @@ export default function ExperimentTimeline() {
         Six experiments over two weeks, from baseline failure to shipping hallucination detection.
       </p>
       <div className="max-w-3xl">
-        {EXPERIMENTS.map((exp) => (
-          <ExperimentCard key={exp.id} experiment={exp} />
+        {EXPERIMENTS.map((exp, i) => (
+          <ExperimentCard key={exp.id} experiment={exp} isLast={i === EXPERIMENTS.length - 1} />
         ))}
       </div>
     </div>

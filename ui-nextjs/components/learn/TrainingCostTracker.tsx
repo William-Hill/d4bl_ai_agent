@@ -21,7 +21,7 @@ const chartData = EXPERIMENTS.map((exp) => ({
   status: exp.status,
 }));
 
-const TOTAL_COST = EXPERIMENTS[EXPERIMENTS.length - 1].cumulativeCost;
+const TOTAL_COST = EXPERIMENTS.at(-1)?.cumulativeCost ?? 0;
 
 function CustomTooltip({
   active,
