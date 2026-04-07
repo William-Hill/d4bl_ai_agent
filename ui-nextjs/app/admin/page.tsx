@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { API_BASE } from '@/lib/api';
+import { API_BASE, getCostSummary, CostSummary } from '@/lib/api';
 import DataStatusCard from '@/components/data/DataStatusCard';
 
 interface UserProfile {
@@ -22,6 +22,9 @@ export default function AdminPage() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // --- Cost tracking state ---
+  const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
 
   // --- Data ingestion state ---
   const INGEST_SOURCES = [
@@ -70,7 +73,10 @@ export default function AdminPage() {
   }, [isAdmin, isLoading, router]);
 
   useEffect(() => {
-    if (isAdmin) fetchUsers();
+    if (isAdmin) {
+      fetchUsers();
+      getCostSummary().then(setCostSummary).catch(() => { /* ignore if endpoint unavailable */ });
+    }
   }, [isAdmin, fetchUsers]);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -218,6 +224,41 @@ export default function AdminPage() {
             Open Dagster Pipelines
           </button>
         </div>
+
+        {/* LLM Cost Tracking */}
+        {costSummary && (
+          <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
+            <h2 className="text-lg font-semibold text-white mb-4">LLM Cost Tracking</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm text-gray-400">Total Cost</p>
+                <p className="text-2xl font-mono text-[#00ff32]">
+                  ${costSummary.total_estimated_cost_usd < 0.01
+                    ? costSummary.total_estimated_cost_usd.toFixed(4)
+                    : costSummary.total_estimated_cost_usd.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Total Tokens</p>
+                <p className="text-2xl font-mono text-white">
+                  {costSummary.total_tokens.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Jobs with Usage</p>
+                <p className="text-2xl font-mono text-white">
+                  {costSummary.jobs_with_usage} / {costSummary.total_jobs}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Prompt / Completion</p>
+                <p className="text-sm font-mono text-gray-300 mt-1">
+                  {costSummary.total_prompt_tokens.toLocaleString()} / {costSummary.total_completion_tokens.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Data Ingestion */}
         <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">

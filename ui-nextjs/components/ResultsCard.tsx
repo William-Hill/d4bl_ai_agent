@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { ResearchResult, ResearchTaskOutput } from '@/lib/types';
+import { ResearchResult, ResearchTaskOutput, UsageInfo } from '@/lib/types';
 
 interface ResultsCardProps {
   results: ResearchResult;
+  usage?: UsageInfo | null;
 }
 
-export default function ResultsCard({ results }: ResultsCardProps) {
+export default function ResultsCard({ results, usage }: ResultsCardProps) {
   const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,9 +58,26 @@ export default function ResultsCard({ results }: ResultsCardProps) {
 
   return (
     <div ref={resultsRef} className="bg-[#333333] border border-[#404040] rounded-lg p-8 shadow-sm">
-      <h2 className="text-2xl font-bold text-white mb-6">
-        Research Results
-      </h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-white">
+          Research Results
+        </h2>
+        {usage && (usage.total_tokens > 0 || usage.estimated_cost_usd > 0) && (
+          <div className="flex items-center gap-4 text-sm text-gray-400">
+            <span>{usage.total_tokens.toLocaleString()} tokens</span>
+            {usage.estimated_cost_usd > 0 && (
+              <span className="text-[#00ff32] font-mono">
+                ${usage.estimated_cost_usd < 0.01
+                  ? usage.estimated_cost_usd.toFixed(4)
+                  : usage.estimated_cost_usd.toFixed(2)}
+              </span>
+            )}
+            {usage.model && (
+              <span className="text-gray-500">{usage.model}</span>
+            )}
+          </div>
+        )}
+      </div>
       <div className="space-y-6">
         {results.report && (
           <div className="border-b border-[#404040] pb-6">

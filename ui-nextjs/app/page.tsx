@@ -10,7 +10,7 @@ import JobHistory from '@/components/JobHistory';
 import D4BLLogo from '@/components/D4BLLogo';
 import QueryBar from '@/components/QueryBar';
 import QueryResults from '@/components/QueryResults';
-import { QueryResponse, ResearchResult, WsMessage } from '@/lib/types';
+import { QueryResponse, ResearchResult, UsageInfo, WsMessage } from '@/lib/types';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { createResearchJob, getJobStatus, JobStatus } from '@/lib/api';
 import EvaluationsPanel from '@/components/EvaluationsPanel';
@@ -27,6 +27,7 @@ export default function Home() {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [phase, setPhase] = useState<string | null>(null);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
 
   const { isConnected, lastMessage } = useWebSocket(jobId);
 
@@ -66,6 +67,12 @@ export default function Home() {
             setProgress('Research completed!');
             setResults(data.result);
             setPhase(null);
+            // Fetch usage from job status before clearing jobId
+            if (jobId) {
+              getJobStatus(jobId)
+                .then((status) => setUsage(status.usage ?? null))
+                .catch((err) => console.error('Failed to fetch usage:', err));
+            }
             setJobId(null);
             break;
           case 'error':
@@ -93,6 +100,7 @@ export default function Home() {
           if (status.status === 'completed') {
             setProgress('Research completed!');
             setResults(status.result ?? null);
+            setUsage(status.usage ?? null);
             setJobId(null);
             clearInterval(pollInterval);
           } else if (status.status === 'error') {
@@ -115,6 +123,7 @@ export default function Home() {
     try {
       setError(null);
       setResults(null);
+      setUsage(null);
       setSelectedJobId(null);  // Clear selected job when starting new job
       setProgress('Creating research job...');
       setLiveLogs([]); // Clear previous logs
@@ -140,6 +149,7 @@ export default function Home() {
       // If job is completed, show results
       if (job.status === 'completed' && job.result) {
         setResults(job.result);
+        setUsage(job.usage ?? null);
         // Scroll main content area to top to show results
         setTimeout(() => {
           const mainContent = document.querySelector('[data-main-content]');
@@ -152,6 +162,7 @@ export default function Home() {
         const latestStatus = await getJobStatus(job.job_id);
         if (latestStatus.status === 'completed' && latestStatus.result) {
           setResults(latestStatus.result);
+          setUsage(latestStatus.usage ?? null);
         } else if (latestStatus.status === 'error') {
           setError(latestStatus.error || 'Job failed');
         } else {
@@ -266,7 +277,7 @@ export default function Home() {
 
               {results && (
                 <div data-results>
-                  <ResultsCard results={results} />
+                  <ResultsCard results={results} usage={usage} />
                 </div>
               )}
 

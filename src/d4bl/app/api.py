@@ -39,6 +39,7 @@ from d4bl.app.schedule_routes import router as schedule_router
 from d4bl.app.schemas import (
     CompareRequest,
     CompareResponse,
+    CostSummaryResponse,
     EvalRunItem,
     EvalRunsResponse,
     EvaluationResultItem,
@@ -2043,6 +2044,42 @@ async def update_user_role(
         raise HTTPException(status_code=404, detail="User not found")
     await db.commit()
     return {"message": f"User {user_id} role updated to {request.role}"}
+
+
+# ---------------------------------------------------------------------------
+# Admin cost tracking endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/admin/costs", response_model=CostSummaryResponse)
+async def get_cost_summary(
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return aggregate LLM token usage and estimated cost across all jobs (admin only)."""
+    result = await db.execute(
+        text(
+            """
+            SELECT
+                count(*) AS total_jobs,
+                count(*) FILTER (WHERE usage IS NOT NULL) AS jobs_with_usage,
+                coalesce(sum((usage->>'total_tokens')::int), 0) AS total_tokens,
+                coalesce(sum((usage->>'prompt_tokens')::int), 0) AS total_prompt_tokens,
+                coalesce(sum((usage->>'completion_tokens')::int), 0) AS total_completion_tokens,
+                coalesce(sum((usage->>'estimated_cost_usd')::numeric), 0) AS total_estimated_cost_usd
+            FROM research_jobs
+            """
+        )
+    )
+    row = result.mappings().one()
+    return CostSummaryResponse(
+        total_jobs=row["total_jobs"],
+        jobs_with_usage=row["jobs_with_usage"],
+        total_tokens=row["total_tokens"],
+        total_prompt_tokens=row["total_prompt_tokens"],
+        total_completion_tokens=row["total_completion_tokens"],
+        total_estimated_cost_usd=float(row["total_estimated_cost_usd"]),
+    )
 
 
 # ---------------------------------------------------------------------------

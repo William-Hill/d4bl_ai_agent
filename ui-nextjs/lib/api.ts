@@ -1,4 +1,4 @@
-import { ResearchResult } from './types';
+import { ResearchResult, UsageInfo } from './types';
 import { createClient } from './supabase';
 
 // API base URL
@@ -70,6 +70,7 @@ export interface JobStatus {
   query?: string;
   summary_format?: string;
   logs?: string[];
+  usage?: UsageInfo;
   created_at?: string;
   updated_at?: string;
   completed_at?: string;
@@ -323,6 +324,30 @@ export async function analyzeFailures(runId: string, force = false): Promise<{ r
 
   if (!response.ok) {
     throw new Error('Failed to analyze eval run');
+  }
+
+  return response.json();
+}
+
+// --- Cost Tracking types ---
+
+export interface CostSummary {
+  total_jobs: number;
+  total_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_estimated_cost_usd: number;
+  jobs_with_usage: number;
+}
+
+export async function getCostSummary(): Promise<CostSummary> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE}/api/admin/costs`, { headers });
+
+  handle401(response);
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch cost summary');
   }
 
   return response.json();

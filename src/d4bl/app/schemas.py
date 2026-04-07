@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ResearchRequest(BaseModel):
@@ -31,6 +31,18 @@ class ResearchResponse(BaseModel):
     message: str
 
 
+class UsageInfo(BaseModel):
+    """LLM token usage and estimated cost for a research job."""
+
+    total_tokens: int = Field(default=0, ge=0)
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    successful_requests: int = Field(default=0, ge=0)
+    estimated_cost_usd: float = Field(default=0.0, ge=0.0)
+    model: str | None = None
+    provider: str | None = None
+
+
 class JobStatus(BaseModel):
     job_id: str
     trace_id: str | None = None
@@ -42,6 +54,7 @@ class JobStatus(BaseModel):
     summary_format: str | None = None
     logs: list[str] | None = None
     research_data: dict | None = None
+    usage: UsageInfo | None = None
     created_at: str | None = None
     updated_at: str | None = None
     completed_at: str | None = None
@@ -168,6 +181,17 @@ class StateSummaryItem(BaseModel):
 
 
 # --- Admin models ---
+
+
+class CostSummaryResponse(BaseModel):
+    """Aggregate LLM cost statistics (admin only)."""
+
+    total_jobs: int
+    total_tokens: int
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    total_estimated_cost_usd: float
+    jobs_with_usage: int
 
 
 class InviteRequest(BaseModel):
