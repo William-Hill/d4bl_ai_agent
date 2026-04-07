@@ -8,6 +8,9 @@ import QuantizationSlider from '@/components/learn/QuantizationSlider';
 import RegisterComparison from '@/components/learn/RegisterComparison';
 import LearnTabs from '@/components/learn/LearnTabs';
 import BuildTab from '@/components/learn/BuildTab';
+import ExperimentTimeline from '@/components/learn/ExperimentTimeline';
+import ExperimentMetrics from '@/components/learn/ExperimentMetrics';
+import TrainingCostTracker from '@/components/learn/TrainingCostTracker';
 
 export const metadata = {
   title: 'Learn — Building AI That Centers Community | D4BL',
@@ -187,6 +190,17 @@ export default function LearnPage() {
               id: 'build',
               label: 'Build',
               content: <BuildTab />,
+            },
+            {
+              id: 'experiments',
+              label: 'Experiments',
+              content: (
+                <div className="space-y-12">
+                  <ExperimentTimeline />
+                  <ExperimentMetrics />
+                  <TrainingCostTracker />
+                </div>
+              ),
             },
           ]}
         />
