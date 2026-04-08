@@ -24,17 +24,6 @@ def _make_token(sub: str, email: str = "test@example.com") -> str:
     return jwt.encode(payload, TEST_SECRET, algorithm="HS256")
 
 
-@pytest.fixture
-def _patch_settings():
-    """Patch settings for auth testing."""
-    mock_settings = MagicMock()
-    mock_settings.supabase_jwt_secret = TEST_SECRET
-    mock_settings.cors_allowed_origins = ("*",)
-    with patch("d4bl.app.auth.get_settings", return_value=mock_settings):
-        with patch("d4bl.app.api.get_settings", return_value=mock_settings):
-            with patch("d4bl.settings.get_settings", return_value=mock_settings):
-                yield
-
 
 def test_research_endpoint_requires_auth(_patch_settings):
     """POST /api/research without a token returns 401."""

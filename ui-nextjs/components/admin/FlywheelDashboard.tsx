@@ -2,41 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '@/lib/api';
+import type { FlywheelData } from './flywheel-types';
 import FlywheelDiagram from './FlywheelDiagram';
 import FlywheelTimeSeries from './FlywheelTimeSeries';
 import CorpusBreakdown from './CorpusBreakdown';
 import ModelVersionTable from './ModelVersionTable';
-
-interface CorpusStats {
-  total_chunks: number;
-  total_tokens: number;
-  content_types: Record<string, number>;
-  unstructured_pct: number;
-}
-
-interface TrainingRun {
-  model_version: string;
-  task: string;
-  metrics: Record<string, unknown>;
-  ship_decision: string;
-  created_at: string | null;
-}
-
-interface TimeSeriesPoint {
-  date: string;
-  value: number;
-}
-
-interface FlywheelData {
-  corpus: CorpusStats;
-  training_runs: TrainingRun[];
-  research_quality: Record<string, { avg_score: number; count: number }>;
-  time_series: {
-    corpus_diversity: TimeSeriesPoint[];
-    model_accuracy: TimeSeriesPoint[];
-    research_quality: TimeSeriesPoint[];
-  };
-}
 
 interface FlywheelDashboardProps {
   accessToken: string | undefined;
@@ -49,6 +19,8 @@ export default function FlywheelDashboard({ accessToken }: FlywheelDashboardProp
 
   const fetchMetrics = useCallback(async () => {
     if (!accessToken) return;
+    setLoading(true);
+    setError(null);
     try {
       const response = await fetch(`${API_BASE}/api/admin/flywheel-metrics`, {
         headers: {
@@ -88,7 +60,6 @@ export default function FlywheelDashboard({ accessToken }: FlywheelDashboardProp
         </div>
       ) : (
         <>
-          {/* Top row: Diagram + Time Series */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <FlywheelDiagram />
             <FlywheelTimeSeries
@@ -100,7 +71,6 @@ export default function FlywheelDashboard({ accessToken }: FlywheelDashboardProp
             />
           </div>
 
-          {/* Bottom row: Corpus Breakdown + Model Versions */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <CorpusBreakdown contentTypes={data?.corpus.content_types ?? {}} />
             <ModelVersionTable runs={data?.training_runs ?? []} />

@@ -99,15 +99,10 @@ class TestFlywheelMetricsWithData:
                     },
                 ]
             elif call_count == 3:
-                # Research quality query
+                # Combined evaluation_results query (per eval_name + month)
                 mock_result.mappings.return_value.all.return_value = [
-                    {"eval_name": "hallucination_accuracy", "avg_score": 0.88, "eval_count": 42},
-                    {"eval_name": "relevance", "avg_score": 0.76, "eval_count": 42},
-                ]
-            elif call_count == 4:
-                # Research quality timeseries query
-                mock_result.mappings.return_value.all.return_value = [
-                    {"month": datetime(2026, 3, 1, tzinfo=timezone.utc), "avg_score": 0.82},
+                    {"eval_name": "hallucination_accuracy", "month": datetime(2026, 3, 1, tzinfo=timezone.utc), "avg_score": 0.88, "eval_count": 42},
+                    {"eval_name": "relevance", "month": datetime(2026, 3, 1, tzinfo=timezone.utc), "avg_score": 0.76, "eval_count": 42},
                 ]
             else:
                 mock_result.mappings.return_value.all.return_value = []

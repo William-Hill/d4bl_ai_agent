@@ -1,12 +1,6 @@
 'use client';
 
-interface TrainingRun {
-  model_version: string;
-  task: string;
-  metrics: Record<string, unknown>;
-  ship_decision: string;
-  created_at: string | null;
-}
+import type { TrainingRun } from './flywheel-types';
 
 interface ModelVersionTableProps {
   runs: TrainingRun[];

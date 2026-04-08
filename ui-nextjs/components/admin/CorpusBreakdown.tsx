@@ -9,6 +9,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
+import { DARK_TOOLTIP_STYLE } from './flywheel-types';
 
 interface CorpusBreakdownProps {
   contentTypes: Record<string, number>;
@@ -45,16 +46,7 @@ export default function CorpusBreakdown({ contentTypes }: CorpusBreakdownProps) 
             stroke="#404040"
             width={110}
           />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: '#1a1a1a',
-              border: '1px solid #404040',
-              borderRadius: '6px',
-              color: '#d1d5db',
-              fontSize: 12,
-            }}
-            labelStyle={{ color: '#9ca3af' }}
-          />
+          <Tooltip {...DARK_TOOLTIP_STYLE} />
           <Bar dataKey="count" fill="#00ff32" radius={[0, 4, 4, 0]} />
         </BarChart>
       </ResponsiveContainer>

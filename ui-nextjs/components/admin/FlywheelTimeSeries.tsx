@@ -9,11 +9,8 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-
-interface TimeSeriesPoint {
-  date: string;
-  value: number;
-}
+import type { TimeSeriesPoint } from './flywheel-types';
+import { DARK_TOOLTIP_STYLE } from './flywheel-types';
 
 interface MiniChartProps {
   title: string;
@@ -54,16 +51,7 @@ function MiniChart({ title, data, color, unit = '', emptyMessage }: MiniChartPro
               stroke="#404040"
               width={40}
             />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1a1a1a',
-                border: '1px solid #404040',
-                borderRadius: '6px',
-                color: '#d1d5db',
-                fontSize: 12,
-              }}
-              labelStyle={{ color: '#9ca3af' }}
-            />
+            <Tooltip {...DARK_TOOLTIP_STYLE} />
             <Line
               type="monotone"
               dataKey="value"

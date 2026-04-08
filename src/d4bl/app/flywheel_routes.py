@@ -23,8 +23,7 @@ from d4bl.infra.database import get_db
 router = APIRouter()
 
 
-async def _query_corpus(db: AsyncSession) -> CorpusStats:
-    """Query corpus composition from documents + document_chunks."""
+async def _query_corpus(db: AsyncSession) -> tuple[dict[str, int], int, int]:
     result = await db.execute(
         text("""
             SELECT d.content_type,
@@ -42,23 +41,14 @@ async def _query_corpus(db: AsyncSession) -> CorpusStats:
     total_chunks = 0
     total_tokens = 0
     for row in rows:
-        ct = row["content_type"]
-        count = int(row["chunk_count"])
-        tokens = int(row["total_tokens"])
-        content_types[ct] = count
-        total_chunks += count
-        total_tokens += tokens
+        content_types[row["content_type"]] = int(row["chunk_count"])
+        total_chunks += int(row["chunk_count"])
+        total_tokens += int(row["total_tokens"])
 
-    return CorpusStats(
-        total_chunks=total_chunks,
-        total_tokens=total_tokens,
-        content_types=content_types,
-        unstructured_pct=0.0,
-    )
+    return content_types, total_chunks, total_tokens
 
 
 async def _query_training_runs(db: AsyncSession) -> list[dict]:
-    """Query model evaluation runs ordered by date."""
     result = await db.execute(
         text("""
             SELECT model_version, task, metrics, ship_decision, created_at
@@ -70,42 +60,61 @@ async def _query_training_runs(db: AsyncSession) -> list[dict]:
     return [dict(row) for row in result.mappings().all()]
 
 
-async def _query_research_quality(db: AsyncSession) -> dict[str, ResearchQualityItem]:
-    """Query average evaluation scores grouped by eval type."""
+async def _query_evaluation_results(
+    db: AsyncSession,
+) -> tuple[dict[str, ResearchQualityItem], list[dict]]:
+    """Single scan of evaluation_results returning both per-eval-name aggregates and monthly time-series."""
     result = await db.execute(
         text("""
             SELECT eval_name,
+                   DATE_TRUNC('month', created_at) AS month,
                    AVG(score) AS avg_score,
                    COUNT(*) AS eval_count
             FROM evaluation_results
             WHERE score IS NOT NULL
-            GROUP BY eval_name
-            ORDER BY eval_name
+              AND created_at >= NOW() - INTERVAL '24 months'
+            GROUP BY eval_name, DATE_TRUNC('month', created_at)
+            ORDER BY eval_name, month
         """)
     )
     rows = result.mappings().all()
-    return {
-        row["eval_name"]: ResearchQualityItem(
-            avg_score=round(float(row["avg_score"]), 4),
-            count=int(row["eval_count"]),
+
+    # Aggregate per eval_name (sum across months)
+    by_name: dict[str, dict] = {}
+    monthly: dict[str, list[float]] = {}
+    for row in rows:
+        name = row["eval_name"]
+        avg = float(row["avg_score"])
+        count = int(row["eval_count"])
+        if name not in by_name:
+            by_name[name] = {"total_score": 0.0, "total_count": 0}
+        by_name[name]["total_score"] += avg * count
+        by_name[name]["total_count"] += count
+
+        month_key = str(row["month"])[:10]
+        monthly.setdefault(month_key, []).append(avg * count)
+        monthly.setdefault(f"{month_key}_count", []).append(count)
+
+    research_quality = {
+        name: ResearchQualityItem(
+            avg_score=round(data["total_score"] / data["total_count"], 4),
+            count=data["total_count"],
         )
-        for row in rows
+        for name, data in by_name.items()
     }
 
+    # Build monthly averages across all eval types
+    month_keys = sorted(k for k in monthly if not k.endswith("_count"))
+    timeseries_rows = []
+    for mk in month_keys:
+        total_score = sum(monthly[mk])
+        total_count = sum(monthly[f"{mk}_count"])
+        timeseries_rows.append({
+            "month": mk,
+            "avg_score": total_score / total_count if total_count else 0,
+        })
 
-async def _query_research_quality_timeseries(db: AsyncSession) -> list[dict]:
-    """Query monthly average evaluation scores for the time-series chart."""
-    result = await db.execute(
-        text("""
-            SELECT DATE_TRUNC('month', created_at) AS month,
-                   AVG(score) AS avg_score
-            FROM evaluation_results
-            WHERE score IS NOT NULL
-            GROUP BY DATE_TRUNC('month', created_at)
-            ORDER BY month
-        """)
-    )
-    return [dict(row) for row in result.mappings().all()]
+    return research_quality, timeseries_rows
 
 
 def _build_time_series(
@@ -158,10 +167,9 @@ async def get_flywheel_metrics(
     db: AsyncSession = Depends(get_db),
 ) -> FlywheelMetricsResponse:
     """Return aggregated flywheel metrics for the admin dashboard."""
-    corpus = await _query_corpus(db)
+    content_types, total_chunks, total_tokens = await _query_corpus(db)
     training_rows = await _query_training_runs(db)
-    research_quality = await _query_research_quality(db)
-    rq_timeseries_rows = await _query_research_quality_timeseries(db)
+    research_quality, rq_timeseries_rows = await _query_evaluation_results(db)
 
     training_items = [
         TrainingRunItem(
@@ -178,11 +186,15 @@ async def get_flywheel_metrics(
         training_rows, rq_timeseries_rows
     )
 
-    if corpus_diversity:
-        corpus.unstructured_pct = corpus_diversity[-1].value
+    unstructured_pct = corpus_diversity[-1].value if corpus_diversity else 0.0
 
     return FlywheelMetricsResponse(
-        corpus=corpus,
+        corpus=CorpusStats(
+            total_chunks=total_chunks,
+            total_tokens=total_tokens,
+            content_types=content_types,
+            unstructured_pct=unstructured_pct,
+        ),
         training_runs=training_items,
         research_quality=research_quality,
         time_series={
