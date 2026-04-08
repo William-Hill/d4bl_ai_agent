@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import jwt
-import pytest
 from fastapi.testclient import TestClient
 
 TEST_SECRET = "test-jwt-secret"

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from d4bl.app.auth import require_admin
+from d4bl.app.auth import CurrentUser, require_admin
 from d4bl.app.schemas import (
     CorpusStats,
     FlywheelMetricsResponse,
@@ -164,7 +164,7 @@ def _build_time_series(
 
 @router.get("/api/admin/flywheel-metrics", response_model=FlywheelMetricsResponse)
 async def get_flywheel_metrics(
-    _user=Depends(require_admin),
+    _user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> FlywheelMetricsResponse:
     """Return aggregated flywheel metrics for the admin dashboard."""

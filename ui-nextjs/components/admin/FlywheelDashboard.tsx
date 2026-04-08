@@ -18,7 +18,12 @@ export default function FlywheelDashboard({ accessToken }: FlywheelDashboardProp
   const [error, setError] = useState<string | null>(null);
 
   const fetchMetrics = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -49,7 +54,7 @@ export default function FlywheelDashboard({ accessToken }: FlywheelDashboardProp
       <h2 className="text-lg font-semibold text-white mb-6">D4BL Data Flywheel</h2>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 rounded px-4 py-3 mb-4">
+        <div className="bg-red-900/30 border border-red-700 rounded px-4 py-3 mb-4" role="alert" aria-live="assertive">
           <p className="text-red-400 text-sm">{error}</p>
         </div>
       )}

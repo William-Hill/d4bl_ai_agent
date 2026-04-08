@@ -16,6 +16,7 @@ def _patch_settings():
     """Patch settings for auth testing."""
     mock_settings = MagicMock()
     mock_settings.supabase_jwt_secret = _PATCH_SETTINGS_SECRET
+    mock_settings.supabase_url = None
     mock_settings.cors_allowed_origins = ("*",)
     with patch("d4bl.app.auth.get_settings", return_value=mock_settings):
         with patch("d4bl.app.api.get_settings", return_value=mock_settings):
