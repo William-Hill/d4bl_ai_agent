@@ -16,11 +16,11 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.infra.database import Document, DocumentChunk
-from d4bl.infra.vector_store import VectorStore
+from d4bl.infra.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["normalize_url", "chunk_text", "persist_research_documents", "_try_embed", "_extract_crawl_items"]
+__all__ = ["normalize_url", "chunk_text", "persist_research_documents"]
 
 _TRACKING_PARAMS = frozenset({
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
@@ -108,7 +108,7 @@ def chunk_text(text: str, max_chars: int = 2000) -> list[tuple[str, int]]:
 async def _try_embed(text: str) -> list[float] | None:
     """Best-effort embedding via Ollama. Returns None on failure."""
     try:
-        vs = VectorStore()
+        vs = get_vector_store()
         return await vs.generate_embedding(text)
     except Exception:
         logger.warning("Embedding generation failed, chunk will have NULL embedding", exc_info=True)
@@ -126,11 +126,11 @@ def _extract_crawl_items(research_data: dict) -> list[dict]:
             crawl_data = json.loads(content)
             for result in crawl_data.get("results", []):
                 url = result.get("url", "").strip()
-                text = result.get("extracted_content") or result.get("content", "")
-                if url and text and text.strip():
+                page_text = result.get("extracted_content") or result.get("content", "")
+                if url and page_text and page_text.strip():
                     items.append({
                         "url": url,
-                        "content": text.strip(),
+                        "content": page_text.strip(),
                         "title": result.get("title"),
                         "metadata": result.get("metadata") or {},
                     })
@@ -200,24 +200,30 @@ async def _persist_documents(
         await db.flush()
 
         chunks = chunk_text(item["content"])
+        embeddings: list[tuple[int, list[float]]] = []
+        chunk_objs: list[DocumentChunk] = []
         for idx, (chunk_content, token_count) in enumerate(chunks):
             embedding = await _try_embed(chunk_content)
-
-            chunk = DocumentChunk(
+            chunk_obj = DocumentChunk(
                 document_id=doc.id,
                 content=chunk_content,
                 chunk_index=idx,
                 token_count=token_count,
             )
-            db.add(chunk)
-            await db.flush()
-
+            db.add(chunk_obj)
+            chunk_objs.append(chunk_obj)
             if embedding:
-                vs = VectorStore()
+                embeddings.append((idx, embedding))
+
+        await db.flush()  # Single flush for all chunks
+
+        if embeddings:
+            vs = get_vector_store()
+            for idx, embedding in embeddings:
                 formatted = vs._format_embedding(embedding)
                 await db.execute(
                     text("UPDATE document_chunks SET embedding = CAST(:emb AS vector) WHERE id = CAST(:id AS uuid)"),
-                    {"emb": formatted, "id": str(chunk.id)},
+                    {"emb": formatted, "id": str(chunk_objs[idx].id)},
                 )
 
         doc_count += 1
