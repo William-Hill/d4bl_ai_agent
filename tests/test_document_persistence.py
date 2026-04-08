@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
 import pytest
 
-from d4bl.services.document_persistence import normalize_url
+from d4bl.services.document_persistence import chunk_text, normalize_url, persist_research_documents
 
 
 class TestNormalizeUrl:
@@ -33,9 +36,6 @@ class TestNormalizeUrl:
     )
     def test_normalize_url(self, raw: str, expected: str):
         assert normalize_url(raw) == expected
-
-
-from d4bl.services.document_persistence import chunk_text
 
 
 class TestChunkText:
@@ -81,13 +81,6 @@ class TestChunkText:
         assert "First paragraph." in reassembled
         assert "Second paragraph." in reassembled
         assert "Third paragraph." in reassembled
-
-
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
-
-from d4bl.services.document_persistence import persist_research_documents
 
 
 class TestPersistResearchDocuments:

@@ -12,10 +12,11 @@ import logging
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.infra.database import Document, DocumentChunk
+from d4bl.infra.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,6 @@ def chunk_text(text: str, max_chars: int = 2000) -> list[tuple[str, int]]:
 async def _try_embed(text: str) -> list[float] | None:
     """Best-effort embedding via Ollama. Returns None on failure."""
     try:
-        from d4bl.infra.vector_store import VectorStore
         vs = VectorStore()
         return await vs.generate_embedding(text)
     except Exception:
@@ -213,8 +213,6 @@ async def _persist_documents(
             await db.flush()
 
             if embedding:
-                from d4bl.infra.vector_store import VectorStore
-                from sqlalchemy import text
                 vs = VectorStore()
                 formatted = vs._format_embedding(embedding)
                 await db.execute(
