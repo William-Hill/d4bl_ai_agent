@@ -582,3 +582,48 @@ class AnalyzeResponse(BaseModel):
 
     run_id: str
     suggestions: dict
+
+
+# --- Flywheel Metrics models ---
+
+
+class CorpusStats(BaseModel):
+    """Corpus composition statistics."""
+
+    total_chunks: int
+    total_tokens: int
+    content_types: dict[str, int]
+    unstructured_pct: float
+
+
+class TrainingRunItem(BaseModel):
+    """A training run with key metrics for the flywheel dashboard."""
+
+    model_version: str
+    task: str
+    metrics: dict[str, Any]
+    ship_decision: str
+    created_at: str | None = None
+
+
+class ResearchQualityItem(BaseModel):
+    """Average evaluation score for a single eval type."""
+
+    avg_score: float
+    count: int
+
+
+class TimeSeriesPoint(BaseModel):
+    """A single data point on a time-series chart."""
+
+    date: str
+    value: float
+
+
+class FlywheelMetricsResponse(BaseModel):
+    """Full flywheel metrics dashboard response."""
+
+    corpus: CorpusStats
+    training_runs: list[TrainingRunItem]
+    research_quality: dict[str, ResearchQualityItem]
+    time_series: dict[str, list[TimeSeriesPoint]]
