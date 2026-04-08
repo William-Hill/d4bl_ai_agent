@@ -81,3 +81,144 @@ class TestChunkText:
         assert "First paragraph." in reassembled
         assert "Second paragraph." in reassembled
         assert "Third paragraph." in reassembled
+
+
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+from d4bl.services.document_persistence import persist_research_documents
+
+
+class TestPersistResearchDocuments:
+    """Extract crawl results and persist as documents + chunks."""
+
+    @pytest.mark.asyncio
+    async def test_empty_research_data(self):
+        db = AsyncMock()
+        count = await persist_research_documents(uuid4(), {}, db)
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_no_json_findings(self):
+        db = AsyncMock()
+        research_data = {
+            "research_findings": [
+                {"agent": "researcher", "content": "plain text, not JSON"},
+            ],
+        }
+        count = await persist_research_documents(uuid4(), research_data, db)
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_extracts_and_persists_documents(self):
+        job_id = uuid4()
+        research_data = {
+            "research_findings": [
+                {
+                    "agent": "researcher",
+                    "content": '{"results": [{"url": "https://example.com/report", "extracted_content": "Report content here. Another sentence.", "title": "Test Report"}]}',
+                },
+            ],
+        }
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "d4bl.services.document_persistence._try_embed",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            count = await persist_research_documents(job_id, research_data, mock_db)
+
+        assert count == 1
+        assert mock_db.add.call_count >= 2
+        assert mock_db.commit.called
+
+    @pytest.mark.asyncio
+    async def test_skips_duplicate_urls_within_batch(self):
+        job_id = uuid4()
+        research_data = {
+            "research_findings": [
+                {
+                    "agent": "researcher",
+                    "content": '{"results": [{"url": "https://example.com/page", "extracted_content": "Content A.", "title": "A"}]}',
+                },
+                {
+                    "agent": "researcher",
+                    "content": '{"results": [{"url": "https://example.com/page", "extracted_content": "Content B.", "title": "B"}]}',
+                },
+            ],
+        }
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "d4bl.services.document_persistence._try_embed",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            count = await persist_research_documents(job_id, research_data, mock_db)
+
+        assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_urls_already_in_db(self):
+        job_id = uuid4()
+        research_data = {
+            "research_findings": [
+                {
+                    "agent": "researcher",
+                    "content": '{"results": [{"url": "https://example.com/existing", "extracted_content": "Some content.", "title": "Old"}]}',
+                },
+            ],
+        }
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = ["https://example.com/existing"]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "d4bl.services.document_persistence._try_embed",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            count = await persist_research_documents(job_id, research_data, mock_db)
+
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_embedding_failure_still_persists_document(self):
+        job_id = uuid4()
+        research_data = {
+            "research_findings": [
+                {
+                    "agent": "researcher",
+                    "content": '{"results": [{"url": "https://example.com/new", "extracted_content": "Content here.", "title": "New"}]}',
+                },
+            ],
+        }
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # _try_embed returns None when Ollama is down (it catches internally)
+        with patch(
+            "d4bl.services.document_persistence._try_embed",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            count = await persist_research_documents(job_id, research_data, mock_db)
+
+        assert count == 1
+        assert mock_db.add.called
+        assert mock_db.commit.called

@@ -7,12 +7,19 @@ creates Document + DocumentChunk records with best-effort embeddings.
 
 from __future__ import annotations
 
+import json
 import logging
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from d4bl.infra.database import Document, DocumentChunk
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["normalize_url", "chunk_text"]
+__all__ = ["normalize_url", "chunk_text", "persist_research_documents", "_try_embed", "_extract_crawl_items"]
 
 _TRACKING_PARAMS = frozenset({
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
@@ -95,3 +102,127 @@ def chunk_text(text: str, max_chars: int = 2000) -> list[tuple[str, int]]:
         chunks.append((chunk_content, len(chunk_content) // 4))
 
     return chunks
+
+
+async def _try_embed(text: str) -> list[float] | None:
+    """Best-effort embedding via Ollama. Returns None on failure."""
+    try:
+        from d4bl.infra.vector_store import VectorStore
+        vs = VectorStore()
+        return await vs.generate_embedding(text)
+    except Exception:
+        logger.warning("Embedding generation failed, chunk will have NULL embedding", exc_info=True)
+        return None
+
+
+def _extract_crawl_items(research_data: dict) -> list[dict]:
+    """Extract individual crawl result items from research_data findings."""
+    items: list[dict] = []
+    for finding in research_data.get("research_findings", []):
+        content = finding.get("content", "")
+        if not content or not content.strip().startswith("{"):
+            continue
+        try:
+            crawl_data = json.loads(content)
+            for result in crawl_data.get("results", []):
+                url = result.get("url", "").strip()
+                text = result.get("extracted_content") or result.get("content", "")
+                if url and text and text.strip():
+                    items.append({
+                        "url": url,
+                        "content": text.strip(),
+                        "title": result.get("title"),
+                        "metadata": result.get("metadata") or {},
+                    })
+        except (json.JSONDecodeError, TypeError, KeyError):
+            continue
+    return items
+
+
+async def persist_research_documents(
+    job_id: UUID,
+    research_data: dict,
+    db: AsyncSession,
+) -> int:
+    """Extract and persist documents from a completed research job.
+
+    Returns count of new documents created.
+    """
+    try:
+        return await _persist_documents(job_id, research_data, db)
+    except Exception:
+        logger.warning("Failed to persist research documents for job %s", job_id, exc_info=True)
+        return 0
+
+
+async def _persist_documents(
+    job_id: UUID,
+    research_data: dict,
+    db: AsyncSession,
+) -> int:
+    """Internal implementation — caller handles exceptions."""
+    items = _extract_crawl_items(research_data)
+    if not items:
+        return 0
+
+    # Deduplicate within batch
+    seen: dict[str, dict] = {}
+    for item in items:
+        normalized = normalize_url(item["url"])
+        if normalized not in seen:
+            seen[normalized] = item
+
+    if not seen:
+        return 0
+
+    # Deduplicate against existing documents
+    normalized_urls = list(seen.keys())
+    result = await db.execute(
+        select(Document.source_url).where(Document.source_url.in_(normalized_urls))
+    )
+    existing_urls = set(result.scalars().all())
+    new_items = {url: item for url, item in seen.items() if url not in existing_urls}
+
+    if not new_items:
+        return 0
+
+    doc_count = 0
+    for normalized, item in new_items.items():
+        doc = Document(
+            title=item.get("title"),
+            source_url=normalized,
+            content_type="scraped",
+            source_key="research_job",
+            job_id=job_id,
+            extra_metadata=item.get("metadata") or {},
+        )
+        db.add(doc)
+        await db.flush()
+
+        chunks = chunk_text(item["content"])
+        for idx, (chunk_content, token_count) in enumerate(chunks):
+            embedding = await _try_embed(chunk_content)
+
+            chunk = DocumentChunk(
+                document_id=doc.id,
+                content=chunk_content,
+                chunk_index=idx,
+                token_count=token_count,
+            )
+            db.add(chunk)
+            await db.flush()
+
+            if embedding:
+                from d4bl.infra.vector_store import VectorStore
+                from sqlalchemy import text
+                vs = VectorStore()
+                formatted = vs._format_embedding(embedding)
+                await db.execute(
+                    text("UPDATE document_chunks SET embedding = CAST(:emb AS vector) WHERE id = CAST(:id AS uuid)"),
+                    {"emb": formatted, "id": str(chunk.id)},
+                )
+
+        doc_count += 1
+
+    await db.commit()
+    return doc_count
