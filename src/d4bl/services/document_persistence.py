@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["normalize_url", "chunk_text"]
+
 _TRACKING_PARAMS = frozenset({
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
     "fbclid", "gclid", "ref", "source", "sessionid",
