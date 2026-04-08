@@ -34,8 +34,8 @@ from d4bl.app.websocket_manager import (
 )
 from d4bl.infra.database import ResearchJob, get_db
 from d4bl.observability import get_langfuse_client
-from d4bl.services.error_handling import ErrorRecoveryStrategy
 from d4bl.services.document_persistence import persist_research_documents
+from d4bl.services.error_handling import ErrorRecoveryStrategy
 from d4bl.services.langfuse.runner import run_comprehensive_evaluation
 
 logger = logging.getLogger(__name__)
@@ -820,24 +820,17 @@ async def run_research_job(
             )
 
             # Persist crawled content as documents for the data flywheel
-            try:
-                async for db in get_db():
-                    doc_count = await persist_research_documents(
-                        UUID(job_id), research_data_dict, db
-                    )
-                    if doc_count:
-                        logger.info(
-                            "Persisted %d new documents from research job %s",
-                            doc_count,
-                            job_id,
-                        )
-                    break
-            except Exception:
-                logger.warning(
-                    "Failed to persist research documents for job %s",
-                    job_id,
-                    exc_info=True,
+            async for db in get_db():
+                doc_count = await persist_research_documents(
+                    UUID(job_id), research_data_dict, db
                 )
+                if doc_count:
+                    logger.info(
+                        "Persisted %d new documents from research job %s",
+                        doc_count,
+                        job_id,
+                    )
+                break
 
             await send_websocket_update(
                 job_id,

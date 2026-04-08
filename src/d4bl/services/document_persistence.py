@@ -12,11 +12,11 @@ import logging
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.infra.database import Document, DocumentChunk
-from d4bl.infra.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ __all__ = ["normalize_url", "chunk_text", "persist_research_documents"]
 
 _TRACKING_PARAMS = frozenset({
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-    "fbclid", "gclid", "ref", "source", "sessionid",
+    "fbclid", "gclid", "ref",
 })
 
 
@@ -46,12 +46,12 @@ def normalize_url(raw_url: str) -> str:
     return urlunparse((scheme, netloc, path, "", query, ""))
 
 
-def chunk_text(text: str, max_chars: int = 2000) -> list[tuple[str, int]]:
+def chunk_text(content: str, max_chars: int = 2000) -> list[tuple[str, int]]:
     """Split text into chunks by paragraph boundaries with a size cap.
 
     Returns list of (content, token_count) tuples. Token count estimated as len // 4.
     """
-    stripped = text.strip()
+    stripped = content.strip()
     if not stripped:
         return []
 
@@ -105,11 +105,11 @@ def chunk_text(text: str, max_chars: int = 2000) -> list[tuple[str, int]]:
     return chunks
 
 
-async def _try_embed(text: str) -> list[float] | None:
+async def _try_embed(content: str) -> list[float] | None:
     """Best-effort embedding via Ollama. Returns None on failure."""
     try:
-        vs = get_vector_store()
-        return await vs.generate_embedding(text)
+        from d4bl.infra.vector_store import get_vector_store
+        return await get_vector_store().generate_embedding(content)
     except Exception:
         logger.warning("Embedding generation failed, chunk will have NULL embedding", exc_info=True)
         return None
@@ -217,14 +217,12 @@ async def _persist_documents(
 
         await db.flush()  # Single flush for all chunks
 
-        if embeddings:
-            vs = get_vector_store()
-            for idx, embedding in embeddings:
-                formatted = vs._format_embedding(embedding)
-                await db.execute(
-                    text("UPDATE document_chunks SET embedding = CAST(:emb AS vector) WHERE id = CAST(:id AS uuid)"),
-                    {"emb": formatted, "id": str(chunk_objs[idx].id)},
-                )
+        for idx, embedding in embeddings:
+            formatted = "[" + ",".join(str(x) for x in embedding) + "]"
+            await db.execute(
+                sa_text("UPDATE document_chunks SET embedding = CAST(:emb AS vector) WHERE id = CAST(:id AS uuid)"),
+                {"emb": formatted, "id": str(chunk_objs[idx].id)},
+            )
 
         doc_count += 1
 
