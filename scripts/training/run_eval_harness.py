@@ -166,6 +166,8 @@ async def run_task_eval(
             score = exp.get("score")
             if isinstance(score, (int, float)):
                 expected_scores.append(float(score))
+            else:
+                expected_scores.append(None)
         metrics = compute_evaluator_metrics(
             outputs,
             expected_labels=expected_labels if any(expected_labels) else None,

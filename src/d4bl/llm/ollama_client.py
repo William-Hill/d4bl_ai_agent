@@ -40,7 +40,8 @@ async def ollama_generate(
     prompt: str,
     model: str | None = None,
     temperature: float = 0.1,
-    timeout_seconds: int = 30,
+    timeout_seconds: int = 120,
+    num_predict: int = 2048,
 ) -> str:
     """Call Ollama /api/generate and return the response text.
 
@@ -49,7 +50,8 @@ async def ollama_generate(
         prompt: The prompt to send.
         model: Model name. Defaults to ``Settings.ollama_model``.
         temperature: Sampling temperature (default: 0.1).
-        timeout_seconds: HTTP timeout in seconds (default: 30).
+        timeout_seconds: HTTP timeout in seconds (default: 120).
+        num_predict: Maximum tokens to generate (default: 2048).
 
     Returns:
         The "response" field from Ollama, stripped of whitespace.
@@ -68,7 +70,11 @@ async def ollama_generate(
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": temperature},
+                "think": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": num_predict,
+                },
             },
         ) as response:
             if response.status != 200:

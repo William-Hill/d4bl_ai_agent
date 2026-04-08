@@ -247,10 +247,13 @@ def compute_evaluator_metrics(
                     correct_labels += 1
 
             if expected_scores and i < len(expected_scores):
+                exp_score = expected_scores[i]
+                if exp_score is None:
+                    continue  # No expected score for this example
                 scored_count += 1
                 pred_score = result.parsed.get("score")
                 if isinstance(pred_score, (int, float)):
-                    total_score_error += abs(pred_score - expected_scores[i])
+                    total_score_error += abs(pred_score - exp_score)
                 else:
                     # Invalid/missing score: worst-case error on 1-5 scale
                     total_score_error += 4.0

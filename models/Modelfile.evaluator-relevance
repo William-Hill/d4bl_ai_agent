@@ -1,7 +1,7 @@
 FROM ./d4bl-evaluator-qwen35-q4_k_m.gguf
 PARAMETER temperature 0.1
 PARAMETER num_ctx 4096
-PARAMETER num_predict 128
+PARAMETER num_predict 1024
 PARAMETER stop "<|im_end|>"
 TEMPLATE """<|im_start|>system
 Rate how relevant the model output is to the provided context on a scale of 1-5. 1 = completely irrelevant, 5 = highly relevant. Return ONLY valid JSON: {"score": <1-5>, "reasoning": "<brief explanation>"}. Do not use thinking tags or reasoning blocks.<|im_end|>
