@@ -35,6 +35,7 @@ from d4bl.app.explore_helpers import (
     distinct_values,
 )
 from d4bl.app.explore_insights import router as explore_insights_router
+from d4bl.app.flywheel_routes import router as flywheel_router
 from d4bl.app.schedule_routes import router as schedule_router
 from d4bl.app.schemas import (
     CompareRequest,
@@ -560,6 +561,7 @@ app.add_middleware(
 app.include_router(data_router)
 app.include_router(explore_insights_router)
 app.include_router(schedule_router)
+app.include_router(flywheel_router)
 
 # ---------------------------------------------------------------------------
 # Admin ingestion: track background subprocess jobs

@@ -1,12 +1,27 @@
 """Shared test fixtures for D4BL tests."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user
+
+_PATCH_SETTINGS_SECRET = "test-jwt-secret"
+
+
+@pytest.fixture
+def _patch_settings():
+    """Patch settings for auth testing."""
+    mock_settings = MagicMock()
+    mock_settings.supabase_jwt_secret = _PATCH_SETTINGS_SECRET
+    mock_settings.supabase_url = None
+    mock_settings.cors_allowed_origins = ("*",)
+    with patch("d4bl.app.auth.get_settings", return_value=mock_settings):
+        with patch("d4bl.app.api.get_settings", return_value=mock_settings):
+            with patch("d4bl.settings.get_settings", return_value=mock_settings):
+                yield
 
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_ADMIN_ID = "00000000-0000-0000-0000-000000000002"

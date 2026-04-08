@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE, getCostSummary, CostSummary } from '@/lib/api';
 import DataStatusCard from '@/components/data/DataStatusCard';
+import FlywheelDashboard from '@/components/admin/FlywheelDashboard';
 
 interface UserProfile {
   id: string;
@@ -195,6 +196,9 @@ export default function AdminPage() {
     <div className="min-h-screen bg-[#292929]">
       <div className="max-w-4xl mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold text-white mb-8">User Management</h1>
+
+        {/* Flywheel Metrics Dashboard */}
+        <FlywheelDashboard accessToken={session?.access_token} />
 
         {/* External tools */}
         <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
