@@ -142,7 +142,8 @@ def _build_time_series(
 
         f1 = metrics.get("entity_f1")
         halluc = metrics.get("hallucination_accuracy")
-        scores = [s for s in [f1, halluc] if s is not None]
+        community_f1 = metrics.get("community_framing_f1")
+        scores = [s for s in [f1, halluc, community_f1] if s is not None]
         if scores:
             composite = round(sum(scores) / len(scores), 4)
             model_accuracy.append(TimeSeriesPoint(date=date_str, value=composite))
