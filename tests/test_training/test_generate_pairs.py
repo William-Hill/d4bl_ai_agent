@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 
 from scripts.training.generate_training_pairs import (
     _validate_json,
@@ -271,3 +273,275 @@ class TestValidateJson:
         text = '```json\n{"key": "value"}'
         result = _validate_json(text)
         assert result == {"key": "value"}
+
+
+# ---------------------------------------------------------------------------
+# _load_checkpoint / _update_checkpoint / _clear_checkpoint
+# ---------------------------------------------------------------------------
+
+
+class TestCheckpointHelpers:
+    """Tests for the checkpoint read/write/clear helpers."""
+
+    def test_load_missing_file_returns_default(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint
+
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+    def test_load_missing_task_returns_default(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=5, checkpoint_dir=tmp_path)
+        result = _load_checkpoint("explainer", "standard", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+    def test_update_and_load_round_trip(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint(
+            "query_parser",
+            "standard",
+            last_attempted_idx=42,
+            pairs_written=10,
+            status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 42
+        assert result["pairs_written"] == 10
+        assert result["status"] == "in_progress"
+
+    def test_update_merges_partial_fields(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint(
+            "query_parser",
+            "standard",
+            last_attempted_idx=10,
+            pairs_written=5,
+            status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+        # Only update pairs_written
+        _update_checkpoint("query_parser", "standard", pairs_written=15, checkpoint_dir=tmp_path)
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 10  # preserved
+        assert result["pairs_written"] == 15       # updated
+        assert result["status"] == "in_progress"   # preserved
+
+    def test_update_preserves_other_tasks(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=3, checkpoint_dir=tmp_path)
+        _update_checkpoint("explainer", "default", last_attempted_idx=7, checkpoint_dir=tmp_path)
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 3
+
+    def test_clear_removes_task_entry(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            _clear_checkpoint,
+            _load_checkpoint,
+            _update_checkpoint,
+        )
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=5, checkpoint_dir=tmp_path)
+        _clear_checkpoint("query_parser", checkpoint_dir=tmp_path)
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+    def test_clear_preserves_other_tasks(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            _clear_checkpoint,
+            _load_checkpoint,
+            _update_checkpoint,
+        )
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=5, checkpoint_dir=tmp_path)
+        _update_checkpoint("explainer", "default", last_attempted_idx=9, checkpoint_dir=tmp_path)
+        _clear_checkpoint("query_parser", checkpoint_dir=tmp_path)
+        result = _load_checkpoint("explainer", "default", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 9
+
+    def test_atomic_write_produces_valid_json(self, tmp_path):
+        from scripts.training.generate_training_pairs import _update_checkpoint
+
+        _update_checkpoint(
+            "query_parser",
+            "standard",
+            last_attempted_idx=1,
+            pairs_written=1,
+            status="completed",
+            checkpoint_dir=tmp_path,
+        )
+        cp_file = tmp_path / ".checkpoint.json"
+        assert cp_file.exists()
+        data = json.loads(cp_file.read_text(encoding="utf-8"))
+        assert isinstance(data, dict)
+        assert data["query_parser"]["standard"]["last_attempted_idx"] == 1
+
+    def test_load_corrupted_file_returns_default(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint
+
+        cp_file = tmp_path / ".checkpoint.json"
+        cp_file.write_text("{not valid json!!!", encoding="utf-8")
+        result = _load_checkpoint("any_task", "any_sub", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+
+# ---------------------------------------------------------------------------
+# TestCLIFlags
+# ---------------------------------------------------------------------------
+
+
+class TestCLIFlags:
+    def test_resume_flag_accepted(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'evaluator_v2', '--resume']); "
+             "assert args.resume is True"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_no_resume_flag_defaults_false(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'evaluator_v2']); "
+             "assert args.resume is False"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_new_v3_task_choices_accepted(self):
+        for task in ["evaluator_v3", "query_parser_v3"]:
+            result = subprocess.run(
+                [sys.executable, "-c",
+                 f"from scripts.training.generate_training_pairs import _build_arg_parser; "
+                 f"p = _build_arg_parser(); "
+                 f"args = p.parse_args(['--task', '{task}']); "
+                 f"assert args.task == '{task}'"],
+                capture_output=True, text=True,
+            )
+            assert result.returncode == 0, f"{task} rejected: {result.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# TestResumeIntegration
+# ---------------------------------------------------------------------------
+
+
+class TestResumeIntegration:
+    def test_community_framing_resume_skips_completed_seeds(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            _load_checkpoint,
+            _update_checkpoint,
+            generate_community_framing_pairs,
+        )
+
+        # Baseline: generate a full fresh run in its own directory
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        baseline_outfile = baseline_dir / "query_parser_v3.jsonl"
+        baseline_pairs = generate_community_framing_pairs(
+            conn=None, count=10, outfile=baseline_outfile, resume=False,
+            checkpoint_dir=baseline_dir,
+        )
+        assert len(baseline_pairs) == 10
+        baseline_lines = baseline_outfile.read_text().strip().split("\n")
+        assert len(baseline_lines) == 10
+
+        # Fresh run in resume-test directory, then simulate crash at seed 5
+        outfile = tmp_path / "query_parser_v3.jsonl"
+        pairs_first = generate_community_framing_pairs(
+            conn=None, count=10, outfile=outfile, resume=False,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs_first) == 10
+
+        # Simulate crash at seed 5 by resetting checkpoint and truncating output
+        _update_checkpoint(
+            "query_parser_v3", "_default",
+            last_attempted_idx=4, pairs_written=5, status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+        lines = outfile.read_text().strip().split("\n")
+        outfile.write_text("\n".join(lines[:5]) + "\n")
+
+        # Resume should generate seeds 5-9
+        pairs_resumed = generate_community_framing_pairs(
+            conn=None, count=10, outfile=outfile, resume=True,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs_resumed) == 5  # only newly generated
+
+        # Final file content must exactly match the baseline (no duplicates, no skips)
+        final_lines = outfile.read_text().strip().split("\n")
+        assert final_lines == baseline_lines, (
+            "Resumed file content does not match fresh baseline — "
+            "resume logic may be duplicating or skipping seeds"
+        )
+
+        cp = _load_checkpoint("query_parser_v3", "_default", checkpoint_dir=tmp_path)
+        assert cp["status"] == "completed"
+        assert cp["last_attempted_idx"] == 9
+
+    def test_overwrite_mode_ignores_checkpoint(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            _update_checkpoint,
+            generate_community_framing_pairs,
+        )
+
+        outfile = tmp_path / "query_parser_v3.jsonl"
+
+        # Set up stale checkpoint
+        _update_checkpoint(
+            "query_parser_v3", "_default",
+            last_attempted_idx=50, pairs_written=51, status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+
+        # Overwrite mode ignores checkpoint
+        pairs = generate_community_framing_pairs(
+            conn=None, count=5, outfile=outfile, resume=False,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs) == 5
+        final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert final_line_count == 5
+
+    def test_resume_with_missing_checkpoint_truncates_stale_output(self, tmp_path):
+        """If checkpoint is externally deleted but output exists, --resume must not append duplicates."""
+        from scripts.training.generate_training_pairs import (
+            _CHECKPOINT_FILE,
+            generate_community_framing_pairs,
+        )
+
+        outfile = tmp_path / "query_parser_v3.jsonl"
+
+        # Create a stale output file (e.g. from a prior run)
+        generate_community_framing_pairs(
+            conn=None, count=5, outfile=outfile, resume=False,
+            checkpoint_dir=tmp_path,
+        )
+        stale_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert stale_line_count == 5
+
+        # Simulate external deletion of the checkpoint
+        (tmp_path / _CHECKPOINT_FILE).unlink()
+
+        # --resume with no checkpoint should start fresh, not append duplicates
+        pairs = generate_community_framing_pairs(
+            conn=None, count=5, outfile=outfile, resume=True,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs) == 5
+        final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert final_line_count == 5, (
+            f"Expected 5 pairs after fresh restart, got {final_line_count} — "
+            f"output was appended to instead of truncated"
+        )
