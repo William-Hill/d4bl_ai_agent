@@ -8,11 +8,15 @@ Supported tasks:
   - query_parser: NL question → structured JSON parse
   - explainer: Census/health data → structured narrative explanation
   - evaluator: (context, output) → evaluation judgment
+  - evaluator_v2: Perturbation-based hallucination + tiered quality
+  - query_parser_v2: Entity-type-diverse question parsing
+  - evaluator_v3: Document-chunk hallucination detection
+  - query_parser_v3: Community framing question parsing
 
 Usage:
     python -m scripts.training.generate_training_pairs --task query_parser
-    python -m scripts.training.generate_training_pairs --task explainer
-    python -m scripts.training.generate_training_pairs --task evaluator
+    python -m scripts.training.generate_training_pairs --task all
+    python -m scripts.training.generate_training_pairs --task evaluator_v2 --resume
 """
 
 from __future__ import annotations
@@ -203,7 +207,7 @@ def _clear_checkpoint(task: str, *, checkpoint_dir: Path | None = None) -> None:
 
 
 def _count_existing_lines(path: Path | None) -> int:
-    """Count lines in an existing JSONL file for resume support.
+    """Count non-empty lines in a JSONL file (for progress logging).
 
     Returns 0 if the file doesn't exist or path is None.
     """
