@@ -438,9 +438,9 @@ class TestCLIFlags:
 class TestResumeIntegration:
     def test_community_framing_resume_skips_completed_seeds(self, tmp_path):
         from scripts.training.generate_training_pairs import (
-            generate_community_framing_pairs,
-            _update_checkpoint,
             _load_checkpoint,
+            _update_checkpoint,
+            generate_community_framing_pairs,
         )
 
         outfile = tmp_path / "query_parser_v3.jsonl"
@@ -480,9 +480,8 @@ class TestResumeIntegration:
 
     def test_overwrite_mode_ignores_checkpoint(self, tmp_path):
         from scripts.training.generate_training_pairs import (
-            generate_community_framing_pairs,
             _update_checkpoint,
-            _load_checkpoint,
+            generate_community_framing_pairs,
         )
 
         outfile = tmp_path / "query_parser_v3.jsonl"

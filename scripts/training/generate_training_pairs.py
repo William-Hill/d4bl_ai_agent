@@ -1138,6 +1138,9 @@ def generate_community_framing_pairs(
             if resume and idx <= cp["last_attempted_idx"]:
                 continue
 
+            _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
+                               checkpoint_dir=checkpoint_dir)
+
             question, entities, community_framing = _build_framing_example(idx)
 
             pair = build_community_framing_pair(
@@ -1147,14 +1150,10 @@ def generate_community_framing_pairs(
             _write_pair(fh, pair)
             pair_count += 1
 
-            # Batch checkpoint writes every 50 pairs (no API calls in this generator)
             if pair_count % 50 == 0:
-                _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
-                                   checkpoint_dir=checkpoint_dir)
                 print(f"[query_parser_v3] {pair_count}/{count} pairs", flush=True)
 
-        _update_checkpoint(task_name, subtask, last_attempted_idx=count - 1,
-                           pairs_written=pair_count, status="completed",
+        _update_checkpoint(task_name, subtask, pairs_written=pair_count, status="completed",
                            checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
