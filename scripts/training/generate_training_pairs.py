@@ -145,7 +145,7 @@ def _update_checkpoint(
         subtask: Subtask name.
         last_attempted_idx: Seed index of the last attempted pair.
         pairs_written: Number of pairs successfully written so far.
-        status: Status string (e.g. "in_progress", "done", "pending").
+        status: Status string (e.g. "in_progress", "completed", "pending").
         checkpoint_dir: Directory containing the checkpoint file.  Defaults to PAIRS_DIR.
     """
     cp_dir = checkpoint_dir if checkpoint_dir is not None else PAIRS_DIR
@@ -1525,11 +1525,38 @@ def generate_evaluator_pairs(
 # ---------------------------------------------------------------------------
 
 
-def main(task: str) -> None:
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
+    parser = argparse.ArgumentParser(
+        description="Generate Claude distillation training pairs for D4BL fine-tuning."
+    )
+    parser.add_argument(
+        "--task",
+        choices=[
+            "query_parser", "explainer", "evaluator",
+            "evaluator_v2", "query_parser_v2",
+            "evaluator_v3", "query_parser_v3",
+            "all",
+        ],
+        required=True,
+        help="Which task to generate pairs for (use 'all' to run all tasks).",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="Resume from checkpoint instead of starting fresh.",
+    )
+    return parser
+
+
+def main(task: str, *, resume: bool = False) -> None:
     """Run the selected task generator and write pairs to PAIRS_DIR.
 
     Args:
-        task: One of "query_parser", "explainer", or "evaluator".
+        task: One of the task names in _TASK_MAP, or "all".
+        resume: If True, skip tasks whose checkpoint status is "completed"
+            instead of clearing checkpoints and starting fresh.
 
     Raises:
         ValueError: If *task* is not a known task name.
@@ -1601,6 +1628,14 @@ def main(task: str) -> None:
             )
 
         for t in tasks_to_run:
+            # Check for completed checkpoint when resuming
+            if resume:
+                cp = _load_checkpoint(t)
+                if cp["status"] == "completed":
+                    print(f"[{t}] Already completed — skipping (use without --resume to regenerate)")
+                    continue
+            else:
+                _clear_checkpoint(t)
             pairs = _TASK_MAP[t]()
             print(f"[done] {t}: {len(pairs)} pairs")
             _print_cost_summary()
@@ -1615,14 +1650,6 @@ def main(task: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate Claude distillation training pairs for D4BL fine-tuning."
-    )
-    parser.add_argument(
-        "--task",
-        choices=["query_parser", "explainer", "evaluator", "evaluator_v2", "query_parser_v2", "all"],
-        required=True,
-        help="Which task to generate pairs for (use 'all' to run all tasks).",
-    )
-    args = parser.parse_args()
-    main(args.task)
+    _parser = _build_arg_parser()
+    _args = _parser.parse_args()
+    main(_args.task, resume=_args.resume)

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 
 from scripts.training.generate_training_pairs import (
     _validate_json,
@@ -385,3 +387,44 @@ class TestCheckpointHelpers:
         cp_file.write_text("{not valid json!!!", encoding="utf-8")
         result = _load_checkpoint("any_task", "any_sub", checkpoint_dir=tmp_path)
         assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+
+# ---------------------------------------------------------------------------
+# TestCLIFlags
+# ---------------------------------------------------------------------------
+
+
+class TestCLIFlags:
+    def test_resume_flag_accepted(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'evaluator_v2', '--resume']); "
+             "assert args.resume is True"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_no_resume_flag_defaults_false(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'evaluator_v2']); "
+             "assert args.resume is False"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_all_task_choices_accepted(self):
+        for task in ["evaluator_v3", "query_parser_v3"]:
+            result = subprocess.run(
+                [sys.executable, "-c",
+                 f"from scripts.training.generate_training_pairs import _build_arg_parser; "
+                 f"p = _build_arg_parser(); "
+                 f"args = p.parse_args(['--task', '{task}']); "
+                 f"assert args.task == '{task}'"],
+                capture_output=True, text=True,
+            )
+            assert result.returncode == 0, f"{task} rejected: {result.stderr}"
