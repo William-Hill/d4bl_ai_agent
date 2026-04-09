@@ -206,16 +206,6 @@ def _clear_checkpoint(task: str, *, checkpoint_dir: Path | None = None) -> None:
     os.replace(tmp, cp_file)
 
 
-def _count_existing_lines(path: Path | None) -> int:
-    """Count non-empty lines in a JSONL file (for progress logging).
-
-    Returns 0 if the file doesn't exist or path is None.
-    """
-    if path is None or not path.exists():
-        return 0
-    with path.open(encoding="utf-8") as fh:
-        return sum(1 for line in fh if line.strip())
-
 
 def _open_incremental_writer(outfile: Path | None, resume: bool = False):
     """Open an incremental JSONL writer.
@@ -659,6 +649,7 @@ def generate_evaluator_pairs_v2(
         if resume and hall_cp["status"] == "completed":
             print("[evaluator_v2/hallucination] Already completed — skipping", flush=True)
         else:
+            subtask_start = pair_count
             for idx in range(hall_count):
                 if resume and idx <= hall_cp["last_attempted_idx"]:
                     continue
@@ -698,7 +689,7 @@ def generate_evaluator_pairs_v2(
 
             _update_checkpoint(
                 task_name, "hallucination",
-                pairs_written=pair_count, status="completed",
+                pairs_written=pair_count - subtask_start, status="completed",
                 checkpoint_dir=checkpoint_dir,
             )
 
@@ -712,6 +703,7 @@ def generate_evaluator_pairs_v2(
                 continue
 
             print(f"[evaluator_v2/{subtask}] Starting tiered generation...", flush=True)
+            subtask_start = pair_count
             for idx in range(count_per_subtask):
                 if resume and idx <= sub_cp["last_attempted_idx"]:
                     continue
@@ -764,7 +756,7 @@ def generate_evaluator_pairs_v2(
 
             _update_checkpoint(
                 task_name, subtask,
-                pairs_written=pair_count, status="completed",
+                pairs_written=pair_count - subtask_start, status="completed",
                 checkpoint_dir=checkpoint_dir,
             )
     finally:
@@ -853,6 +845,7 @@ def generate_query_parser_pairs_v2(
                 print(f"[{task_name}/{entity_type}] Already completed — skipping", flush=True)
                 continue
 
+            subtask_start = pair_count
             questions = generate_query_parser_questions_v2(
                 seed_rows, count=type_count, entity_type=entity_type,
             )
@@ -892,8 +885,8 @@ def generate_query_parser_pairs_v2(
                 pair_count += 1
                 print(f"[query_parser_v2/{entity_type}] {pair_count} total pairs", flush=True)
 
-            _update_checkpoint(task_name, entity_type, pairs_written=pair_count, status="completed",
-                               checkpoint_dir=checkpoint_dir)
+            _update_checkpoint(task_name, entity_type, pairs_written=pair_count - subtask_start,
+                               status="completed", checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
             fh.close()
@@ -1621,6 +1614,7 @@ def generate_evaluator_pairs(
                 print(f"[{task_name}/{task}] Already completed — skipping", flush=True)
                 continue
 
+            subtask_start = pair_count
             for idx in range(count_per_subtask):
                 if resume and idx <= cp["last_attempted_idx"]:
                     continue
@@ -1662,8 +1656,8 @@ def generate_evaluator_pairs(
                 pair_count += 1
                 print(f"[evaluator/{task}] {pair_count}/{total} pairs generated", flush=True)
 
-            _update_checkpoint(task_name, task, pairs_written=pair_count, status="completed",
-                               checkpoint_dir=checkpoint_dir)
+            _update_checkpoint(task_name, task, pairs_written=pair_count - subtask_start,
+                               status="completed", checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
             fh.close()
@@ -1787,14 +1781,14 @@ def main(task: str, *, resume: bool = False) -> None:
             )
 
         for t in tasks_to_run:
-            # Check for completed checkpoint when resuming
+            # Each generator handles its own checkpoint clear/check internally.
+            # The main() check here is a fast-path for --task all --resume
+            # to skip entirely-completed single-subtask tasks.
             if resume:
                 cp = _load_checkpoint(t)
                 if cp["status"] == "completed":
                     print(f"[{t}] Already completed — skipping (use without --resume to regenerate)")
                     continue
-            else:
-                _clear_checkpoint(t)
             pairs = _TASK_MAP[t]()
             print(f"[done] {t}: {len(pairs)} pairs")
             _print_cost_summary()
