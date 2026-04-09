@@ -99,6 +99,108 @@ def _print_cost_summary() -> None:
 # Resume and incremental write helpers
 # ---------------------------------------------------------------------------
 
+_CHECKPOINT_FILE = ".checkpoint.json"
+_DEFAULT_ENTRY: dict = {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+
+def _load_checkpoint(task: str, subtask: str = "_default", *, checkpoint_dir: Path | None = None) -> dict:
+    """Load the checkpoint entry for a specific task/subtask.
+
+    Args:
+        task: Task name (e.g. "query_parser").
+        subtask: Subtask name (e.g. "standard").
+        checkpoint_dir: Directory containing the checkpoint file.  Defaults to PAIRS_DIR.
+
+    Returns:
+        Dict with keys ``last_attempted_idx``, ``pairs_written``, ``status``.
+        Returns the default entry if the file or key is missing.
+    """
+    cp_dir = checkpoint_dir if checkpoint_dir is not None else PAIRS_DIR
+    cp_file = cp_dir / _CHECKPOINT_FILE
+    if not cp_file.exists():
+        return dict(_DEFAULT_ENTRY)
+    try:
+        data = json.loads(cp_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return dict(_DEFAULT_ENTRY)
+    return dict(data.get(task, {}).get(subtask, _DEFAULT_ENTRY))
+
+
+def _update_checkpoint(
+    task: str,
+    subtask: str = "_default",
+    *,
+    last_attempted_idx: int | None = None,
+    pairs_written: int | None = None,
+    status: str | None = None,
+    checkpoint_dir: Path | None = None,
+) -> None:
+    """Merge provided fields into the checkpoint entry and write atomically.
+
+    Only the supplied keyword arguments are updated; omitted fields retain their
+    current values (or the default if the entry is new).
+
+    Args:
+        task: Task name.
+        subtask: Subtask name.
+        last_attempted_idx: Seed index of the last attempted pair.
+        pairs_written: Number of pairs successfully written so far.
+        status: Status string (e.g. "in_progress", "done", "pending").
+        checkpoint_dir: Directory containing the checkpoint file.  Defaults to PAIRS_DIR.
+    """
+    cp_dir = checkpoint_dir if checkpoint_dir is not None else PAIRS_DIR
+    cp_dir.mkdir(parents=True, exist_ok=True)
+    cp_file = cp_dir / _CHECKPOINT_FILE
+
+    # Load existing data
+    if cp_file.exists():
+        try:
+            data: dict = json.loads(cp_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    else:
+        data = {}
+
+    # Merge fields into the entry
+    task_data = data.setdefault(task, {})
+    entry = dict(task_data.get(subtask, _DEFAULT_ENTRY))
+    if last_attempted_idx is not None:
+        entry["last_attempted_idx"] = last_attempted_idx
+    if pairs_written is not None:
+        entry["pairs_written"] = pairs_written
+    if status is not None:
+        entry["status"] = status
+    task_data[subtask] = entry
+
+    # Atomic write via tmp file + os.replace
+    tmp = cp_file.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, cp_file)
+
+
+def _clear_checkpoint(task: str, *, checkpoint_dir: Path | None = None) -> None:
+    """Remove all subtask entries for *task* from the checkpoint file.
+
+    Args:
+        task: Task name to remove.
+        checkpoint_dir: Directory containing the checkpoint file.  Defaults to PAIRS_DIR.
+    """
+    cp_dir = checkpoint_dir if checkpoint_dir is not None else PAIRS_DIR
+    cp_file = cp_dir / _CHECKPOINT_FILE
+    if not cp_file.exists():
+        return
+
+    try:
+        data: dict = json.loads(cp_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    data.pop(task, None)
+
+    tmp = cp_file.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, cp_file)
+
 
 def _count_existing_lines(path: Path | None) -> int:
     """Count lines in an existing JSONL file for resume support.
@@ -107,7 +209,7 @@ def _count_existing_lines(path: Path | None) -> int:
     """
     if path is None or not path.exists():
         return 0
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         return sum(1 for line in fh if line.strip())
 
 

@@ -271,3 +271,117 @@ class TestValidateJson:
         text = '```json\n{"key": "value"}'
         result = _validate_json(text)
         assert result == {"key": "value"}
+
+
+# ---------------------------------------------------------------------------
+# _load_checkpoint / _update_checkpoint / _clear_checkpoint
+# ---------------------------------------------------------------------------
+
+
+class TestCheckpointHelpers:
+    """Tests for the checkpoint read/write/clear helpers."""
+
+    def test_load_missing_file_returns_default(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint
+
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+    def test_load_missing_task_returns_default(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=5, checkpoint_dir=tmp_path)
+        result = _load_checkpoint("explainer", "standard", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+    def test_update_and_load_round_trip(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint(
+            "query_parser",
+            "standard",
+            last_attempted_idx=42,
+            pairs_written=10,
+            status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 42
+        assert result["pairs_written"] == 10
+        assert result["status"] == "in_progress"
+
+    def test_update_merges_partial_fields(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint(
+            "query_parser",
+            "standard",
+            last_attempted_idx=10,
+            pairs_written=5,
+            status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+        # Only update pairs_written
+        _update_checkpoint("query_parser", "standard", pairs_written=15, checkpoint_dir=tmp_path)
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 10  # preserved
+        assert result["pairs_written"] == 15       # updated
+        assert result["status"] == "in_progress"   # preserved
+
+    def test_update_preserves_other_tasks(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint, _update_checkpoint
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=3, checkpoint_dir=tmp_path)
+        _update_checkpoint("explainer", "default", last_attempted_idx=7, checkpoint_dir=tmp_path)
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 3
+
+    def test_clear_removes_task_entry(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            _clear_checkpoint,
+            _load_checkpoint,
+            _update_checkpoint,
+        )
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=5, checkpoint_dir=tmp_path)
+        _clear_checkpoint("query_parser", checkpoint_dir=tmp_path)
+        result = _load_checkpoint("query_parser", "standard", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
+
+    def test_clear_preserves_other_tasks(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            _clear_checkpoint,
+            _load_checkpoint,
+            _update_checkpoint,
+        )
+
+        _update_checkpoint("query_parser", "standard", last_attempted_idx=5, checkpoint_dir=tmp_path)
+        _update_checkpoint("explainer", "default", last_attempted_idx=9, checkpoint_dir=tmp_path)
+        _clear_checkpoint("query_parser", checkpoint_dir=tmp_path)
+        result = _load_checkpoint("explainer", "default", checkpoint_dir=tmp_path)
+        assert result["last_attempted_idx"] == 9
+
+    def test_atomic_write_produces_valid_json(self, tmp_path):
+        from scripts.training.generate_training_pairs import _update_checkpoint
+
+        _update_checkpoint(
+            "query_parser",
+            "standard",
+            last_attempted_idx=1,
+            pairs_written=1,
+            status="done",
+            checkpoint_dir=tmp_path,
+        )
+        cp_file = tmp_path / ".checkpoint.json"
+        assert cp_file.exists()
+        data = json.loads(cp_file.read_text(encoding="utf-8"))
+        assert isinstance(data, dict)
+        assert data["query_parser"]["standard"]["last_attempted_idx"] == 1
+
+    def test_load_corrupted_file_returns_default(self, tmp_path):
+        from scripts.training.generate_training_pairs import _load_checkpoint
+
+        cp_file = tmp_path / ".checkpoint.json"
+        cp_file.write_text("{not valid json!!!", encoding="utf-8")
+        result = _load_checkpoint("any_task", "any_sub", checkpoint_dir=tmp_path)
+        assert result == {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
