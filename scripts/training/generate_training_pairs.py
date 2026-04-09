@@ -106,6 +106,23 @@ def _print_cost_summary() -> None:
 _CHECKPOINT_FILE = ".checkpoint.json"
 _DEFAULT_ENTRY: dict = {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
 
+# Canonical task names — used by argparse, _TASK_MAP, and each generator's
+# internal task_name. Keep this the single source of truth so checkpoint
+# keys stay consistent with CLI choices.
+TASK_QUERY_PARSER = "query_parser"
+TASK_EXPLAINER = "explainer"
+TASK_EVALUATOR = "evaluator"
+TASK_EVALUATOR_V2 = "evaluator_v2"
+TASK_QUERY_PARSER_V2 = "query_parser_v2"
+TASK_EVALUATOR_V3 = "evaluator_v3"
+TASK_QUERY_PARSER_V3 = "query_parser_v3"
+
+_ALL_TASK_NAMES = (
+    TASK_QUERY_PARSER, TASK_EXPLAINER, TASK_EVALUATOR,
+    TASK_EVALUATOR_V2, TASK_QUERY_PARSER_V2,
+    TASK_EVALUATOR_V3, TASK_QUERY_PARSER_V3,
+)
+
 
 def _atomic_write_json(path: Path, data: dict) -> None:
     """Write JSON atomically via tmp file + os.replace."""
@@ -625,7 +642,7 @@ def generate_evaluator_pairs_v2(
     all_pairs: list[dict] = []
     call_count = 0
 
-    task_name = "evaluator_v2"
+    task_name = TASK_EVALUATOR_V2
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
@@ -826,7 +843,7 @@ def generate_query_parser_pairs_v2(
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    task_name = "query_parser_v2"
+    task_name = TASK_QUERY_PARSER_V2
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
@@ -942,7 +959,7 @@ def generate_doc_hallucination_pairs(
         print("[evaluator_v3] No document chunks found — skipping", flush=True)
         return []
 
-    task_name = "evaluator_v3"
+    task_name = TASK_EVALUATOR_V3
     subtask = "_default"
 
     if not resume:
@@ -1100,7 +1117,7 @@ def generate_community_framing_pairs(
     Returns:
         A list of ChatML pair dicts.
     """
-    task_name = "query_parser_v3"
+    task_name = TASK_QUERY_PARSER_V3
     subtask = "_default"
 
     if not resume:
@@ -1417,7 +1434,7 @@ def generate_query_parser_pairs(
     Returns:
         A list of ChatML pair dicts.
     """
-    task_name = "query_parser"
+    task_name = TASK_QUERY_PARSER
     subtask = "_default"
 
     if not resume:
@@ -1505,7 +1522,7 @@ def generate_explainer_pairs(
     Returns:
         A list of ChatML pair dicts.
     """
-    task_name = "explainer"
+    task_name = TASK_EXPLAINER
     subtask = "_default"
 
     if not resume:
@@ -1596,7 +1613,7 @@ def generate_evaluator_pairs(
     call_count = 0
     total = count_per_subtask * len(evaluator_tasks)
 
-    task_name = "evaluator"
+    task_name = TASK_EVALUATOR
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
@@ -1679,12 +1696,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--task",
-        choices=[
-            "query_parser", "explainer", "evaluator",
-            "evaluator_v2", "query_parser_v2",
-            "evaluator_v3", "query_parser_v3",
-            "all",
-        ],
+        choices=[*_ALL_TASK_NAMES, "all"],
         required=True,
         help="Which task to generate pairs for (use 'all' to run all tasks).",
     )
@@ -1771,6 +1783,10 @@ def main(task: str, *, resume: bool = False) -> None:
                 resume=resume,
             ),
         }
+
+        assert set(_TASK_MAP.keys()) == set(_ALL_TASK_NAMES), (
+            f"_TASK_MAP keys {set(_TASK_MAP)} != _ALL_TASK_NAMES {set(_ALL_TASK_NAMES)}"
+        )
 
         if task == "all":
             tasks_to_run = list(_TASK_MAP.keys())
