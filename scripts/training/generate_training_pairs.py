@@ -107,6 +107,13 @@ _CHECKPOINT_FILE = ".checkpoint.json"
 _DEFAULT_ENTRY: dict = {"last_attempted_idx": -1, "pairs_written": 0, "status": "pending"}
 
 
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write JSON atomically via tmp file + os.replace."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _load_checkpoint(task: str, subtask: str = "_default", *, checkpoint_dir: Path | None = None) -> dict:
     """Load the checkpoint entry for a specific task/subtask.
 
@@ -156,7 +163,6 @@ def _update_checkpoint(
     cp_dir.mkdir(parents=True, exist_ok=True)
     cp_file = cp_dir / _CHECKPOINT_FILE
 
-    # Load existing data
     if cp_file.exists():
         try:
             data: dict = json.loads(cp_file.read_text(encoding="utf-8"))
@@ -165,7 +171,6 @@ def _update_checkpoint(
     else:
         data = {}
 
-    # Merge fields into the entry
     task_data = data.setdefault(task, {})
     entry = dict(task_data.get(subtask, _DEFAULT_ENTRY))
     if last_attempted_idx is not None:
@@ -176,10 +181,7 @@ def _update_checkpoint(
         entry["status"] = status
     task_data[subtask] = entry
 
-    # Atomic write via tmp file + os.replace
-    tmp = cp_file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, cp_file)
+    _atomic_write_json(cp_file, data)
 
 
 def _clear_checkpoint(task: str, *, checkpoint_dir: Path | None = None) -> None:
@@ -201,9 +203,7 @@ def _clear_checkpoint(task: str, *, checkpoint_dir: Path | None = None) -> None:
 
     data.pop(task, None)
 
-    tmp = cp_file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, cp_file)
+    _atomic_write_json(cp_file, data)
 
 
 
@@ -1121,9 +1121,6 @@ def generate_community_framing_pairs(
             if resume and idx <= cp["last_attempted_idx"]:
                 continue
 
-            _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
-                               checkpoint_dir=checkpoint_dir)
-
             question, entities, community_framing = _build_framing_example(idx)
 
             pair = build_community_framing_pair(
@@ -1133,10 +1130,14 @@ def generate_community_framing_pairs(
             _write_pair(fh, pair)
             pair_count += 1
 
+            # Batch checkpoint writes every 50 pairs (no API calls in this generator)
             if pair_count % 50 == 0:
+                _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
+                                   checkpoint_dir=checkpoint_dir)
                 print(f"[query_parser_v3] {pair_count}/{count} pairs", flush=True)
 
-        _update_checkpoint(task_name, subtask, pairs_written=pair_count, status="completed",
+        _update_checkpoint(task_name, subtask, last_attempted_idx=count - 1,
+                           pairs_written=pair_count, status="completed",
                            checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
