@@ -417,7 +417,7 @@ class TestCLIFlags:
         )
         assert result.returncode == 0, result.stderr
 
-    def test_all_task_choices_accepted(self):
+    def test_new_v3_task_choices_accepted(self):
         for task in ["evaluator_v3", "query_parser_v3"]:
             result = subprocess.run(
                 [sys.executable, "-c",
