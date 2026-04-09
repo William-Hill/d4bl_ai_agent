@@ -428,3 +428,77 @@ class TestCLIFlags:
                 capture_output=True, text=True,
             )
             assert result.returncode == 0, f"{task} rejected: {result.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# TestResumeIntegration
+# ---------------------------------------------------------------------------
+
+
+class TestResumeIntegration:
+    def test_community_framing_resume_skips_completed_seeds(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            generate_community_framing_pairs,
+            _update_checkpoint,
+            _load_checkpoint,
+        )
+
+        outfile = tmp_path / "query_parser_v3.jsonl"
+
+        # Generate 10 pairs from scratch
+        pairs_first = generate_community_framing_pairs(
+            conn=None, count=10, outfile=outfile, resume=False,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs_first) == 10
+        first_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert first_line_count == 10
+
+        # Simulate crash at seed 5 by resetting checkpoint
+        _update_checkpoint(
+            "query_parser_v3", "_default",
+            last_attempted_idx=4, pairs_written=5, status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+        # Truncate output to 5 lines
+        lines = outfile.read_text().strip().split("\n")
+        outfile.write_text("\n".join(lines[:5]) + "\n")
+
+        # Resume should generate seeds 5-9
+        pairs_resumed = generate_community_framing_pairs(
+            conn=None, count=10, outfile=outfile, resume=True,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs_resumed) == 5  # only newly generated
+
+        final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert final_line_count == 10  # 5 existing + 5 new
+
+        cp = _load_checkpoint("query_parser_v3", "_default", checkpoint_dir=tmp_path)
+        assert cp["status"] == "completed"
+        assert cp["last_attempted_idx"] == 9
+
+    def test_overwrite_mode_ignores_checkpoint(self, tmp_path):
+        from scripts.training.generate_training_pairs import (
+            generate_community_framing_pairs,
+            _update_checkpoint,
+            _load_checkpoint,
+        )
+
+        outfile = tmp_path / "query_parser_v3.jsonl"
+
+        # Set up stale checkpoint
+        _update_checkpoint(
+            "query_parser_v3", "_default",
+            last_attempted_idx=50, pairs_written=51, status="in_progress",
+            checkpoint_dir=tmp_path,
+        )
+
+        # Overwrite mode ignores checkpoint
+        pairs = generate_community_framing_pairs(
+            conn=None, count=5, outfile=outfile, resume=False,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs) == 5
+        final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert final_line_count == 5

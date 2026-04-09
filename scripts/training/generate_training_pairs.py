@@ -1009,6 +1009,9 @@ def generate_community_framing_pairs(
     conn: Any,
     count: int = COMMUNITY_FRAMING_PAIRS,
     outfile: Path | None = None,
+    *,
+    resume: bool = False,
+    checkpoint_dir: Path | None = None,
 ) -> list[dict]:
     """Generate v3 parser pairs with populated community_framing fields.
 
@@ -1020,24 +1023,35 @@ def generate_community_framing_pairs(
         conn: A live psycopg2 connection (unused but kept for signature parity).
         count: Number of pairs to generate.
         outfile: Optional output path for incremental writes.
+        resume: If True, resume from the last checkpoint.
+        checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
 
     Returns:
         A list of ChatML pair dicts.
     """
-    existing_count = _count_existing_lines(outfile)
-    resume = existing_count > 0
-    if resume:
-        print(f"[query_parser_v3] Resuming — {existing_count} pairs already written", flush=True)
+    task_name = "query_parser_v3"
+    subtask = "_default"
+
+    if not resume:
+        _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+
+    cp = _load_checkpoint(task_name, subtask, checkpoint_dir=checkpoint_dir)
+    if resume and cp["status"] == "completed":
+        print(f"[{task_name}] Already completed — skipping", flush=True)
+        return []
 
     fh = _open_incremental_writer(outfile, resume=resume)
     pairs: list[dict] = []
-    pair_count = existing_count
+    pair_count = cp["pairs_written"] if resume else 0
     data_sources = list(_ALLOWED_SEED_TABLES)
 
     try:
         for idx in range(count):
-            if idx < existing_count:
+            if resume and idx <= cp["last_attempted_idx"]:
                 continue
+
+            _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
+                               checkpoint_dir=checkpoint_dir)
 
             question, entities, community_framing = _build_framing_example(idx)
 
@@ -1050,6 +1064,9 @@ def generate_community_framing_pairs(
 
             if pair_count % 50 == 0:
                 print(f"[query_parser_v3] {pair_count}/{count} pairs", flush=True)
+
+        _update_checkpoint(task_name, subtask, pairs_written=pair_count, status="completed",
+                           checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
             fh.close()
@@ -1305,7 +1322,12 @@ def _load_seed_rows(conn: Any, limit: int = 200) -> list[dict]:
 
 
 def generate_query_parser_pairs(
-    conn: Any, count: int = PAIRS_PER_TASK, outfile: Path | None = None,
+    conn: Any,
+    count: int = PAIRS_PER_TASK,
+    outfile: Path | None = None,
+    *,
+    resume: bool = False,
+    checkpoint_dir: Path | None = None,
 ) -> list[dict]:
     """Generate query parser training pairs via Claude distillation.
 
@@ -1317,29 +1339,40 @@ def generate_query_parser_pairs(
         count: Number of training pairs to generate.
         outfile: If provided, pairs are appended incrementally so partial
             progress survives interruption.
+        resume: If True, resume from the last checkpoint.
+        checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
 
     Returns:
         A list of ChatML pair dicts.
     """
+    task_name = "query_parser"
+    subtask = "_default"
+
+    if not resume:
+        _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+
+    cp = _load_checkpoint(task_name, subtask, checkpoint_dir=checkpoint_dir)
+    if resume and cp["status"] == "completed":
+        print(f"[{task_name}] Already completed — skipping", flush=True)
+        return []
+
     seed_rows = _load_seed_rows(conn)
     questions = generate_query_parser_questions(seed_rows, count=count)
 
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    # Resume support
-    existing_count = _count_existing_lines(outfile)
-    resume = existing_count > 0
-    if resume:
-        print(f"[query_parser] Resuming — {existing_count} pairs already written", flush=True)
-
     fh = _open_incremental_writer(outfile, resume=resume)
-    pair_count = existing_count
+    pair_count = cp["pairs_written"] if resume else 0
 
     try:
         for idx, q in enumerate(questions):
-            if idx < existing_count:
+            if resume and idx <= cp["last_attempted_idx"]:
                 continue
+
+            _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
+                               checkpoint_dir=checkpoint_dir)
+
             if idx > 0 and idx % 25 == 0:
                 time.sleep(1)
             teacher_prompt = build_query_parser_prompt(
@@ -1365,6 +1398,9 @@ def generate_query_parser_pairs(
             _write_pair(fh, pair)
             pair_count += 1
             print(f"[query_parser] {pair_count}/{count} pairs generated", flush=True)
+
+        _update_checkpoint(task_name, subtask, pairs_written=pair_count, status="completed",
+                           checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
             fh.close()
@@ -1374,7 +1410,12 @@ def generate_query_parser_pairs(
 
 
 def generate_explainer_pairs(
-    conn: Any, count: int = PAIRS_PER_TASK, outfile: Path | None = None,
+    conn: Any,
+    count: int = PAIRS_PER_TASK,
+    outfile: Path | None = None,
+    *,
+    resume: bool = False,
+    checkpoint_dir: Path | None = None,
 ) -> list[dict]:
     """Generate explainer training pairs via Claude distillation.
 
@@ -1386,27 +1427,38 @@ def generate_explainer_pairs(
         count: Number of training pairs to generate.
         outfile: If provided, pairs are appended incrementally so partial
             progress survives interruption.
+        resume: If True, resume from the last checkpoint.
+        checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
 
     Returns:
         A list of ChatML pair dicts.
     """
+    task_name = "explainer"
+    subtask = "_default"
+
+    if not resume:
+        _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+
+    cp = _load_checkpoint(task_name, subtask, checkpoint_dir=checkpoint_dir)
+    if resume and cp["status"] == "completed":
+        print(f"[{task_name}] Already completed — skipping", flush=True)
+        return []
+
     seed_rows = _load_seed_rows(conn)
     registers_cycle = list(REGISTERS)
     pairs: list[dict] = []
 
-    # Resume support
-    existing_count = _count_existing_lines(outfile)
-    resume = existing_count > 0
-    if resume:
-        print(f"[explainer] Resuming — {existing_count} pairs already written", flush=True)
-
     fh = _open_incremental_writer(outfile, resume=resume)
-    pair_count = existing_count
+    pair_count = cp["pairs_written"] if resume else 0
 
     try:
         for idx in range(count):
-            if idx < existing_count:
+            if resume and idx <= cp["last_attempted_idx"]:
                 continue
+
+            _update_checkpoint(task_name, subtask, last_attempted_idx=idx, status="in_progress",
+                               checkpoint_dir=checkpoint_dir)
+
             if idx > 0 and idx % 25 == 0:
                 time.sleep(1)
             row = seed_rows[idx % len(seed_rows)]
@@ -1431,6 +1483,9 @@ def generate_explainer_pairs(
             _write_pair(fh, pair)
             pair_count += 1
             print(f"[explainer] {pair_count}/{count} pairs generated", flush=True)
+
+        _update_checkpoint(task_name, subtask, pairs_written=pair_count, status="completed",
+                           checkpoint_dir=checkpoint_dir)
     finally:
         if fh is not None:
             fh.close()
