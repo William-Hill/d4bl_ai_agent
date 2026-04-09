@@ -371,7 +371,7 @@ class TestCheckpointHelpers:
             "standard",
             last_attempted_idx=1,
             pairs_written=1,
-            status="done",
+            status="completed",
             checkpoint_dir=tmp_path,
         )
         cp_file = tmp_path / ".checkpoint.json"
@@ -443,24 +443,32 @@ class TestResumeIntegration:
             generate_community_framing_pairs,
         )
 
-        outfile = tmp_path / "query_parser_v3.jsonl"
+        # Baseline: generate a full fresh run in its own directory
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        baseline_outfile = baseline_dir / "query_parser_v3.jsonl"
+        baseline_pairs = generate_community_framing_pairs(
+            conn=None, count=10, outfile=baseline_outfile, resume=False,
+            checkpoint_dir=baseline_dir,
+        )
+        assert len(baseline_pairs) == 10
+        baseline_lines = baseline_outfile.read_text().strip().split("\n")
+        assert len(baseline_lines) == 10
 
-        # Generate 10 pairs from scratch
+        # Fresh run in resume-test directory, then simulate crash at seed 5
+        outfile = tmp_path / "query_parser_v3.jsonl"
         pairs_first = generate_community_framing_pairs(
             conn=None, count=10, outfile=outfile, resume=False,
             checkpoint_dir=tmp_path,
         )
         assert len(pairs_first) == 10
-        first_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
-        assert first_line_count == 10
 
-        # Simulate crash at seed 5 by resetting checkpoint
+        # Simulate crash at seed 5 by resetting checkpoint and truncating output
         _update_checkpoint(
             "query_parser_v3", "_default",
             last_attempted_idx=4, pairs_written=5, status="in_progress",
             checkpoint_dir=tmp_path,
         )
-        # Truncate output to 5 lines
         lines = outfile.read_text().strip().split("\n")
         outfile.write_text("\n".join(lines[:5]) + "\n")
 
@@ -471,8 +479,12 @@ class TestResumeIntegration:
         )
         assert len(pairs_resumed) == 5  # only newly generated
 
-        final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
-        assert final_line_count == 10  # 5 existing + 5 new
+        # Final file content must exactly match the baseline (no duplicates, no skips)
+        final_lines = outfile.read_text().strip().split("\n")
+        assert final_lines == baseline_lines, (
+            "Resumed file content does not match fresh baseline — "
+            "resume logic may be duplicating or skipping seeds"
+        )
 
         cp = _load_checkpoint("query_parser_v3", "_default", checkpoint_dir=tmp_path)
         assert cp["status"] == "completed"
@@ -501,3 +513,35 @@ class TestResumeIntegration:
         assert len(pairs) == 5
         final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
         assert final_line_count == 5
+
+    def test_resume_with_missing_checkpoint_truncates_stale_output(self, tmp_path):
+        """If checkpoint is externally deleted but output exists, --resume must not append duplicates."""
+        from scripts.training.generate_training_pairs import (
+            _CHECKPOINT_FILE,
+            generate_community_framing_pairs,
+        )
+
+        outfile = tmp_path / "query_parser_v3.jsonl"
+
+        # Create a stale output file (e.g. from a prior run)
+        generate_community_framing_pairs(
+            conn=None, count=5, outfile=outfile, resume=False,
+            checkpoint_dir=tmp_path,
+        )
+        stale_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert stale_line_count == 5
+
+        # Simulate external deletion of the checkpoint
+        (tmp_path / _CHECKPOINT_FILE).unlink()
+
+        # --resume with no checkpoint should start fresh, not append duplicates
+        pairs = generate_community_framing_pairs(
+            conn=None, count=5, outfile=outfile, resume=True,
+            checkpoint_dir=tmp_path,
+        )
+        assert len(pairs) == 5
+        final_line_count = sum(1 for line in outfile.read_text().strip().split("\n") if line.strip())
+        assert final_line_count == 5, (
+            f"Expected 5 pairs after fresh restart, got {final_line_count} — "
+            f"output was appended to instead of truncated"
+        )

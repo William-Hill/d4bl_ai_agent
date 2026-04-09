@@ -643,16 +643,20 @@ def generate_evaluator_pairs_v2(
     call_count = 0
 
     task_name = TASK_EVALUATOR_V2
+    subtasks = ["hallucination", "relevance", "bias", "equity_framing"]
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
 
-    fh = _open_incremental_writer(outfile, resume=resume)
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    subtask_cps = {st: _load_checkpoint(task_name, st, checkpoint_dir=checkpoint_dir) for st in subtasks}
+    effective_resume = resume and any(cp["last_attempted_idx"] >= 0 for cp in subtask_cps.values())
+
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = 0
-    if resume:
-        for st in ["hallucination", "relevance", "bias", "equity_framing"]:
-            st_cp = _load_checkpoint(task_name, st, checkpoint_dir=checkpoint_dir)
-            pair_count += st_cp["pairs_written"]
+    if effective_resume:
+        for cp in subtask_cps.values():
+            pair_count += cp["pairs_written"]
 
     try:
         # --- Hallucination subtask: perturbation pipeline ---
@@ -848,12 +852,15 @@ def generate_query_parser_pairs_v2(
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
 
-    fh = _open_incremental_writer(outfile, resume=resume)
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    entity_cps = {et: _load_checkpoint(task_name, et, checkpoint_dir=checkpoint_dir) for et in type_counts}
+    effective_resume = resume and any(cp["last_attempted_idx"] >= 0 for cp in entity_cps.values())
+
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = 0
-    if resume:
-        for et in type_counts:
-            et_cp = _load_checkpoint(task_name, et, checkpoint_dir=checkpoint_dir)
-            pair_count += et_cp["pairs_written"]
+    if effective_resume:
+        for cp in entity_cps.values():
+            pair_count += cp["pairs_written"]
 
     try:
         for entity_type, type_count in type_counts.items():
@@ -970,9 +977,11 @@ def generate_doc_hallucination_pairs(
         print(f"[{task_name}] Already completed — skipping", flush=True)
         return []
 
-    fh = _open_incremental_writer(outfile, resume=resume)
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    effective_resume = resume and cp["last_attempted_idx"] >= 0
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
     pairs: list[dict] = []
-    pair_count = cp["pairs_written"] if resume else 0
+    pair_count = cp["pairs_written"] if effective_resume else 0
     perturbation_types = list(PERTURBATION_TYPES)
 
     try:
@@ -1128,9 +1137,11 @@ def generate_community_framing_pairs(
         print(f"[{task_name}] Already completed — skipping", flush=True)
         return []
 
-    fh = _open_incremental_writer(outfile, resume=resume)
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    effective_resume = resume and cp["last_attempted_idx"] >= 0
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
     pairs: list[dict] = []
-    pair_count = cp["pairs_written"] if resume else 0
+    pair_count = cp["pairs_written"] if effective_resume else 0
     data_sources = list(_ALLOWED_SEED_TABLES)
 
     try:
@@ -1450,8 +1461,10 @@ def generate_query_parser_pairs(
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
-    fh = _open_incremental_writer(outfile, resume=resume)
-    pair_count = cp["pairs_written"] if resume else 0
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    effective_resume = resume and cp["last_attempted_idx"] >= 0
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
+    pair_count = cp["pairs_written"] if effective_resume else 0
 
     try:
         for idx, q in enumerate(questions):
@@ -1536,8 +1549,10 @@ def generate_explainer_pairs(
     registers_cycle = list(REGISTERS)
     pairs: list[dict] = []
 
-    fh = _open_incremental_writer(outfile, resume=resume)
-    pair_count = cp["pairs_written"] if resume else 0
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    effective_resume = resume and cp["last_attempted_idx"] >= 0
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
+    pair_count = cp["pairs_written"] if effective_resume else 0
 
     try:
         for idx in range(count):
@@ -1617,12 +1632,15 @@ def generate_evaluator_pairs(
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
 
-    fh = _open_incremental_writer(outfile, resume=resume)
+    # Guard against stale output when checkpoint is missing/empty but resume=True
+    subtask_cps = {st: _load_checkpoint(task_name, st, checkpoint_dir=checkpoint_dir) for st in evaluator_tasks}
+    effective_resume = resume and any(cp["last_attempted_idx"] >= 0 for cp in subtask_cps.values())
+
+    fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = 0
-    if resume:
-        for st in evaluator_tasks:
-            st_cp = _load_checkpoint(task_name, st, checkpoint_dir=checkpoint_dir)
-            pair_count += st_cp["pairs_written"]
+    if effective_resume:
+        for cp in subtask_cps.values():
+            pair_count += cp["pairs_written"]
 
     try:
         for task_idx, task in enumerate(evaluator_tasks):
