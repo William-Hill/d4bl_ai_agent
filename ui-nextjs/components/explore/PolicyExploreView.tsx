@@ -176,6 +176,7 @@ export default function PolicyExploreView() {
             <div className="text-xs font-mono text-gray-600 flex items-center gap-3">
               {allBills.length >= API_BILL_LIMIT && (
                 <span
+                  aria-label={`Showing newest ${API_BILL_LIMIT} bills. Response hit the ${API_BILL_LIMIT}-bill cap; per-state counts may be incomplete for dormant bills.`}
                   title={`Response hit the ${API_BILL_LIMIT}-bill cap; per-state counts may be incomplete for dormant bills.`}
                   className="text-amber-400/80"
                 >
