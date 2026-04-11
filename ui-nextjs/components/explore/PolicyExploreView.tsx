@@ -17,6 +17,7 @@ import { useAuthHeaders } from '@/hooks/useAuthHeaders';
 const ACCENT = '#00ff32';
 const FEED_LIMIT = 50;
 const STAGGER_COUNT = 5;
+const API_BILL_LIMIT = 5000;
 
 export default function PolicyExploreView() {
   const { session, getHeaders } = useAuthHeaders();
@@ -32,14 +33,21 @@ export default function PolicyExploreView() {
 
   const fetchBills = useCallback(
     async (signal: AbortSignal) => {
-      if (!session?.access_token) return;
+      // Clear loading + cached bills on missing auth so the component can't
+      // get stuck at loading=true if a previous fetch was aborted during an
+      // auth change (the aborted finally block skips setLoading(false)).
+      if (!session?.access_token) {
+        setLoading(false);
+        setAllBills(null);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/explore/policies?limit=5000`, {
-          signal,
-          headers: getHeaders(),
-        });
+        const res = await fetch(
+          `${API_BASE}/api/explore/policies?limit=${API_BILL_LIMIT}`,
+          { signal, headers: getHeaders() },
+        );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as PolicyBill[];
         setAllBills(data);
@@ -126,7 +134,11 @@ export default function PolicyExploreView() {
   return (
     <div>
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-900/30 border border-red-800 rounded text-red-300 text-sm">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mb-4 px-4 py-3 bg-red-900/30 border border-red-800 rounded text-red-300 text-sm"
+        >
           Error loading bills: {error}
         </div>
       )}
@@ -161,8 +173,18 @@ export default function PolicyExploreView() {
             {feedHeader ?? 'activity feed'}
           </div>
           {allBills && (
-            <div className="text-xs font-mono text-gray-600">
-              showing {filteredBills.length} of {matchingBills.length}
+            <div className="text-xs font-mono text-gray-600 flex items-center gap-3">
+              {allBills.length >= API_BILL_LIMIT && (
+                <span
+                  title={`Response hit the ${API_BILL_LIMIT}-bill cap; per-state counts may be incomplete for dormant bills.`}
+                  className="text-amber-400/80"
+                >
+                  showing newest {API_BILL_LIMIT}
+                </span>
+              )}
+              <span>
+                showing {filteredBills.length} of {matchingBills.length}
+              </span>
             </div>
           )}
         </header>
