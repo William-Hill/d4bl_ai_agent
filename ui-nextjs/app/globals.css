@@ -105,3 +105,25 @@ button {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+
+/* Policy Bills feed: stagger-fade entrance for BillFeedRow. */
+@keyframes billFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bill-fade-in {
+  animation: billFadeIn 360ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bill-fade-in {
+    animation: none !important;
+  }
+}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { PolicyBill } from '@/lib/types';
+import { POLICY_TOPICS } from '@/lib/explore-config';
 
 interface Props {
   bills: PolicyBill[];
@@ -14,16 +15,6 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'bg-red-900 text-red-300',
   other: 'bg-[#333] text-gray-400',
 };
-
-const ALL_TOPICS = [
-  'housing',
-  'wealth',
-  'education',
-  'criminal justice',
-  'voting rights',
-  'economic development',
-  'health care',
-];
 
 export default function PolicyTable({ bills }: Props) {
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
@@ -46,7 +37,7 @@ export default function PolicyTable({ bills }: Props) {
         >
           All
         </button>
-        {ALL_TOPICS.map((topic) => (
+        {POLICY_TOPICS.map((topic) => (
           <button
             key={topic}
             onClick={() => setActiveTopic(activeTopic === topic ? null : topic)}

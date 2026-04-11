@@ -1,4 +1,4 @@
-import { ExploreRow, IndicatorRow } from './types';
+import { ExploreRow, IndicatorRow, PolicyBill } from './types';
 
 /** 2-digit FIPS code → 2-letter state abbreviation for API filtering */
 export const FIPS_TO_ABBREV: Record<string, string> = {
@@ -11,6 +11,11 @@ export const FIPS_TO_ABBREV: Record<string, string> = {
   '47': 'TN', '48': 'TX', '49': 'UT', '50': 'VT', '51': 'VA', '53': 'WA', '54': 'WV',
   '55': 'WI', '56': 'WY',
 };
+
+/** 2-letter state abbreviation → 2-digit FIPS code. Inverse of FIPS_TO_ABBREV. */
+export const ABBREV_TO_FIPS: Record<string, string> = Object.fromEntries(
+  Object.entries(FIPS_TO_ABBREV).map(([fips, abbrev]) => [abbrev, fips]),
+);
 
 /** Convert an ExploreRow to the IndicatorRow shape expected by map / chart components. */
 export function toIndicatorRow(r: ExploreRow): IndicatorRow {
@@ -36,6 +41,140 @@ export function collapseToLatestYear(rows: ExploreRow[]): ExploreRow[] {
     if (!prev || row.year > prev.year) byKey.set(key, row);
   }
   return [...byKey.values()];
+}
+
+/** Aggregate bills by state, computing count and the most recent last_action_date per state. */
+export interface StateBillAggregate {
+  state: string;
+  state_name: string;
+  fips_code: string;
+  bill_count: number;
+  last_action_date: string | null;
+}
+
+export function aggregateBillsByState(bills: PolicyBill[]): StateBillAggregate[] {
+  const byAbbrev = new Map<string, StateBillAggregate>();
+  for (const bill of bills) {
+    const fips = ABBREV_TO_FIPS[bill.state];
+    if (!fips) continue; // skip territories / unknown abbrevs
+    const existing = byAbbrev.get(bill.state);
+    if (existing) {
+      existing.bill_count += 1;
+      if (
+        bill.last_action_date &&
+        (!existing.last_action_date || bill.last_action_date > existing.last_action_date)
+      ) {
+        existing.last_action_date = bill.last_action_date;
+      }
+    } else {
+      byAbbrev.set(bill.state, {
+        state: bill.state,
+        state_name: bill.state_name,
+        fips_code: fips,
+        bill_count: 1,
+        last_action_date: bill.last_action_date,
+      });
+    }
+  }
+  return [...byAbbrev.values()];
+}
+
+/** Number of whole days between an ISO date string and now. Returns null for missing input. */
+export function daysSinceLastAction(isoDate: string | null, now: Date = new Date()): number | null {
+  if (!isoDate) return null;
+  const then = new Date(isoDate);
+  if (Number.isNaN(then.getTime())) return null;
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.max(0, Math.floor((now.getTime() - then.getTime()) / msPerDay));
+}
+
+/** Convert a StateBillAggregate into the IndicatorRow shape StateMap consumes.
+ *  The `value` is recency expressed as a "heat score": recent activity = high,
+ *  dormant = low. We invert daysSinceLastAction so that hotter states map to the
+ *  higher end of StateMap's accent gradient. States with no last_action_date get 0.
+ */
+export function billAggregateToIndicatorRow(agg: StateBillAggregate): IndicatorRow {
+  const days = daysSinceLastAction(agg.last_action_date);
+  // Cap at 365 days: anything older than a year looks equally cold.
+  const cappedDays = days == null ? 365 : Math.min(days, 365);
+  const heat = 365 - cappedDays; // 365 = today, 0 = a year+ old or missing
+  return {
+    fips_code: agg.fips_code,
+    geography_name: agg.state_name,
+    state_fips: agg.fips_code,
+    geography_type: 'state',
+    year: new Date().getFullYear(),
+    race: 'total',
+    metric: 'bill_activity_heat',
+    value: heat,
+    margin_of_error: null,
+  };
+}
+
+/** The canonical set of bill statuses emitted by scripts/ingestion/ingest_openstates.py. */
+export const BILL_STATUSES = ['introduced', 'passed', 'signed', 'failed', 'other'] as const;
+export type BillStatus = typeof BILL_STATUSES[number];
+
+/** Topics the ingestion script tags bills with. Shared by PolicyTable and PolicyFilterPanel. */
+export const POLICY_TOPICS = [
+  'housing',
+  'wealth',
+  'education',
+  'criminal justice',
+  'voting rights',
+  'economic development',
+  'health care',
+] as const;
+export type PolicyTopic = typeof POLICY_TOPICS[number];
+
+/** Visual "phase" a bill occupies in the legislative lifecycle, used by PhaseGlyph. */
+export interface BillPhase {
+  /** Number of filled segments out of PHASE_GLYPH_SEGMENTS. */
+  segments: number;
+  /** Visual tone: 'active' for in-progress, 'signed' for law, 'failed' for dead, 'dormant' for unknown. */
+  tone: 'active' | 'signed' | 'failed' | 'dormant';
+  /** Human-readable label for tooltips / aria. */
+  label: string;
+}
+
+export const PHASE_GLYPH_SEGMENTS = 4;
+
+/** Map a bill's raw status string to its visual phase.
+ *
+ *  The ingestion pipeline collapses OpenStates statuses into these five values,
+ *  so this mapping is the single source of truth for how the lifecycle is
+ *  visualized in the Policy Bills tab. Returns a BillPhase with segment count
+ *  and visual tone.
+ */
+export function statusToPhase(status: string | null | undefined): BillPhase {
+  const normalized = (status ?? '').toLowerCase().trim();
+  switch (normalized) {
+    case 'introduced':
+      return { segments: 1, tone: 'active', label: 'introduced' };
+    case 'passed':
+      return { segments: 3, tone: 'active', label: 'passed chamber' };
+    case 'signed':
+      return { segments: 4, tone: 'signed', label: 'signed into law' };
+    case 'failed':
+      return { segments: 1, tone: 'failed', label: 'failed or vetoed' };
+    default:
+      return { segments: 0, tone: 'dormant', label: 'status unknown' };
+  }
+}
+
+/** Humanize a days-ago count into a compact relative string: "2d ago", "3w ago", "march 14". */
+export function formatRelativeDate(isoDate: string | null, now: Date = new Date()): string {
+  const days = daysSinceLastAction(isoDate, now);
+  if (days == null) return 'no recent action';
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  // Older than a month: show the actual date in a minimal form.
+  const d = new Date(isoDate as string);
+  return d
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    .toLowerCase();
 }
 
 export interface DataSourceConfig {
@@ -194,6 +333,22 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     primaryFilterLabel: "Metric",
     description: "State and federal incarceration statistics from the Bureau of Justice Statistics, disaggregated by race and gender.",
     sourceUrl: "https://bjs.ojp.gov/",
+    hasData: true,
+  },
+  // PolicyExploreView renders on this tab; page.tsx short-circuits metric
+  // fetch/layout when key === 'policy', so the metric-shaped fields below
+  // are unused placeholders. Widen DataSourceConfig to a discriminated union
+  // if a second non-metric source lands.
+  {
+    key: "policy",
+    label: "Policy Bills",
+    accent: "#00ff32",
+    endpoint: "/api/explore/policies",
+    hasRace: false,
+    primaryFilterKey: "status",
+    primaryFilterLabel: "Status",
+    description: "State-level legislative bill tracking from OpenStates, with status and topic tags across housing, criminal justice, voting rights, and more.",
+    sourceUrl: "https://openstates.org/",
     hasData: true,
   },
 ];

@@ -8,6 +8,7 @@ import DataSourceTabs from '@/components/explore/DataSourceTabs';
 import EmptyDataState from '@/components/explore/EmptyDataState';
 import StateVsNationalChart from '@/components/explore/StateVsNationalChart';
 import PolicyBadge from '@/components/explore/PolicyBadge';
+import PolicyExploreView from '@/components/explore/PolicyExploreView';
 import StateAnnotation from '@/components/explore/StateAnnotation';
 import ExplainPanel from '@/components/explore/ExplainPanel';
 import ExploreQueryBar from '@/components/explore/ExploreQueryBar';
@@ -135,6 +136,13 @@ export default function ExplorePage() {
   /** Unified data fetching for all sources. */
   const fetchData = useCallback(async (signal: AbortSignal) => {
     if (!session?.access_token) return;
+    // Policy tab owns its own bills fetch in PolicyExploreView — skip the
+    // metric-oriented fetch entirely so we don't hit a metric endpoint that
+    // doesn't exist for 'policy'.
+    if (activeSource.key === 'policy') {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -285,12 +293,16 @@ export default function ExplorePage() {
           </div>
         </div>
 
-        {error && (
+        {error && activeSource.key !== 'policy' && (
           <div className="mb-4 px-4 py-3 bg-red-900/30 border border-red-800 rounded text-red-300 text-sm">
             Error loading data: {error}
           </div>
         )}
 
+        {activeSource.key === 'policy' ? (
+          <PolicyExploreView />
+        ) : (
+          <>
         {/* Map + Filters */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 mb-6">
           <div>
@@ -439,6 +451,8 @@ export default function ExplorePage() {
             year={resolvedYear}
             accent={activeSource.accent}
           />
+        )}
+          </>
         )}
       </div>
     </div>
