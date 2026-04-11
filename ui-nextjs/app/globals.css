@@ -107,7 +107,7 @@ button {
 }
 
 /* Policy Bills feed: stagger-fade entrance for BillFeedRow. */
-@keyframes billFadeIn {
+@keyframes bill-fade-in {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -119,7 +119,7 @@ button {
 }
 
 .bill-fade-in {
-  animation: billFadeIn 360ms ease-out both;
+  animation: bill-fade-in 360ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {

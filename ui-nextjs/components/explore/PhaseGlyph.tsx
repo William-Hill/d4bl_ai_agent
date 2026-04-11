@@ -43,7 +43,7 @@ export default function PhaseGlyph({ status, phase, pulse = false }: Props) {
             aria-hidden="true"
             className={
               pulse && isLastFilled
-                ? 'inline-block w-2 h-2.5 rounded-[1px] animate-pulse'
+                ? 'inline-block w-2 h-2.5 rounded-[1px] animate-pulse motion-reduce:animate-none'
                 : 'inline-block w-2 h-2.5 rounded-[1px]'
             }
             style={{

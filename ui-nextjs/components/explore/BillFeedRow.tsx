@@ -68,6 +68,7 @@ export default function BillFeedRow({ bill, pulse = false, staggerIndex }: Props
           href={bill.url}
           target="_blank"
           rel="noopener noreferrer"
+          aria-label={`View ${bill.bill_number}: ${bill.title}`}
           className="shrink-0 self-center text-xs font-mono text-[#00ff32] hover:underline whitespace-nowrap"
         >
           view →

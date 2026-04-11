@@ -95,8 +95,13 @@ export default function PolicyExploreView() {
     return result.slice(0, FEED_LIMIT);
   }, [allBills, filters]);
 
-  const stateNameByFips: Record<string, string> = {};
-  for (const agg of stateAggregates) stateNameByFips[agg.fips_code] = agg.state_name;
+  // Memoized so a stable object reference is passed to PolicyFilterPanel —
+  // otherwise the filter rail re-renders on every parent render.
+  const stateNameByFips = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const agg of stateAggregates) out[agg.fips_code] = agg.state_name;
+    return out;
+  }, [stateAggregates]);
 
   const selectedAggregate = filters.stateFips
     ? stateAggregates.find((s) => s.fips_code === filters.stateFips)
@@ -158,18 +163,18 @@ export default function PolicyExploreView() {
         </header>
 
         <div className="px-5">
-          {!allBills && !loading ? null : filteredBills.length === 0 ? (
+          {!allBills ? null : filteredBills.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-gray-500 font-mono text-xs">
                 {filters.stateFips || filters.statuses.size || filters.topics.size
                   ? '// no bills match current filters'
-                  : '// select a state to begin monitoring'}
+                  : '// no bills found'}
               </p>
             </div>
           ) : (
             filteredBills.map((bill, i) => (
               <BillFeedRow
-                key={`${bill.state}-${bill.bill_number}`}
+                key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
                 bill={bill}
                 pulse={i === 0}
                 staggerIndex={i < STAGGER_COUNT ? i : undefined}
