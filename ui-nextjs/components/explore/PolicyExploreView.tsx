@@ -69,7 +69,7 @@ export default function PolicyExploreView() {
     [stateAggregates],
   );
 
-  const filteredBills = useMemo(() => {
+  const matchingBills = useMemo(() => {
     if (!allBills) return [];
     const stateAbbrev = filters.stateFips ? FIPS_TO_ABBREV[filters.stateFips] : null;
     const result = allBills.filter((bill) => {
@@ -92,8 +92,13 @@ export default function PolicyExploreView() {
       const bv = b.last_action_date ?? '';
       return bv.localeCompare(av);
     });
-    return result.slice(0, FEED_LIMIT);
+    return result;
   }, [allBills, filters]);
+
+  const filteredBills = useMemo(
+    () => matchingBills.slice(0, FEED_LIMIT),
+    [matchingBills],
+  );
 
   // Memoized so a stable object reference is passed to PolicyFilterPanel —
   // otherwise the filter rail re-renders on every parent render.
@@ -157,7 +162,7 @@ export default function PolicyExploreView() {
           </div>
           {allBills && (
             <div className="text-xs font-mono text-gray-600">
-              showing {filteredBills.length} of {allBills.length}
+              showing {filteredBills.length} of {matchingBills.length}
             </div>
           )}
         </header>
