@@ -1865,6 +1865,10 @@ async def get_policies(
         if topic is not None:
             # JSON array containment: cast topic_tags to text and use LIKE
             query = query.where(PolicyBill.topic_tags.cast(String).contains(topic))
+        # Order by recency so the client-side `limit` slice is actually the
+        # newest N, not an arbitrary subset. NULLS LAST keeps bills with no
+        # last_action_date from dominating the top of the feed.
+        query = query.order_by(PolicyBill.last_action_date.desc().nullslast())
         query = query.limit(max(1, min(limit, 5000)))
         result = await db.execute(query)
         rows = result.scalars().all()

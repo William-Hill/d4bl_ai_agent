@@ -3,7 +3,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Enable standalone output for Docker
   output: 'standalone',
-  
+
+  // Use system TLS certificates for font fetching
+  experimental: {
+    turbopackUseSystemTlsCerts: true,
+  },
+
   // Proxy API requests to FastAPI backend
   // Note: WebSocket connections must connect directly to the backend
   // (Next.js rewrites don't support ws:// or wss:// protocols)
