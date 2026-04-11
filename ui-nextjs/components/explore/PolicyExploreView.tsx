@@ -39,6 +39,7 @@ export default function PolicyExploreView() {
       if (!session?.access_token) {
         setLoading(false);
         setAllBills(null);
+        setError(null);
         return;
       }
       setLoading(true);
