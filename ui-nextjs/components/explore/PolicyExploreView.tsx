@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StateMap from './StateMap';
 import PolicyFilterPanel, { PolicyFilters } from './PolicyFilterPanel';
 import BillFeedRow from './BillFeedRow';
@@ -30,6 +30,30 @@ export default function PolicyExploreView() {
     statuses: new Set(),
     topics: new Set(),
   });
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcut: "/" focuses search (skip if already typing in an input).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const fetchBills = useCallback(
     async (signal: AbortSignal) => {
@@ -81,6 +105,7 @@ export default function PolicyExploreView() {
   const matchingBills = useMemo(() => {
     if (!allBills) return [];
     const stateAbbrev = filters.stateFips ? FIPS_TO_ABBREV[filters.stateFips] : null;
+    const q = searchQuery.trim().toLowerCase();
     const result = allBills.filter((bill) => {
       if (stateAbbrev && bill.state !== stateAbbrev) return false;
       if (filters.statuses.size > 0 && !(filters.statuses as Set<string>).has(bill.status)) {
@@ -94,6 +119,18 @@ export default function PolicyExploreView() {
           return false;
         }
       }
+      if (q) {
+        const haystack = [
+          bill.title,
+          bill.bill_number,
+          bill.summary ?? '',
+          bill.state,
+          bill.state_name,
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
     result.sort((a, b) => {
@@ -102,7 +139,7 @@ export default function PolicyExploreView() {
       return bv.localeCompare(av);
     });
     return result;
-  }, [allBills, filters]);
+  }, [allBills, filters, searchQuery]);
 
   const filteredBills = useMemo(
     () => matchingBills.slice(0, FEED_LIMIT),
@@ -173,6 +210,61 @@ export default function PolicyExploreView() {
           <div className="text-xs font-mono uppercase tracking-wider text-gray-400">
             {feedHeader ?? 'activity feed'}
           </div>
+          <div className="relative flex-1 min-w-[220px] max-w-md group/search">
+            <span
+              aria-hidden="true"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00ff32]/70 font-mono text-xs select-none pointer-events-none"
+            >
+              &gt;
+            </span>
+            <input
+              ref={searchRef}
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && searchQuery) {
+                  e.preventDefault();
+                  setSearchQuery('');
+                }
+              }}
+              placeholder={
+                allBills
+                  ? `filter ${allBills.length.toLocaleString()} dispatches…`
+                  : 'filter dispatches…'
+              }
+              aria-label="Search bills"
+              className="w-full pl-7 pr-16 py-1.5 text-xs font-mono bg-[#0f0f0f] border border-[#2a2a2a] rounded
+                         text-gray-100 placeholder:text-gray-600 caret-[#00ff32]
+                         focus:outline-none focus:border-[#00ff32]/60 focus:bg-black"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  searchRef.current?.focus();
+                }}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded
+                           text-[10px] font-mono uppercase tracking-wider
+                           text-gray-500 hover:text-[#00ff32] hover:bg-[#00ff32]/10
+                           border border-[#2a2a2a] hover:border-[#00ff32]/50 transition-colors"
+              >
+                esc
+              </button>
+            ) : (
+              <kbd
+                aria-hidden="true"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded
+                           text-[10px] font-mono uppercase tracking-wider
+                           text-gray-600 border border-[#2a2a2a]
+                           group-focus-within/search:opacity-0 transition-opacity pointer-events-none"
+              >
+                /
+              </kbd>
+            )}
+          </div>
           {allBills && (
             <div className="text-xs font-mono text-gray-600 flex items-center gap-3">
               {allBills.length >= API_BILL_LIMIT && (
@@ -195,7 +287,7 @@ export default function PolicyExploreView() {
           {!allBills ? null : filteredBills.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-gray-500 font-mono text-xs">
-                {filters.stateFips || filters.statuses.size || filters.topics.size
+                {filters.stateFips || filters.statuses.size || filters.topics.size || searchQuery.trim()
                   ? '// no bills match current filters'
                   : '// no bills found'}
               </p>
@@ -207,6 +299,7 @@ export default function PolicyExploreView() {
                 bill={bill}
                 pulse={i === 0}
                 staggerIndex={i < STAGGER_COUNT ? i : undefined}
+                hideDateline={filters.stateFips !== null}
               />
             ))
           )}
