@@ -29,9 +29,6 @@ export default function BillFeedRow({
       }`}
       style={shouldStagger ? { animationDelay: `${staggerIndex! * 40}ms` } : undefined}
     >
-      {/* DATELINE STAMP — the unmistakable "where this came from" block.
-          Rendered as a small press-stamp with the 2-letter state monogram,
-          a tiny accent tick, and a hairline border. */}
       {!hideDateline && (
         <div
           title={bill.state_name}
@@ -87,7 +84,6 @@ export default function BillFeedRow({
           )}
         </div>
 
-        {/* Title — the star of the row. Promoted in size, weight, and color. */}
         <p className="text-[15px] font-medium text-gray-100 leading-snug mb-1.5 line-clamp-2">
           {bill.title}
         </p>

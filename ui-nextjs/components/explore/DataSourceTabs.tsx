@@ -10,6 +10,41 @@ interface Props {
 
 const SCROLL_STEP = 240;
 
+const CHEVRON_POSITION: Record<'left' | 'right', string> = {
+  left: 'left-0',
+  right: 'right-0',
+};
+const FADE_GRADIENT: Record<'left' | 'right', string> = {
+  left: 'left-0 bg-gradient-to-r',
+  right: 'right-0 bg-gradient-to-l',
+};
+
+function ScrollChevron({ direction, onClick }: { direction: 'left' | 'right'; onClick: () => void }) {
+  const points = direction === 'left' ? '15 18 9 12 15 6' : '9 18 15 12 9 6';
+  return (
+    <>
+      <div
+        aria-hidden
+        className={`pointer-events-none absolute ${FADE_GRADIENT[direction]} top-0 bottom-2 w-12 z-10 from-[#1a1a1a] to-transparent`}
+      />
+      <button
+        type="button"
+        aria-label={`Scroll tabs ${direction}`}
+        onClick={onClick}
+        className={`absolute ${CHEVRON_POSITION[direction]} top-1/2 -translate-y-1/2 z-20
+                   w-8 h-8 rounded-full bg-[#262626] border border-[#404040]
+                   text-gray-300 hover:text-white hover:border-gray-500
+                   flex items-center justify-center
+                   transition-colors shadow-lg shadow-black/40`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points={points} />
+        </svg>
+      </button>
+    </>
+  );
+}
+
 export default function DataSourceTabs({ activeKey, onSelect }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -49,29 +84,7 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
 
   return (
     <div className="relative mb-6">
-      {canScrollLeft && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute left-0 top-0 bottom-2 w-12 z-10
-                       bg-gradient-to-r from-[#1a1a1a] to-transparent"
-          />
-          <button
-            type="button"
-            aria-label="Scroll tabs left"
-            onClick={() => scrollBy(-SCROLL_STEP)}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20
-                       w-8 h-8 rounded-full bg-[#262626] border border-[#404040]
-                       text-gray-300 hover:text-white hover:border-gray-500
-                       flex items-center justify-center
-                       transition-colors shadow-lg shadow-black/40"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-        </>
-      )}
+      {canScrollLeft && <ScrollChevron direction="left" onClick={() => scrollBy(-SCROLL_STEP)} />}
 
       <div
         ref={scrollerRef}
@@ -125,29 +138,7 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
         })}
       </div>
 
-      {canScrollRight && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute right-0 top-0 bottom-2 w-12 z-10
-                       bg-gradient-to-l from-[#1a1a1a] to-transparent"
-          />
-          <button
-            type="button"
-            aria-label="Scroll tabs right"
-            onClick={() => scrollBy(SCROLL_STEP)}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-20
-                       w-8 h-8 rounded-full bg-[#262626] border border-[#404040]
-                       text-gray-300 hover:text-white hover:border-gray-500
-                       flex items-center justify-center
-                       transition-colors shadow-lg shadow-black/40"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </button>
-        </>
-      )}
+      {canScrollRight && <ScrollChevron direction="right" onClick={() => scrollBy(SCROLL_STEP)} />}
     </div>
   );
 }
