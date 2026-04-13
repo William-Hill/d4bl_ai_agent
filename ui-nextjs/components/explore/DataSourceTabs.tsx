@@ -76,7 +76,7 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
       <div
         ref={scrollerRef}
         tabIndex={-1}
-        className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scroll-smooth outline-none"
+        className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scroll-smooth focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
       >
         {DATA_SOURCES.filter((src) => src.hasData).map((src) => {
           const isActive = src.key === activeKey;
