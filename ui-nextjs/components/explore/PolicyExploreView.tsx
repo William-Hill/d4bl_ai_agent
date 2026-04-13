@@ -213,7 +213,7 @@ export default function PolicyExploreView() {
           <div className="relative flex-1 min-w-[220px] max-w-md group/search">
             <span
               aria-hidden="true"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00ff32]/70 font-mono text-xs select-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00ff32]/70 font-mono text-xs select-none pointer-events-none"
             >
               &gt;
             </span>
@@ -259,7 +259,7 @@ export default function PolicyExploreView() {
                 className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded
                            text-[10px] font-mono uppercase tracking-wider
                            text-gray-600 border border-[#2a2a2a]
-                           group-focus-within/search:opacity-0 transition-opacity"
+                           group-focus-within/search:opacity-0 transition-opacity pointer-events-none"
               >
                 /
               </kbd>
