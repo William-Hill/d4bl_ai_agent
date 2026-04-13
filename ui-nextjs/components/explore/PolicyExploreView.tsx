@@ -30,6 +30,7 @@ export default function PolicyExploreView() {
     statuses: new Set(),
     topics: new Set(),
   });
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchBills = useCallback(
     async (signal: AbortSignal) => {
@@ -81,6 +82,7 @@ export default function PolicyExploreView() {
   const matchingBills = useMemo(() => {
     if (!allBills) return [];
     const stateAbbrev = filters.stateFips ? FIPS_TO_ABBREV[filters.stateFips] : null;
+    const q = searchQuery.trim().toLowerCase();
     const result = allBills.filter((bill) => {
       if (stateAbbrev && bill.state !== stateAbbrev) return false;
       if (filters.statuses.size > 0 && !(filters.statuses as Set<string>).has(bill.status)) {
@@ -94,6 +96,18 @@ export default function PolicyExploreView() {
           return false;
         }
       }
+      if (q) {
+        const haystack = [
+          bill.title,
+          bill.bill_number,
+          bill.summary ?? '',
+          bill.state,
+          bill.state_name,
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
     result.sort((a, b) => {
@@ -102,7 +116,7 @@ export default function PolicyExploreView() {
       return bv.localeCompare(av);
     });
     return result;
-  }, [allBills, filters]);
+  }, [allBills, filters, searchQuery]);
 
   const filteredBills = useMemo(
     () => matchingBills.slice(0, FEED_LIMIT),
@@ -173,6 +187,39 @@ export default function PolicyExploreView() {
           <div className="text-xs font-mono uppercase tracking-wider text-gray-400">
             {feedHeader ?? 'activity feed'}
           </div>
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" strokeLinecap="round" />
+            </svg>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search bills by title, number, or text…"
+              aria-label="Search bills"
+              className="w-full pl-8 pr-8 py-1.5 text-xs font-mono bg-[#0f0f0f] border border-[#2a2a2a] rounded
+                         text-gray-200 placeholder:text-gray-600
+                         focus:outline-none focus:border-[#00ff32]/50 focus:ring-1 focus:ring-[#00ff32]/30"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-200 text-xs font-mono"
+              >
+                ×
+              </button>
+            )}
+          </div>
           {allBills && (
             <div className="text-xs font-mono text-gray-600 flex items-center gap-3">
               {allBills.length >= API_BILL_LIMIT && (
@@ -195,7 +242,7 @@ export default function PolicyExploreView() {
           {!allBills ? null : filteredBills.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-gray-500 font-mono text-xs">
-                {filters.stateFips || filters.statuses.size || filters.topics.size
+                {filters.stateFips || filters.statuses.size || filters.topics.size || searchQuery.trim()
                   ? '// no bills match current filters'
                   : '// no bills found'}
               </p>
@@ -207,6 +254,7 @@ export default function PolicyExploreView() {
                 bill={bill}
                 pulse={i === 0}
                 staggerIndex={i < STAGGER_COUNT ? i : undefined}
+                deemphasizeState={filters.stateFips !== null}
               />
             ))
           )}
