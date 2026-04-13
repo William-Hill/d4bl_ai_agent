@@ -8,9 +8,16 @@ interface Props {
   bill: PolicyBill;
   pulse?: boolean;
   staggerIndex?: number;
+  /** When true, the state chip is de-emphasized (user already filtered to this state). */
+  deemphasizeState?: boolean;
 }
 
-export default function BillFeedRow({ bill, pulse = false, staggerIndex }: Props) {
+export default function BillFeedRow({
+  bill,
+  pulse = false,
+  staggerIndex,
+  deemphasizeState = false,
+}: Props) {
   const phase = statusToPhase(bill.status);
   const relativeDate = formatRelativeDate(bill.last_action_date);
   const shouldStagger = staggerIndex != null;
@@ -28,6 +35,16 @@ export default function BillFeedRow({ bill, pulse = false, staggerIndex }: Props
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span
+            title={bill.state_name}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider border ${
+              deemphasizeState
+                ? 'bg-transparent text-gray-500 border-[#333]'
+                : 'bg-[#00ff32]/10 text-[#00ff32] border-[#00ff32]/30'
+            }`}
+          >
+            {bill.state}
+          </span>
           <span className="text-xs font-mono text-gray-500">{bill.bill_number}</span>
           <span
             className="text-[10px] font-mono uppercase tracking-wider text-gray-500"
