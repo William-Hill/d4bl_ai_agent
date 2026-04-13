@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StateMap from './StateMap';
 import PolicyFilterPanel, { PolicyFilters } from './PolicyFilterPanel';
 import BillFeedRow from './BillFeedRow';
@@ -31,6 +31,22 @@ export default function PolicyExploreView() {
     topics: new Set(),
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcut: "/" focuses search (skip if already typing in an input).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const fetchBills = useCallback(
     async (signal: AbortSignal) => {
@@ -187,37 +203,59 @@ export default function PolicyExploreView() {
           <div className="text-xs font-mono uppercase tracking-wider text-gray-400">
             {feedHeader ?? 'activity feed'}
           </div>
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <svg
+          <div className="relative flex-1 min-w-[220px] max-w-md group/search">
+            <span
               aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00ff32]/70 font-mono text-xs select-none"
             >
-              <circle cx="11" cy="11" r="7" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" strokeLinecap="round" />
-            </svg>
+              &gt;
+            </span>
             <input
+              ref={searchRef}
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search bills by title, number, or text…"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && searchQuery) {
+                  e.preventDefault();
+                  setSearchQuery('');
+                }
+              }}
+              placeholder={
+                allBills
+                  ? `filter ${allBills.length.toLocaleString()} dispatches…`
+                  : 'filter dispatches…'
+              }
               aria-label="Search bills"
-              className="w-full pl-8 pr-8 py-1.5 text-xs font-mono bg-[#0f0f0f] border border-[#2a2a2a] rounded
-                         text-gray-200 placeholder:text-gray-600
-                         focus:outline-none focus:border-[#00ff32]/50 focus:ring-1 focus:ring-[#00ff32]/30"
+              className="w-full pl-7 pr-16 py-1.5 text-xs font-mono bg-[#0f0f0f] border border-[#2a2a2a] rounded
+                         text-gray-100 placeholder:text-gray-600 caret-[#00ff32]
+                         focus:outline-none focus:border-[#00ff32]/60 focus:bg-black"
             />
-            {searchQuery && (
+            {searchQuery ? (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  searchRef.current?.focus();
+                }}
                 aria-label="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-200 text-xs font-mono"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded
+                           text-[10px] font-mono uppercase tracking-wider
+                           text-gray-500 hover:text-[#00ff32] hover:bg-[#00ff32]/10
+                           border border-[#2a2a2a] hover:border-[#00ff32]/50 transition-colors"
               >
-                ×
+                esc
               </button>
+            ) : (
+              <kbd
+                aria-hidden="true"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded
+                           text-[10px] font-mono uppercase tracking-wider
+                           text-gray-600 border border-[#2a2a2a]
+                           group-focus-within/search:opacity-0 transition-opacity"
+              >
+                /
+              </kbd>
             )}
           </div>
           {allBills && (
@@ -247,16 +285,66 @@ export default function PolicyExploreView() {
                   : '// no bills found'}
               </p>
             </div>
-          ) : (
+          ) : filters.stateFips ? (
+            // Single-state view: dateline stamp is redundant, hide it.
             filteredBills.map((bill, i) => (
               <BillFeedRow
                 key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
                 bill={bill}
                 pulse={i === 0}
                 staggerIndex={i < STAGGER_COUNT ? i : undefined}
-                deemphasizeState={filters.stateFips !== null}
+                hideDateline
               />
             ))
+          ) : (
+            // Unfiltered view: group consecutive rows by state and show a
+            // sticky dateline banner ABOVE each group. The banner is the
+            // single-source-of-truth for state identity while a group runs.
+            (() => {
+              type Group = { state: string; state_name: string; bills: PolicyBill[] };
+              const groups: Group[] = [];
+              let globalIdx = 0;
+              for (const bill of filteredBills) {
+                const last = groups[groups.length - 1];
+                if (last && last.state === bill.state) {
+                  last.bills.push(bill);
+                } else {
+                  groups.push({ state: bill.state, state_name: bill.state_name, bills: [bill] });
+                }
+              }
+              return groups.map((g) => (
+                <div key={`${g.state}-${globalIdx}`} className="-mx-5">
+                  <h3
+                    className="sticky top-0 z-10 px-5 py-2 bg-[#0f0f0f]/95 backdrop-blur-sm
+                               border-y border-[#00ff32]/20 flex items-center gap-3"
+                  >
+                    <span className="font-mono font-bold text-xs tracking-[0.2em] text-[#00ff32]">
+                      {g.state}
+                    </span>
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-gray-500">
+                      dateline · {g.state_name}
+                    </span>
+                    <span className="ml-auto text-[10px] font-mono text-gray-600">
+                      {g.bills.length} {g.bills.length === 1 ? 'dispatch' : 'dispatches'}
+                    </span>
+                  </h3>
+                  <div className="px-5">
+                    {g.bills.map((bill) => {
+                      const i = globalIdx++;
+                      return (
+                        <BillFeedRow
+                          key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
+                          bill={bill}
+                          pulse={i === 0}
+                          staggerIndex={i < STAGGER_COUNT ? i : undefined}
+                          hideDateline
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
+            })()
           )}
         </div>
       </section>
