@@ -285,66 +285,16 @@ export default function PolicyExploreView() {
                   : '// no bills found'}
               </p>
             </div>
-          ) : filters.stateFips ? (
-            // Single-state view: dateline stamp is redundant, hide it.
+          ) : (
             filteredBills.map((bill, i) => (
               <BillFeedRow
                 key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
                 bill={bill}
                 pulse={i === 0}
                 staggerIndex={i < STAGGER_COUNT ? i : undefined}
-                hideDateline
+                hideDateline={filters.stateFips !== null}
               />
             ))
-          ) : (
-            // Unfiltered view: group consecutive rows by state and show a
-            // sticky dateline banner ABOVE each group. The banner is the
-            // single-source-of-truth for state identity while a group runs.
-            (() => {
-              type Group = { state: string; state_name: string; bills: PolicyBill[] };
-              const groups: Group[] = [];
-              let globalIdx = 0;
-              for (const bill of filteredBills) {
-                const last = groups[groups.length - 1];
-                if (last && last.state === bill.state) {
-                  last.bills.push(bill);
-                } else {
-                  groups.push({ state: bill.state, state_name: bill.state_name, bills: [bill] });
-                }
-              }
-              return groups.map((g) => (
-                <div key={`${g.state}-${globalIdx}`} className="-mx-5">
-                  <h3
-                    className="sticky top-0 z-10 px-5 py-2 bg-[#0f0f0f]/95 backdrop-blur-sm
-                               border-y border-[#00ff32]/20 flex items-center gap-3"
-                  >
-                    <span className="font-mono font-bold text-xs tracking-[0.2em] text-[#00ff32]">
-                      {g.state}
-                    </span>
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-gray-500">
-                      dateline · {g.state_name}
-                    </span>
-                    <span className="ml-auto text-[10px] font-mono text-gray-600">
-                      {g.bills.length} {g.bills.length === 1 ? 'dispatch' : 'dispatches'}
-                    </span>
-                  </h3>
-                  <div className="px-5">
-                    {g.bills.map((bill) => {
-                      const i = globalIdx++;
-                      return (
-                        <BillFeedRow
-                          key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
-                          bill={bill}
-                          pulse={i === 0}
-                          staggerIndex={i < STAGGER_COUNT ? i : undefined}
-                          hideDateline
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              ));
-            })()
           )}
         </div>
       </section>
