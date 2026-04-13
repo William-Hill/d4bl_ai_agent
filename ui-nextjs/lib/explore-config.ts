@@ -203,6 +203,22 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     sourceUrl: "https://data.census.gov/",
     hasData: true,
   },
+  // PolicyExploreView renders on this tab; page.tsx short-circuits metric
+  // fetch/layout when key === 'policy', so the metric-shaped fields below
+  // are unused placeholders. Widen DataSourceConfig to a discriminated union
+  // if a second non-metric source lands.
+  {
+    key: "policy",
+    label: "Policy Bills",
+    accent: "#00ff32",
+    endpoint: "/api/explore/policies",
+    hasRace: false,
+    primaryFilterKey: "status",
+    primaryFilterLabel: "Status",
+    description: "State-level legislative bill tracking from OpenStates, with status and topic tags across housing, criminal justice, voting rights, and more.",
+    sourceUrl: "https://openstates.org/",
+    hasData: true,
+  },
   {
     key: "cdc",
     label: "CDC Health",
@@ -333,22 +349,6 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     primaryFilterLabel: "Metric",
     description: "State and federal incarceration statistics from the Bureau of Justice Statistics, disaggregated by race and gender.",
     sourceUrl: "https://bjs.ojp.gov/",
-    hasData: true,
-  },
-  // PolicyExploreView renders on this tab; page.tsx short-circuits metric
-  // fetch/layout when key === 'policy', so the metric-shaped fields below
-  // are unused placeholders. Widen DataSourceConfig to a discriminated union
-  // if a second non-metric source lands.
-  {
-    key: "policy",
-    label: "Policy Bills",
-    accent: "#00ff32",
-    endpoint: "/api/explore/policies",
-    hasRace: false,
-    primaryFilterKey: "status",
-    primaryFilterLabel: "Status",
-    description: "State-level legislative bill tracking from OpenStates, with status and topic tags across housing, criminal justice, voting rights, and more.",
-    sourceUrl: "https://openstates.org/",
     hasData: true,
   },
 ];
