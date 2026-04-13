@@ -89,7 +89,7 @@ export default function BillFeedRow({
         </p>
 
         <p className="text-[11px] font-mono text-gray-600 uppercase tracking-wider">
-          filed {relativeDate}
+          last action {relativeDate}
         </p>
       </div>
 
