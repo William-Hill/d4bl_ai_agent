@@ -188,6 +188,9 @@ export interface DataSourceConfig {
   description: string;
   sourceUrl: string;
   hasData: boolean;
+  /** When true, the tab receives a visual elevation treatment (e.g., pulsing
+   *  accent dot) to signal it as a headline or categorically-different source. */
+  highlight?: boolean;
 }
 
 export const DATA_SOURCES: DataSourceConfig[] = [
@@ -218,6 +221,7 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     description: "State-level legislative bill tracking from OpenStates, with status and topic tags across housing, criminal justice, voting rights, and more.",
     sourceUrl: "https://openstates.org/",
     hasData: true,
+    highlight: true,
   },
   {
     key: "cdc",

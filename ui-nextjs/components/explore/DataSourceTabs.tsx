@@ -36,7 +36,15 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
   }, [updateOverflow]);
 
   const scrollBy = (delta: number) => {
-    scrollerRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
+    const el = scrollerRef.current;
+    if (!el) return;
+    // The chevron buttons unmount when scroll limits are reached. If a
+    // keyboard user fires one, move focus to the scroller first so it
+    // isn't silently dropped to document.body when the button disappears.
+    if (document.activeElement && !el.contains(document.activeElement)) {
+      el.focus({ preventScroll: true });
+    }
+    el.scrollBy({ left: delta, behavior: 'smooth' });
   };
 
   return (
@@ -67,15 +75,17 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
 
       <div
         ref={scrollerRef}
-        className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scroll-smooth"
+        tabIndex={-1}
+        className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scroll-smooth outline-none"
       >
         {DATA_SOURCES.filter((src) => src.hasData).map((src) => {
           const isActive = src.key === activeKey;
-          const isPolicy = src.key === 'policy';
+          const isHighlighted = src.highlight === true;
           return (
             <button
               key={src.key}
               type="button"
+              aria-pressed={isActive}
               onClick={() => onSelect(src)}
               className={`
                 relative flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium
@@ -91,7 +101,7 @@ export default function DataSourceTabs({ activeKey, onSelect }: Props) {
                 color: src.accent,
               } : undefined}
             >
-              {isPolicy && !isActive && (
+              {isHighlighted && !isActive && (
                 <span className="relative inline-flex mr-2 align-middle" aria-hidden>
                   <span
                     className="absolute inline-flex h-2 w-2 rounded-full opacity-60 animate-ping"
