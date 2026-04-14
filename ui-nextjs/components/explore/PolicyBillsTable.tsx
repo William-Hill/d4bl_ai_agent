@@ -85,17 +85,11 @@ export default function PolicyBillsTable({ bills }: Props) {
                   key={`${col.label}-${idx}`}
                   scope="col"
                   aria-sort={
-                    isActive
-                      ? sortDir === 'asc'
-                        ? 'ascending'
-                        : 'descending'
-                      : sortable
-                        ? 'none'
-                        : undefined
+                    isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined
                   }
                   className={`sticky top-0 z-10 bg-[#0f0f0f] border-b border-[#00ff32]/20
-                             px-3 py-2.5 text-[10px] font-mono uppercase tracking-[0.18em]
-                             ${sortable ? 'select-none' : ''}
+                             text-[10px] font-mono uppercase tracking-[0.18em]
+                             ${sortable ? 'select-none p-0' : 'px-3 py-2.5'}
                              ${isActive ? 'text-[#00ff32]' : 'text-gray-500'}
                              ${col.align === 'right' ? 'text-right' : 'text-left'}
                              ${col.className ?? ''}`}
@@ -104,7 +98,10 @@ export default function PolicyBillsTable({ bills }: Props) {
                     <button
                       type="button"
                       onClick={() => onSort(col.key!)}
-                      className="inline-flex items-center gap-1 hover:text-[#00ff32] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#00ff32]/60 rounded"
+                      className={`flex w-full items-center gap-1 px-3 py-2.5
+                                  hover:text-[#00ff32] focus:outline-none
+                                  focus-visible:ring-1 focus-visible:ring-[#00ff32]/60 rounded
+                                  ${col.align === 'right' ? 'justify-end' : ''}`}
                     >
                       {col.label}
                       <span
