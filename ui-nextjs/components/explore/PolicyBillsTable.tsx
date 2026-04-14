@@ -130,7 +130,7 @@ export default function PolicyBillsTable({ bills }: Props) {
             const extraTopics = (bill.topic_tags?.length ?? 0) - 2;
             return (
               <tr
-                key={bill.url ?? `${bill.state}-${bill.bill_number}`}
+                key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date}`}
                 className="group border-b border-[#1f1f1f] last:border-b-0
                            odd:bg-[#ffffff03] hover:bg-[#00ff3208]
                            transition-colors"

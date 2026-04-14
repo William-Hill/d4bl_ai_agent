@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker
   output: 'standalone',
 
+  // Disable Turbopack for production builds to avoid CSS processing issues
+  turbopack: false,
+
   // Use system TLS certificates for font fetching
   experimental: {
     turbopackUseSystemTlsCerts: true,
