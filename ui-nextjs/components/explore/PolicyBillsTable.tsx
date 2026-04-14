@@ -38,7 +38,10 @@ function compareBills(a: PolicyBill, b: PolicyBill, key: SortKey): number {
     case 'title':
       return a.title.localeCompare(b.title);
     case 'phase':
-      return statusToPhase(a.status).segments - statusToPhase(b.status).segments;
+      return (
+        statusToPhase(a.status).segments - statusToPhase(b.status).segments ||
+        a.status.localeCompare(b.status)
+      );
     case 'last_action': {
       const av = a.last_action_date ?? '';
       const bv = b.last_action_date ?? '';
@@ -82,19 +85,28 @@ export default function PolicyBillsTable({ bills }: Props) {
                   key={`${col.label}-${idx}`}
                   scope="col"
                   aria-sort={
-                    isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined
+                    isActive
+                      ? sortDir === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : sortable
+                        ? 'none'
+                        : undefined
                   }
-                  onClick={sortable ? () => onSort(col.key!) : undefined}
                   className={`sticky top-0 z-10 bg-[#0f0f0f] border-b border-[#00ff32]/20
                              px-3 py-2.5 text-[10px] font-mono uppercase tracking-[0.18em]
-                             ${sortable ? 'cursor-pointer select-none hover:text-[#00ff32]' : ''}
+                             ${sortable ? 'select-none' : ''}
                              ${isActive ? 'text-[#00ff32]' : 'text-gray-500'}
                              ${col.align === 'right' ? 'text-right' : 'text-left'}
                              ${col.className ?? ''}`}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    {col.label}
-                    {sortable && (
+                  {sortable ? (
+                    <button
+                      type="button"
+                      onClick={() => onSort(col.key!)}
+                      className="inline-flex items-center gap-1 hover:text-[#00ff32] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#00ff32]/60 rounded"
+                    >
+                      {col.label}
                       <span
                         aria-hidden="true"
                         className={`text-[9px] leading-none ${
@@ -103,8 +115,10 @@ export default function PolicyBillsTable({ bills }: Props) {
                       >
                         {isActive ? (sortDir === 'asc' ? '▲' : '▼') : '▾'}
                       </span>
-                    )}
-                  </span>
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">{col.label}</span>
+                  )}
                 </th>
               );
             })}
@@ -155,6 +169,9 @@ export default function PolicyBillsTable({ bills }: Props) {
                           className="px-1.5 py-0.5 rounded border border-[#2a2a2a] text-[10px] text-gray-500"
                         >
                           +{extraTopics}
+                          <span className="sr-only">
+                            {` more topics: ${bill.topic_tags.slice(2).join(', ')}`}
+                          </span>
                         </span>
                       )}
                     </div>

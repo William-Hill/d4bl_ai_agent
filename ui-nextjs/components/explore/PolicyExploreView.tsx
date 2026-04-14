@@ -36,6 +36,7 @@ export default function PolicyExploreView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('wire');
   const searchRef = useRef<HTMLInputElement>(null);
+  const viewModeRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Keyboard shortcut: "/" focuses search (skip if already typing in an input).
   useEffect(() => {
@@ -221,11 +222,14 @@ export default function PolicyExploreView() {
             className="inline-flex items-center gap-0 font-mono text-[10px] uppercase tracking-[0.18em]
                        border border-[#2a2a2a] rounded overflow-hidden"
           >
-            {VIEW_MODES.map((mode) => {
+            {VIEW_MODES.map((mode, idx) => {
               const isActive = viewMode === mode;
               return (
                 <button
                   key={mode}
+                  ref={(el) => {
+                    viewModeRefs.current[idx] = el;
+                  }}
                   type="button"
                   role="radio"
                   aria-checked={isActive}
@@ -234,10 +238,10 @@ export default function PolicyExploreView() {
                   onKeyDown={(e) => {
                     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                       e.preventDefault();
-                      const next = VIEW_MODES[(VIEW_MODES.indexOf(mode) + 1) % VIEW_MODES.length];
-                      const prev =
-                        VIEW_MODES[(VIEW_MODES.indexOf(mode) - 1 + VIEW_MODES.length) % VIEW_MODES.length];
-                      setViewMode(e.key === 'ArrowRight' ? next : prev);
+                      const delta = e.key === 'ArrowRight' ? 1 : -1;
+                      const nextIdx = (idx + delta + VIEW_MODES.length) % VIEW_MODES.length;
+                      setViewMode(VIEW_MODES[nextIdx]);
+                      viewModeRefs.current[nextIdx]?.focus();
                     }
                   }}
                   className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${
@@ -333,7 +337,8 @@ export default function PolicyExploreView() {
                 </span>
               )}
               <span>
-                showing {filteredBills.length} of {matchingBills.length}
+                showing {viewMode === 'wire' ? filteredBills.length : matchingBills.length} of{' '}
+                {matchingBills.length}
               </span>
             </div>
           )}
@@ -359,7 +364,7 @@ export default function PolicyExploreView() {
               />
             ))
           ) : (
-            <PolicyBillsTable bills={filteredBills} />
+            <PolicyBillsTable bills={matchingBills} />
           )}
         </div>
       </section>
