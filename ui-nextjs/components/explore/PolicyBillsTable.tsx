@@ -60,8 +60,7 @@ export default function PolicyBillsTable({ bills }: Props) {
     return copy;
   }, [bills, sortKey, sortDir]);
 
-  const onSort = (key: SortKey | null) => {
-    if (!key) return;
+  const onSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -76,8 +75,8 @@ export default function PolicyBillsTable({ bills }: Props) {
         <thead>
           <tr>
             {COLUMNS.map((col, idx) => {
-              const isActive = col.key !== null && col.key === sortKey;
               const sortable = col.key !== null;
+              const isActive = sortable && col.key === sortKey;
               return (
                 <th
                   key={`${col.label}-${idx}`}
@@ -85,7 +84,7 @@ export default function PolicyBillsTable({ bills }: Props) {
                   aria-sort={
                     isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined
                   }
-                  onClick={() => onSort(col.key)}
+                  onClick={sortable ? () => onSort(col.key!) : undefined}
                   className={`sticky top-0 z-10 bg-[#0f0f0f] border-b border-[#00ff32]/20
                              px-3 py-2.5 text-[10px] font-mono uppercase tracking-[0.18em]
                              ${sortable ? 'cursor-pointer select-none hover:text-[#00ff32]' : ''}
@@ -112,12 +111,12 @@ export default function PolicyBillsTable({ bills }: Props) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((bill, i) => {
+          {sorted.map((bill) => {
             const phase = statusToPhase(bill.status);
             const extraTopics = (bill.topic_tags?.length ?? 0) - 2;
             return (
               <tr
-                key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
+                key={bill.url ?? `${bill.state}-${bill.bill_number}`}
                 className="group border-b border-[#1f1f1f] last:border-b-0
                            odd:bg-[#ffffff03] hover:bg-[#00ff3208]
                            transition-colors"
