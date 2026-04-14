@@ -19,6 +19,8 @@ const ACCENT = '#00ff32';
 const FEED_LIMIT = 50;
 const STAGGER_COUNT = 5;
 const API_BILL_LIMIT = 5000;
+const VIEW_MODES = ['wire', 'docket'] as const;
+type ViewMode = (typeof VIEW_MODES)[number];
 
 export default function PolicyExploreView() {
   const { session, getHeaders } = useAuthHeaders();
@@ -32,7 +34,7 @@ export default function PolicyExploreView() {
     topics: new Set(),
   });
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'wire' | 'docket'>('wire');
+  const [viewMode, setViewMode] = useState<ViewMode>('wire');
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Keyboard shortcut: "/" focuses search (skip if already typing in an input).
@@ -219,7 +221,7 @@ export default function PolicyExploreView() {
             className="inline-flex items-center gap-0 font-mono text-[10px] uppercase tracking-[0.18em]
                        border border-[#2a2a2a] rounded overflow-hidden"
           >
-            {(['wire', 'docket'] as const).map((mode) => {
+            {VIEW_MODES.map((mode) => {
               const isActive = viewMode === mode;
               return (
                 <button
@@ -227,7 +229,17 @@ export default function PolicyExploreView() {
                   type="button"
                   role="radio"
                   aria-checked={isActive}
+                  tabIndex={isActive ? 0 : -1}
                   onClick={() => setViewMode(mode)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      const next = VIEW_MODES[(VIEW_MODES.indexOf(mode) + 1) % VIEW_MODES.length];
+                      const prev =
+                        VIEW_MODES[(VIEW_MODES.indexOf(mode) - 1 + VIEW_MODES.length) % VIEW_MODES.length];
+                      setViewMode(e.key === 'ArrowRight' ? next : prev);
+                    }
+                  }}
                   className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${
                     isActive
                       ? 'bg-[#00ff32]/10 text-[#00ff32]'
@@ -236,14 +248,12 @@ export default function PolicyExploreView() {
                 >
                   <span aria-hidden="true" className="inline-flex items-center">
                     {mode === 'wire' ? (
-                      // three uneven waveform bars → live signal
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                         <line x1="1" y1="5" x2="1" y2="7" />
                         <line x1="4" y1="2" x2="4" y2="8" />
                         <line x1="7" y1="4" x2="7" y2="7" />
                       </svg>
                     ) : (
-                      // three stacked rules → ledger
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round">
                         <line x1="1" y1="2.5" x2="9" y2="2.5" />
                         <line x1="1" y1="5" x2="9" y2="5" />
