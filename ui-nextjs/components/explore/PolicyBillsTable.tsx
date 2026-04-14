@@ -17,6 +17,7 @@ interface Column {
   label: string;
   className?: string;
   align?: 'left' | 'right';
+  hideLabel?: boolean;
 }
 
 const COLUMNS: Column[] = [
@@ -26,7 +27,7 @@ const COLUMNS: Column[] = [
   { key: 'phase', label: 'phase', className: 'w-32' },
   { key: null, label: 'topics', className: 'w-40' },
   { key: 'last_action', label: 'last action', className: 'w-28', align: 'right' },
-  { key: null, label: 'Open bill', className: 'w-6' },
+  { key: null, label: 'Open bill', className: 'w-6', hideLabel: true },
 ];
 
 function compareBills(a: PolicyBill, b: PolicyBill, key: SortKey): number {
@@ -114,8 +115,8 @@ export default function PolicyBillsTable({ bills }: Props) {
                       </span>
                     </button>
                   ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <span className="sr-only">{col.label}</span>
+                    <span className={`inline-flex items-center gap-1 ${col.hideLabel ? 'sr-only' : ''}`}>
+                      {col.label}
                     </span>
                   )}
                 </th>
@@ -187,7 +188,7 @@ export default function PolicyBillsTable({ bills }: Props) {
                       href={bill.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label={`View ${bill.bill_number}: ${bill.title}`}
+                      aria-label={`View ${bill.bill_number}: ${bill.title} — opens in a new tab`}
                       className="text-[#00ff32]/60 hover:text-[#00ff32] font-mono text-sm transition-colors"
                     >
                       →
