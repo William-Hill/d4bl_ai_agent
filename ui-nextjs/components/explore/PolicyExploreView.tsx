@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StateMap from './StateMap';
 import PolicyFilterPanel, { PolicyFilters } from './PolicyFilterPanel';
 import BillFeedRow from './BillFeedRow';
+import PolicyBillsTable from './PolicyBillsTable';
 import { PolicyBill } from '@/lib/types';
 import {
   aggregateBillsByState,
@@ -31,6 +32,7 @@ export default function PolicyExploreView() {
     topics: new Set(),
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'wire' | 'docket'>('wire');
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Keyboard shortcut: "/" focuses search (skip if already typing in an input).
@@ -208,7 +210,51 @@ export default function PolicyExploreView() {
       <section className="bg-[#1a1a1a] border border-[#404040] rounded-lg">
         <header className="px-5 py-3 border-b border-[#2a2a2a] flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs font-mono uppercase tracking-wider text-gray-400">
-            {feedHeader ?? 'activity feed'}
+            {feedHeader ?? (viewMode === 'wire' ? 'activity feed' : 'legislative docket')}
+          </div>
+
+          <div
+            role="radiogroup"
+            aria-label="View mode"
+            className="inline-flex items-center gap-0 font-mono text-[10px] uppercase tracking-[0.18em]
+                       border border-[#2a2a2a] rounded overflow-hidden"
+          >
+            {(['wire', 'docket'] as const).map((mode) => {
+              const isActive = viewMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${
+                    isActive
+                      ? 'bg-[#00ff32]/10 text-[#00ff32]'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  <span aria-hidden="true" className="inline-flex items-center">
+                    {mode === 'wire' ? (
+                      // three uneven waveform bars → live signal
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                        <line x1="1" y1="5" x2="1" y2="7" />
+                        <line x1="4" y1="2" x2="4" y2="8" />
+                        <line x1="7" y1="4" x2="7" y2="7" />
+                      </svg>
+                    ) : (
+                      // three stacked rules → ledger
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round">
+                        <line x1="1" y1="2.5" x2="9" y2="2.5" />
+                        <line x1="1" y1="5" x2="9" y2="5" />
+                        <line x1="1" y1="7.5" x2="9" y2="7.5" />
+                      </svg>
+                    )}
+                  </span>
+                  {mode}
+                </button>
+              );
+            })}
           </div>
           <div className="relative flex-1 min-w-[220px] max-w-md group/search">
             <span
@@ -283,7 +329,7 @@ export default function PolicyExploreView() {
           )}
         </header>
 
-        <div className="px-5">
+        <div className={viewMode === 'wire' ? 'px-5' : ''}>
           {!allBills ? null : filteredBills.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-gray-500 font-mono text-xs">
@@ -292,7 +338,7 @@ export default function PolicyExploreView() {
                   : '// no bills found'}
               </p>
             </div>
-          ) : (
+          ) : viewMode === 'wire' ? (
             filteredBills.map((bill, i) => (
               <BillFeedRow
                 key={bill.url ?? `${bill.state}-${bill.bill_number}-${bill.introduced_date ?? i}`}
@@ -302,6 +348,8 @@ export default function PolicyExploreView() {
                 hideDateline={filters.stateFips !== null}
               />
             ))
+          ) : (
+            <PolicyBillsTable bills={filteredBills} />
           )}
         </div>
       </section>
