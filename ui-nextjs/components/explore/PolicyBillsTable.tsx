@@ -26,7 +26,7 @@ const COLUMNS: Column[] = [
   { key: 'phase', label: 'phase', className: 'w-32' },
   { key: null, label: 'topics', className: 'w-40' },
   { key: 'last_action', label: 'last action', className: 'w-28', align: 'right' },
-  { key: null, label: '', className: 'w-6' },
+  { key: null, label: 'Open bill', className: 'w-6' },
 ];
 
 function compareBills(a: PolicyBill, b: PolicyBill, key: SortKey): number {
@@ -114,7 +114,9 @@ export default function PolicyBillsTable({ bills }: Props) {
                       </span>
                     </button>
                   ) : (
-                    <span className="inline-flex items-center gap-1">{col.label}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="sr-only">{col.label}</span>
+                    </span>
                   )}
                 </th>
               );
