@@ -966,6 +966,10 @@ class UploadedDataset(Base):
     row_index = Column(Integer, nullable=False)
     data = Column(JSONB, nullable=False)
 
+    __table_args__ = (
+        UniqueConstraint("upload_id", "row_index", name="uq_uploaded_datasets_key"),
+    )
+
 
 class ExampleQuery(Base):
     __tablename__ = "example_queries"
