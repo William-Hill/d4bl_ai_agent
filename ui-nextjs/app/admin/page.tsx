@@ -9,6 +9,7 @@ import FlywheelDashboard from '@/components/admin/FlywheelDashboard';
 import UploadDataSource from '@/components/admin/UploadDataSource';
 import UploadDocument from '@/components/admin/UploadDocument';
 import UploadQuery from '@/components/admin/UploadQuery';
+import ReviewQueue from '@/components/admin/ReviewQueue';
 
 interface UserProfile {
   id: string;
@@ -363,6 +364,11 @@ export default function AdminPage() {
           {uploadTab === 'datasource' && <UploadDataSource />}
           {uploadTab === 'document' && <UploadDocument />}
           {uploadTab === 'query' && <UploadQuery />}
+        </div>
+
+        {/* Review Queue (admin only) */}
+        <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
+          <ReviewQueue />
         </div>
 
         {/* Invite form */}
