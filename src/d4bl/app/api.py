@@ -37,7 +37,6 @@ from d4bl.app.explore_helpers import (
 from d4bl.app.explore_insights import router as explore_insights_router
 from d4bl.app.flywheel_routes import router as flywheel_router
 from d4bl.app.schedule_routes import router as schedule_router
-from d4bl.app.upload_routes import router as upload_router
 from d4bl.app.schemas import (
     CompareRequest,
     CompareResponse,
@@ -62,6 +61,7 @@ from d4bl.app.schemas import (
     UpdateRoleRequest,
     UserProfile,
 )
+from d4bl.app.upload_routes import router as upload_router
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
