@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
 import UploadHistory from './UploadHistory';
 
 export default function UploadDataSource() {
   const { session } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -22,7 +23,11 @@ export default function UploadDataSource() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !session?.access_token) return;
+    if (!session?.access_token) {
+      setError('Session expired. Please sign in again.');
+      return;
+    }
+    if (!file) return;
 
     setLoading(true);
     setSuccess(null);
@@ -49,6 +54,7 @@ export default function UploadDataSource() {
       if (resp.ok) {
         setSuccess('Data source uploaded successfully. It will be reviewed before going live.');
         setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         setSourceName('');
         setDescription('');
         setGeographicLevel('state');
@@ -78,6 +84,7 @@ export default function UploadDataSource() {
           <input
             id="ds-file"
             type="file"
+            ref={fileInputRef}
             accept=".csv,.xlsx"
             required
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}

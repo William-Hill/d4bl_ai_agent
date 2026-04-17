@@ -162,7 +162,9 @@ export default function ReviewQueue() {
 
                   {/* Date */}
                   <span className="text-gray-500 text-xs flex-shrink-0 hidden sm:block">
-                    {new Date(upload.created_at).toLocaleDateString()}
+                    {upload.created_at
+                      ? new Date(upload.created_at).toLocaleDateString()
+                      : '—'}
                   </span>
 
                   {/* Expand/collapse arrow */}

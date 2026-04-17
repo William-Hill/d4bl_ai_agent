@@ -259,6 +259,10 @@ async def submit_feature_request(
     return _upload_to_response(upload)
 
 
+VALID_UPLOAD_TYPES = {"datasource", "document", "query", "feature_request"}
+VALID_UPLOAD_STATUSES = {"pending_review", "approved", "rejected", "processing", "live"}
+
+
 @router.get("/api/admin/uploads")
 async def list_uploads(
     upload_type: str | None = None,
@@ -267,6 +271,11 @@ async def list_uploads(
     db: AsyncSession = Depends(get_db),
 ):
     """List uploads. Non-admins see only their own uploads."""
+    if upload_type and upload_type not in VALID_UPLOAD_TYPES:
+        raise HTTPException(400, f"Invalid upload_type. Use: {sorted(VALID_UPLOAD_TYPES)}")
+    if status and status not in VALID_UPLOAD_STATUSES:
+        raise HTTPException(400, f"Invalid status. Use: {sorted(VALID_UPLOAD_STATUSES)}")
+
     clauses = []
     params: dict = {}
 

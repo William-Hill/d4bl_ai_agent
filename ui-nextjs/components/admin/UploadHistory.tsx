@@ -45,7 +45,11 @@ export default function UploadHistory({ uploadType, refreshKey }: UploadHistoryP
   const [error, setError] = useState<string | null>(null);
 
   const fetchHistory = useCallback(async () => {
-    if (!session?.access_token) return;
+    if (!session?.access_token) {
+      setLoading(false);
+      setRecords([]);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

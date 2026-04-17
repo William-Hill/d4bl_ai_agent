@@ -24,6 +24,11 @@ CREATE INDEX idx_uploads_status ON uploads(status);
 CREATE INDEX idx_uploads_type ON uploads(upload_type);
 CREATE INDEX idx_uploads_created_at ON uploads(created_at DESC);
 
+ALTER TABLE uploads ADD CONSTRAINT fk_uploads_user_id
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE uploads ADD CONSTRAINT fk_uploads_reviewer_id
+    FOREIGN KEY (reviewer_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+
 CREATE TABLE uploaded_datasets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     upload_id UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
