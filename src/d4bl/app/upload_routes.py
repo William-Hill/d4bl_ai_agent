@@ -62,7 +62,7 @@ def _upload_to_response(upload: Upload) -> dict:
         "metadata": upload.metadata_,
         "reviewer_notes": upload.reviewer_notes,
         "reviewed_at": upload.reviewed_at.isoformat() if upload.reviewed_at else None,
-        "created_at": upload.created_at.isoformat() if upload.created_at else "",
+        "created_at": upload.created_at.isoformat() if upload.created_at else None,
     }
 
 
@@ -96,7 +96,7 @@ async def upload_datasource(
     # File bytes are read for validation only; Supabase Storage upload is deferred.
     content = await file.read()
     if len(content) > MAX_DATASOURCE_SIZE:
-        raise HTTPException(400, f"File too large. Max {MAX_DATASOURCE_SIZE // (1024*1024)}MB")
+        raise HTTPException(400, f"File too large. Max {MAX_DATASOURCE_SIZE // (1024 * 1024)}MB")
     if len(content) == 0:
         raise HTTPException(400, "File is empty")
 
@@ -164,7 +164,7 @@ async def upload_document(
         # File bytes are read for validation only; Supabase Storage upload is deferred.
         content = await file.read()
         if len(content) > MAX_DOCUMENT_SIZE:
-            raise HTTPException(400, f"File too large. Max {MAX_DOCUMENT_SIZE // (1024*1024)}MB")
+            raise HTTPException(400, f"File too large. Max {MAX_DOCUMENT_SIZE // (1024 * 1024)}MB")
         if len(content) == 0:
             raise HTTPException(400, "File is empty")
         file_size = len(content)
@@ -269,6 +269,8 @@ VALID_UPLOAD_STATUSES = {"pending_review", "approved", "rejected", "processing",
 async def list_uploads(
     upload_type: str | None = None,
     status: str | None = None,
+    limit: int | None = 100,
+    offset: int | None = 0,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -277,6 +279,10 @@ async def list_uploads(
         raise HTTPException(400, f"Invalid upload_type. Use: {sorted(VALID_UPLOAD_TYPES)}")
     if status and status not in VALID_UPLOAD_STATUSES:
         raise HTTPException(400, f"Invalid status. Use: {sorted(VALID_UPLOAD_STATUSES)}")
+
+    # Validate and clamp pagination parameters
+    limit = max(1, min(limit if limit is not None else 100, 1000))
+    offset = max(0, offset if offset is not None else 0)
 
     clauses = []
     params: dict = {}
@@ -293,6 +299,9 @@ async def list_uploads(
         clauses.append("u.status = :status")
         params["status"] = status
 
+    params["limit"] = int(limit)
+    params["offset"] = int(offset)
+
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
 
     query = text(f"""
@@ -304,7 +313,7 @@ async def list_uploads(
         LEFT JOIN profiles p ON p.id = u.user_id
         {where}
         ORDER BY u.created_at DESC
-        LIMIT 100
+        LIMIT :limit OFFSET :offset
     """)
 
     result = await db.execute(query, params)
@@ -320,7 +329,7 @@ async def list_uploads(
             "metadata": r["metadata"],
             "reviewer_notes": r["reviewer_notes"],
             "reviewed_at": r["reviewed_at"].isoformat() if r["reviewed_at"] else None,
-            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "uploader_email": r["uploader_email"],
             "uploader_name": r["uploader_name"],
         }
