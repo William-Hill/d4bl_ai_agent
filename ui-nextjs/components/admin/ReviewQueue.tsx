@@ -4,18 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
 import ReviewDetail from './ReviewDetail';
-
-interface Upload {
-  id: string;
-  upload_type: string;
-  status: string;
-  original_filename: string;
-  file_size_bytes: number | null;
-  metadata: Record<string, unknown> | null;
-  uploader_email: string;
-  uploader_name: string | null;
-  created_at: string;
-}
+import type { UploadRecord } from './upload-types';
 
 type UploadTypeFilter = 'all' | 'datasource' | 'document' | 'query' | 'feature_request';
 
@@ -36,7 +25,7 @@ const FILTER_OPTIONS: { value: UploadTypeFilter; label: string }[] = [
 
 export default function ReviewQueue() {
   const { session } = useAuth();
-  const [uploads, setUploads] = useState<Upload[]>([]);
+  const [uploads, setUploads] = useState<UploadRecord[]>([]);
   const [filter, setFilter] = useState<UploadTypeFilter>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,8 +66,6 @@ export default function ReviewQueue() {
 
   const handleReviewed = (id: string) => {
     setExpandedId(null);
-    fetchUploads();
-    // Optimistically remove the reviewed item
     setUploads((prev) => prev.filter((u) => u.id !== id));
   };
 

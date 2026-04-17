@@ -123,10 +123,12 @@ async def upload_document(
     if not file and not url:
         raise HTTPException(400, "Either a file or URL is required")
 
-    DocumentUploadRequest(
+    tags = [t.strip() for t in topic_tags.split(",")] if topic_tags else None
+
+    validated = DocumentUploadRequest(
         title=title,
         document_type=document_type,
-        topic_tags=[t.strip() for t in topic_tags.split(",")] if topic_tags else None,
+        topic_tags=tags,
         url=url,
     )
 
@@ -146,8 +148,6 @@ async def upload_document(
         file_size = len(content)
         filename = file.filename
 
-    tags = [t.strip() for t in topic_tags.split(",")] if topic_tags else None
-
     upload = Upload(
         id=upload_id,
         user_id=user.id,
@@ -157,10 +157,10 @@ async def upload_document(
         original_filename=filename,
         file_size_bytes=file_size,
         metadata_={
-            "title": title,
-            "document_type": document_type,
-            "topic_tags": tags,
-            "url": url,
+            "title": validated.title,
+            "document_type": validated.document_type,
+            "topic_tags": validated.topic_tags,
+            "url": validated.url,
         },
     )
     db.add(upload)

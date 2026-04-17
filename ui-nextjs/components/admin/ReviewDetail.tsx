@@ -3,21 +3,10 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
-
-interface Upload {
-  id: string;
-  upload_type: string;
-  status: string;
-  original_filename: string;
-  file_size_bytes: number | null;
-  metadata: Record<string, unknown> | null;
-  uploader_email: string;
-  uploader_name: string | null;
-  created_at: string;
-}
+import type { UploadRecord } from './upload-types';
 
 interface ReviewDetailProps {
-  upload: Upload;
+  upload: UploadRecord;
   onReviewed: () => void;
 }
 

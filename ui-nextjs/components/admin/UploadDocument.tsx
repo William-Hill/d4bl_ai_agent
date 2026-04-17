@@ -40,7 +40,7 @@ export default function UploadDocument() {
       if (mode === 'file' && file) {
         formData.append('file', file);
       } else {
-        formData.append('source_url', urlInput);
+        formData.append('url', urlInput);
       }
 
       const resp = await fetch(`${API_BASE}/api/admin/uploads/document`, {
