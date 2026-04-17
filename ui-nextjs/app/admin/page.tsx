@@ -6,6 +6,9 @@ import { useAuth } from '@/lib/auth-context';
 import { API_BASE, getCostSummary, CostSummary } from '@/lib/api';
 import DataStatusCard from '@/components/data/DataStatusCard';
 import FlywheelDashboard from '@/components/admin/FlywheelDashboard';
+import UploadDataSource from '@/components/admin/UploadDataSource';
+import UploadDocument from '@/components/admin/UploadDocument';
+import UploadQuery from '@/components/admin/UploadQuery';
 
 interface UserProfile {
   id: string;
@@ -26,6 +29,9 @@ export default function AdminPage() {
 
   // --- Cost tracking state ---
   const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
+
+  // --- Upload tabs state ---
+  const [uploadTab, setUploadTab] = useState<'datasource' | 'document' | 'query'>('datasource');
 
   // --- Data ingestion state ---
   const INGEST_SOURCES = [
@@ -312,6 +318,51 @@ export default function AdminPage() {
               </span>
             )}
           </div>
+        </div>
+
+        {/* Staff Uploads */}
+        <div className="bg-[#1a1a1a] border border-[#404040] rounded-lg p-6 mb-8">
+          <h2 className="text-lg font-semibold text-white mb-4">Staff Uploads</h2>
+          {/* Tab buttons */}
+          <div className="flex gap-2 mb-6">
+            <button
+              type="button"
+              onClick={() => setUploadTab('datasource')}
+              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+                uploadTab === 'datasource'
+                  ? 'bg-[#00ff32] text-black'
+                  : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
+              }`}
+            >
+              Data Sources
+            </button>
+            <button
+              type="button"
+              onClick={() => setUploadTab('document')}
+              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+                uploadTab === 'document'
+                  ? 'bg-[#00ff32] text-black'
+                  : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
+              }`}
+            >
+              Documents
+            </button>
+            <button
+              type="button"
+              onClick={() => setUploadTab('query')}
+              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+                uploadTab === 'query'
+                  ? 'bg-[#00ff32] text-black'
+                  : 'bg-[#404040] text-gray-300 hover:bg-[#505050]'
+              }`}
+            >
+              Example Queries
+            </button>
+          </div>
+          {/* Tab content */}
+          {uploadTab === 'datasource' && <UploadDataSource />}
+          {uploadTab === 'document' && <UploadDocument />}
+          {uploadTab === 'query' && <UploadQuery />}
         </div>
 
         {/* Invite form */}
