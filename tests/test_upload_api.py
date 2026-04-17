@@ -1,7 +1,12 @@
 """Tests for staff upload API schemas and endpoints."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
+from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
+
+from d4bl.app.api import app
 
 
 class TestUploadSchemas:
@@ -125,3 +130,101 @@ class TestUploadSchemas:
             created_at="2026-04-17T00:00:00Z",
         )
         assert resp.status == "pending_review"
+
+
+@pytest.fixture
+async def admin_client(override_admin_auth):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+async def user_client(override_auth):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+async def unauth_client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+class TestUploadEndpoints:
+
+    @pytest.mark.asyncio
+    async def test_upload_query_requires_auth(self, unauth_client):
+        resp = await unauth_client.post(
+            "/api/admin/uploads/query",
+            json={
+                "query_text": "Test query",
+                "summary_format": "detailed",
+                "description": "Test description",
+            },
+        )
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_upload_query_success(self, user_client, mock_db_session):
+        from d4bl.app.api import app
+        from d4bl.infra.database import get_db
+
+        app.dependency_overrides[get_db] = lambda: mock_db_session
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        mock_db_session.execute = AsyncMock(return_value=mock_result)
+
+        resp = await user_client.post(
+            "/api/admin/uploads/query",
+            json={
+                "query_text": "What are racial disparities in housing?",
+                "summary_format": "detailed",
+                "description": "Tests equity-focused housing query",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["upload_type"] == "query"
+        assert data["status"] == "pending_review"
+
+        app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_upload_feature_request_success(self, user_client, mock_db_session):
+        from d4bl.app.api import app
+        from d4bl.infra.database import get_db
+
+        app.dependency_overrides[get_db] = lambda: mock_db_session
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        mock_db_session.execute = AsyncMock(return_value=mock_result)
+
+        resp = await user_client.post(
+            "/api/admin/uploads/feature-request",
+            json={
+                "title": "Add HMDA data",
+                "description": "Include HMDA mortgage data",
+                "who_benefits": "Housing researchers",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["upload_type"] == "feature_request"
+
+        app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_list_uploads_requires_auth(self, unauth_client):
+        resp = await unauth_client.get("/api/admin/uploads")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_review_requires_admin(self, user_client):
+        resp = await user_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 403
