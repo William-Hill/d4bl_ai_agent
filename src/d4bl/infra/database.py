@@ -935,6 +935,75 @@ class IngestionSchedule(Base):
         }
 
 
+class Upload(Base):
+    __tablename__ = "uploads"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    upload_type = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, default="pending_review", index=True)
+    file_path = Column(Text, nullable=True)
+    original_filename = Column(Text, nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    reviewer_id = Column(PG_UUID(as_uuid=True), nullable=True)
+    reviewer_notes = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+
+
+class UploadedDataset(Base):
+    __tablename__ = "uploaded_datasets"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    upload_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    row_index = Column(Integer, nullable=False)
+    data = Column(JSONB, nullable=False)
+
+
+class ExampleQuery(Base):
+    __tablename__ = "example_queries"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    upload_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    query_text = Column(Text, nullable=False)
+    summary_format = Column(Text, nullable=False, default="detailed")
+    description = Column(Text, nullable=False)
+    curated_answer = Column(Text, nullable=True)
+    relevant_sources = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+
+
+class FeatureRequest(Base):
+    __tablename__ = "feature_requests"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    upload_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("uploads.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=False)
+    who_benefits = Column(Text, nullable=False)
+    example = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="open", index=True)
+    admin_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+
+
 # Database connection setup
 def get_database_url() -> str:
     """Get database URL from settings."""
