@@ -147,12 +147,16 @@ export default function ReviewQueue() {
                   {/* Title / filename */}
                   <span className="flex-1 min-w-0">
                     <span className="text-white text-sm font-medium truncate block">
-                      {upload.original_filename}
+                      {upload.original_filename ||
+                        (upload.metadata?.title as string) ||
+                        (upload.metadata?.source_name as string) ||
+                        ((upload.metadata?.query_text as string)?.slice(0, 60)) ||
+                        'Upload'}
                     </span>
                     <span className="text-gray-400 text-xs">
                       {upload.uploader_name
-                        ? `${upload.uploader_name} · ${upload.uploader_email}`
-                        : upload.uploader_email}
+                        ? `${upload.uploader_name} · ${upload.uploader_email ?? ''}`
+                        : upload.uploader_email ?? ''}
                     </span>
                   </span>
 

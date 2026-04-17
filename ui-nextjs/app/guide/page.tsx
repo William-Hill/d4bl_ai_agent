@@ -58,8 +58,8 @@ export default function GuidePage() {
             </p>
             <p>
               <span className="text-white font-semibold">What happens after:</span>{' '}
-              An admin reviews your upload. Once approved, the data is processed, indexed, and
-              surfaces in the <span className="text-[#00ff32]">/explore</span> page for all users.
+              An admin reviews your upload and marks it approved or rejected.
+              Automated processing and indexing is planned for a follow-up release.
             </p>
             <p>
               <span className="text-white font-semibold">Example:</span>{' '}

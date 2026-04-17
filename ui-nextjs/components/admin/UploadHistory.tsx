@@ -3,17 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
-
-interface UploadRecord {
-  id: string;
-  upload_type: string;
-  filename?: string;
-  title?: string;
-  query_text?: string;
-  status: 'pending_review' | 'approved' | 'rejected' | 'processing' | 'live';
-  reviewer_notes?: string;
-  created_at: string;
-}
+import type { UploadRecord } from './upload-types';
 
 interface UploadHistoryProps {
   uploadType: string;
@@ -37,13 +27,14 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function getPreviewText(record: UploadRecord): string {
-  if (record.query_text) {
-    return record.query_text.length > 80
-      ? record.query_text.slice(0, 80) + '...'
-      : record.query_text;
+  const meta = record.metadata ?? {};
+  if (record.upload_type === 'query') {
+    const qt = meta.query_text as string | undefined;
+    return qt ? (qt.length > 80 ? qt.slice(0, 80) + '...' : qt) : `Upload ${record.id.slice(0, 8)}`;
   }
-  if (record.title) return record.title;
-  if (record.filename) return record.filename;
+  if (record.original_filename) return record.original_filename;
+  const title = (meta.title ?? meta.source_name) as string | undefined;
+  if (title) return title;
   return `Upload ${record.id.slice(0, 8)}`;
 }
 

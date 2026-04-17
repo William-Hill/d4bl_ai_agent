@@ -7,9 +7,11 @@ and feature requests. Includes admin review workflow.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import uuid4
+from pathlib import PurePosixPath
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +37,18 @@ MAX_DATASOURCE_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_DOCUMENT_SIZE = 25 * 1024 * 1024  # 25 MB
 ALLOWED_DATASOURCE_EXT = {".csv", ".xlsx"}
 ALLOWED_DOCUMENT_EXT = {".pdf", ".docx"}
+
+
+def _safe_filename(raw: str | None) -> str:
+    """Strip directory components from a client-supplied filename."""
+    return PurePosixPath(raw or "file").name
+
+
+def _file_ext(filename: str | None) -> str:
+    """Extract lowercase extension (e.g. '.csv') or '' if none."""
+    name = _safe_filename(filename)
+    parts = name.rsplit(".", 1)
+    return ("." + parts[-1].lower()) if len(parts) == 2 else ""
 
 
 def _upload_to_response(upload: Upload) -> dict:
@@ -65,16 +79,19 @@ async def upload_datasource(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a CSV/XLSX data source file for review."""
-    ext = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if file.filename else ""
+    ext = _file_ext(file.filename)
     if ext not in ALLOWED_DATASOURCE_EXT:
-        raise HTTPException(400, f"File type {ext} not allowed. Use: {ALLOWED_DATASOURCE_EXT}")
+        raise HTTPException(400, f"File type {ext!r} not allowed. Use: {ALLOWED_DATASOURCE_EXT}")
 
-    DataSourceUploadRequest(
-        source_name=source_name,
-        description=description,
-        geographic_level=geographic_level,
-        data_year=data_year,
-    )
+    try:
+        DataSourceUploadRequest(
+            source_name=source_name,
+            description=description,
+            geographic_level=geographic_level,
+            data_year=data_year,
+        )
+    except ValidationError as exc:
+        raise HTTPException(422, detail=exc.errors()) from exc
 
     content = await file.read()
     if len(content) > MAX_DATASOURCE_SIZE:
@@ -83,7 +100,7 @@ async def upload_datasource(
         raise HTTPException(400, "File is empty")
 
     upload_id = uuid4()
-    storage_path = f"datasource/{user.id}/{upload_id}_{file.filename}"
+    safe_name = _safe_filename(file.filename)
 
     tags = [t.strip() for t in category_tags.split(",")] if category_tags else None
 
@@ -92,8 +109,8 @@ async def upload_datasource(
         user_id=user.id,
         upload_type="datasource",
         status="pending_review",
-        file_path=storage_path,
-        original_filename=file.filename,
+        file_path=None,
+        original_filename=safe_name,
         file_size_bytes=len(content),
         metadata_={
             "source_name": source_name,
@@ -125,35 +142,38 @@ async def upload_document(
 
     tags = [t.strip() for t in topic_tags.split(",")] if topic_tags else None
 
-    validated = DocumentUploadRequest(
-        title=title,
-        document_type=document_type,
-        topic_tags=tags,
-        url=url,
-    )
+    try:
+        validated = DocumentUploadRequest(
+            title=title,
+            document_type=document_type,
+            topic_tags=tags,
+            url=url,
+        )
+    except ValidationError as exc:
+        raise HTTPException(422, detail=exc.errors()) from exc
 
     upload_id = uuid4()
-    storage_path = None
     file_size = None
     filename = None
 
     if file:
-        ext = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if file.filename else ""
+        ext = _file_ext(file.filename)
         if ext not in ALLOWED_DOCUMENT_EXT:
-            raise HTTPException(400, f"File type {ext} not allowed. Use: {ALLOWED_DOCUMENT_EXT}")
+            raise HTTPException(400, f"File type {ext!r} not allowed. Use: {ALLOWED_DOCUMENT_EXT}")
         content = await file.read()
         if len(content) > MAX_DOCUMENT_SIZE:
             raise HTTPException(400, f"File too large. Max {MAX_DOCUMENT_SIZE // (1024*1024)}MB")
-        storage_path = f"document/{user.id}/{upload_id}_{file.filename}"
+        if len(content) == 0:
+            raise HTTPException(400, "File is empty")
         file_size = len(content)
-        filename = file.filename
+        filename = _safe_filename(file.filename)
 
     upload = Upload(
         id=upload_id,
         user_id=user.id,
         upload_type="document",
         status="pending_review",
-        file_path=storage_path,
+        file_path=None,
         original_filename=filename,
         file_size_bytes=file_size,
         metadata_={
@@ -299,7 +319,7 @@ async def list_uploads(
 
 @router.patch("/api/admin/uploads/{upload_id}/review")
 async def review_upload(
-    upload_id: str,
+    upload_id: UUID,
     body: UploadReviewRequest,
     user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -307,7 +327,7 @@ async def review_upload(
     """Approve or reject an upload (admin only)."""
     result = await db.execute(
         text("SELECT id, status FROM uploads WHERE id = CAST(:uid AS uuid)"),
-        {"uid": upload_id},
+        {"uid": str(upload_id)},
     )
     row = result.mappings().first()
     if not row:
@@ -332,9 +352,9 @@ async def review_upload(
             "notes": body.notes,
             "reviewed_at": now,
             "updated_at": now,
-            "uid": upload_id,
+            "uid": str(upload_id),
         },
     )
     await db.commit()
 
-    return {"id": upload_id, "status": new_status, "reviewed_at": now.isoformat()}
+    return {"id": str(upload_id), "status": new_status, "reviewed_at": now.isoformat()}

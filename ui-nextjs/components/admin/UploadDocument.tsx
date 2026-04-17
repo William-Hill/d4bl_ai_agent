@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
 import UploadHistory from './UploadHistory';
@@ -9,6 +9,7 @@ type InputMode = 'file' | 'url';
 
 export default function UploadDocument() {
   const { session } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -23,7 +24,10 @@ export default function UploadDocument() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.access_token) return;
+    if (!session?.access_token) {
+      setError('Session expired. Please sign in again.');
+      return;
+    }
     if (mode === 'file' && !file) return;
     if (mode === 'url' && !urlInput) return;
 
@@ -54,6 +58,7 @@ export default function UploadDocument() {
       if (resp.ok) {
         setSuccess('Document submitted successfully. It will be reviewed before going live.');
         setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         setUrlInput('');
         setTitle('');
         setDocumentType('report');
@@ -111,6 +116,7 @@ export default function UploadDocument() {
             <input
               id="doc-file"
               type="file"
+              ref={fileInputRef}
               accept=".pdf,.docx"
               required
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -197,7 +203,7 @@ export default function UploadDocument() {
 
         <button
           type="submit"
-          disabled={loading || (mode === 'file' && !file) || (mode === 'url' && !urlInput)}
+          disabled={loading || !title.trim() || (mode === 'file' && !file) || (mode === 'url' && !urlInput)}
           className="px-5 py-2 bg-[#00ff32] text-black font-semibold rounded
                      hover:bg-[#00cc28] disabled:opacity-50 transition-colors text-sm"
         >

@@ -16,7 +16,7 @@ export default function UploadDataSource() {
   const [sourceName, setSourceName] = useState('');
   const [description, setDescription] = useState('');
   const [geographicLevel, setGeographicLevel] = useState('state');
-  const [dataYear, setDataYear] = useState(2024);
+  const [dataYear, setDataYear] = useState(() => new Date().getFullYear());
   const [sourceUrl, setSourceUrl] = useState('');
   const [categoryTags, setCategoryTags] = useState('');
 
@@ -52,7 +52,7 @@ export default function UploadDataSource() {
         setSourceName('');
         setDescription('');
         setGeographicLevel('state');
-        setDataYear(2024);
+        setDataYear(new Date().getFullYear());
         setSourceUrl('');
         setCategoryTags('');
         setRefreshKey((k) => k + 1);

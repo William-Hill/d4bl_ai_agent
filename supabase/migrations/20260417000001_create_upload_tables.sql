@@ -62,3 +62,4 @@ CREATE TABLE feature_requests (
 
 CREATE INDEX idx_feature_requests_user_id ON feature_requests(user_id);
 CREATE INDEX idx_feature_requests_status ON feature_requests(status);
+CREATE INDEX idx_feature_requests_upload_id ON feature_requests(upload_id);

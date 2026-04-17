@@ -33,6 +33,10 @@ export default function FeatureRequestForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!session?.access_token) {
+      setError('Session expired. Please sign in again.');
+      return;
+    }
     setSubmitting(true);
     setSuccess(null);
     setError(null);
@@ -42,9 +46,7 @@ export default function FeatureRequestForm() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : {}),
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify(form),
       });

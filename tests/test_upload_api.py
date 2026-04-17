@@ -153,6 +153,16 @@ async def unauth_client():
         yield ac
 
 
+@pytest.fixture
+def override_db(mock_db_session):
+    """Override get_db with mock session, with guaranteed cleanup."""
+    from d4bl.infra.database import get_db
+
+    app.dependency_overrides[get_db] = lambda: mock_db_session
+    yield mock_db_session
+    app.dependency_overrides.pop(get_db, None)
+
+
 class TestUploadEndpoints:
 
     @pytest.mark.asyncio
@@ -168,11 +178,8 @@ class TestUploadEndpoints:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_upload_query_success(self, user_client, mock_db_session):
-        from d4bl.app.api import app
-        from d4bl.infra.database import get_db
-
-        app.dependency_overrides[get_db] = lambda: mock_db_session
+    async def test_upload_query_success(self, user_client, override_db):
+        mock_db_session = override_db
         mock_result = MagicMock()
         mock_result.scalar_one.return_value = None
         mock_db_session.execute = AsyncMock(return_value=mock_result)
@@ -190,14 +197,9 @@ class TestUploadEndpoints:
         assert data["upload_type"] == "query"
         assert data["status"] == "pending_review"
 
-        app.dependency_overrides.pop(get_db, None)
-
     @pytest.mark.asyncio
-    async def test_upload_feature_request_success(self, user_client, mock_db_session):
-        from d4bl.app.api import app
-        from d4bl.infra.database import get_db
-
-        app.dependency_overrides[get_db] = lambda: mock_db_session
+    async def test_upload_feature_request_success(self, user_client, override_db):
+        mock_db_session = override_db
         mock_result = MagicMock()
         mock_result.scalar_one.return_value = None
         mock_db_session.execute = AsyncMock(return_value=mock_result)
@@ -213,8 +215,6 @@ class TestUploadEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["upload_type"] == "feature_request"
-
-        app.dependency_overrides.pop(get_db, None)
 
     @pytest.mark.asyncio
     async def test_list_uploads_requires_auth(self, unauth_client):
