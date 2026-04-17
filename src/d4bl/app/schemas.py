@@ -720,4 +720,4 @@ class UploadResponse(BaseModel):
     metadata: dict | None = None
     reviewer_notes: str | None = None
     reviewed_at: str | None = None
-    created_at: str
+    created_at: str | None = None
