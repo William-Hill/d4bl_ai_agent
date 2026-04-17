@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ResearchRequest(BaseModel):
@@ -627,3 +627,97 @@ class FlywheelMetricsResponse(BaseModel):
     training_runs: list[TrainingRunItem]
     research_quality: dict[str, ResearchQualityItem]
     time_series: dict[str, list[TimeSeriesPoint]]
+
+
+# --- Staff Upload Schemas ---
+
+
+class DataSourceUploadRequest(BaseModel):
+    source_name: str
+    description: str
+    geographic_level: Literal["state", "county", "tract"]
+    data_year: int
+    source_url: str | None = None
+    category_tags: list[str] | None = None
+
+    @field_validator("source_name")
+    @classmethod
+    def source_name_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Source name cannot be empty")
+        return v.strip()
+
+
+class DocumentUploadRequest(BaseModel):
+    title: str
+    document_type: Literal["report", "article", "policy_brief", "other"]
+    topic_tags: list[str] | None = None
+    url: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Title cannot be empty")
+        return v.strip()
+
+
+class ExampleQueryRequest(BaseModel):
+    query_text: str
+    summary_format: Literal["brief", "detailed"] = "detailed"
+    description: str
+    curated_answer: str | None = None
+    relevant_sources: list[str] | None = None
+
+    @field_validator("query_text")
+    @classmethod
+    def query_text_valid(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Query text cannot be empty")
+        if len(v) > 2000:
+            raise ValueError("Query text must be under 2000 characters")
+        return v.strip()
+
+
+class FeatureRequestCreate(BaseModel):
+    title: str
+    description: str
+    who_benefits: str
+    example: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Title cannot be empty")
+        return v.strip()
+
+    @field_validator("description")
+    @classmethod
+    def description_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Description cannot be empty")
+        return v.strip()
+
+
+class UploadReviewRequest(BaseModel):
+    action: Literal["approve", "reject"]
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def reject_requires_notes(self) -> "UploadReviewRequest":
+        if self.action == "reject" and not self.notes:
+            raise ValueError("Notes are required when rejecting an upload")
+        return self
+
+
+class UploadResponse(BaseModel):
+    id: str
+    upload_type: str
+    status: str
+    original_filename: str | None = None
+    file_size_bytes: int | None = None
+    metadata: dict | None = None
+    reviewer_notes: str | None = None
+    reviewed_at: str | None = None
+    created_at: str | None = None

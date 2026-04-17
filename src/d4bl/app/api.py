@@ -61,6 +61,7 @@ from d4bl.app.schemas import (
     UpdateRoleRequest,
     UserProfile,
 )
+from d4bl.app.upload_routes import router as upload_router
 from d4bl.app.websocket_manager import get_job_logs, register_connection, remove_connection
 from d4bl.infra import database as _db_mod
 from d4bl.infra.database import (
@@ -562,6 +563,7 @@ app.include_router(data_router)
 app.include_router(explore_insights_router)
 app.include_router(schedule_router)
 app.include_router(flywheel_router)
+app.include_router(upload_router)
 
 # ---------------------------------------------------------------------------
 # Admin ingestion: track background subprocess jobs
