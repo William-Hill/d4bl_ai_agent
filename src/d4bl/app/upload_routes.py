@@ -83,12 +83,16 @@ async def upload_datasource(
     if ext not in ALLOWED_DATASOURCE_EXT:
         raise HTTPException(400, f"File type {ext!r} not allowed. Use: {ALLOWED_DATASOURCE_EXT}")
 
+    tags = [t.strip() for t in category_tags.split(",") if t.strip()] if category_tags else None
+
     try:
-        DataSourceUploadRequest(
+        validated = DataSourceUploadRequest(
             source_name=source_name,
             description=description,
             geographic_level=geographic_level,
             data_year=data_year,
+            source_url=source_url,
+            category_tags=tags,
         )
     except ValidationError as exc:
         raise HTTPException(422, detail=exc.errors()) from exc
@@ -103,8 +107,6 @@ async def upload_datasource(
     upload_id = uuid4()
     safe_name = _safe_filename(file.filename)
 
-    tags = [t.strip() for t in category_tags.split(",") if t.strip()] if category_tags else None
-
     upload = Upload(
         id=upload_id,
         user_id=user.id,
@@ -114,12 +116,12 @@ async def upload_datasource(
         original_filename=safe_name,
         file_size_bytes=len(content),
         metadata_={
-            "source_name": source_name,
-            "description": description,
-            "geographic_level": geographic_level,
-            "data_year": data_year,
-            "source_url": source_url,
-            "category_tags": tags,
+            "source_name": validated.source_name,
+            "description": validated.description,
+            "geographic_level": validated.geographic_level,
+            "data_year": validated.data_year,
+            "source_url": validated.source_url,
+            "category_tags": validated.category_tags,
         },
     )
     db.add(upload)
