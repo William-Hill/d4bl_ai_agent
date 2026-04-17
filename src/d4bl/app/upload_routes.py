@@ -102,7 +102,7 @@ async def upload_datasource(
     upload_id = uuid4()
     safe_name = _safe_filename(file.filename)
 
-    tags = [t.strip() for t in category_tags.split(",")] if category_tags else None
+    tags = [t.strip() for t in category_tags.split(",") if t.strip()] if category_tags else None
 
     upload = Upload(
         id=upload_id,
@@ -140,7 +140,7 @@ async def upload_document(
     if not file and not url:
         raise HTTPException(400, "Either a file or URL is required")
 
-    tags = [t.strip() for t in topic_tags.split(",")] if topic_tags else None
+    tags = [t.strip() for t in topic_tags.split(",") if t.strip()] if topic_tags else None
 
     try:
         validated = DocumentUploadRequest(

@@ -165,7 +165,7 @@ export default function UploadDataSource() {
               onChange={(e) => setDataYear(Number(e.target.value))}
               required
               min={1990}
-              max={2030}
+              max={new Date().getFullYear() + 1}
               className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
                          focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
             />

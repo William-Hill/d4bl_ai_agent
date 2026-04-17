@@ -148,9 +148,9 @@ export default function ReviewQueue() {
                   <span className="flex-1 min-w-0">
                     <span className="text-white text-sm font-medium truncate block">
                       {upload.original_filename ||
-                        (upload.metadata?.title as string) ||
-                        (upload.metadata?.source_name as string) ||
-                        ((upload.metadata?.query_text as string)?.slice(0, 60)) ||
+                        (typeof upload.metadata?.title === 'string' ? upload.metadata.title : null) ||
+                        (typeof upload.metadata?.source_name === 'string' ? upload.metadata.source_name : null) ||
+                        (typeof upload.metadata?.query_text === 'string' ? upload.metadata.query_text.slice(0, 60) : null) ||
                         'Upload'}
                     </span>
                     <span className="text-gray-400 text-xs">
