@@ -93,6 +93,7 @@ async def upload_datasource(
     except ValidationError as exc:
         raise HTTPException(422, detail=exc.errors()) from exc
 
+    # File bytes are read for validation only; Supabase Storage upload is deferred.
     content = await file.read()
     if len(content) > MAX_DATASOURCE_SIZE:
         raise HTTPException(400, f"File too large. Max {MAX_DATASOURCE_SIZE // (1024*1024)}MB")
@@ -160,6 +161,7 @@ async def upload_document(
         ext = _file_ext(file.filename)
         if ext not in ALLOWED_DOCUMENT_EXT:
             raise HTTPException(400, f"File type {ext!r} not allowed. Use: {ALLOWED_DOCUMENT_EXT}")
+        # File bytes are read for validation only; Supabase Storage upload is deferred.
         content = await file.read()
         if len(content) > MAX_DOCUMENT_SIZE:
             raise HTTPException(400, f"File too large. Max {MAX_DOCUMENT_SIZE // (1024*1024)}MB")
