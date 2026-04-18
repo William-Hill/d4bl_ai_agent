@@ -30,6 +30,15 @@ def chunk_text(
         A list of chunks. Empty or whitespace-only input returns [].
         Input shorter than MIN_CHUNK_SIZE is returned as a single chunk.
     """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    if overlap < 0:
+        raise ValueError("overlap must be non-negative")
+    # Reject degenerate overlap. overlap >= chunk_size forces stride = 1 in
+    # hard-split mode, producing O(n) chunks — almost certainly misconfig.
+    if overlap >= chunk_size:
+        raise ValueError("overlap must be strictly less than chunk_size")
+
     if not text or not text.strip():
         return []
 
@@ -46,8 +55,11 @@ def chunk_text(
         if len(para) > chunk_size:
             if buffer:
                 chunks.append(buffer)
-                buffer = ""
-            chunks.extend(_hard_split(para, chunk_size, overlap))
+            hard_chunks = _hard_split(para, chunk_size, overlap)
+            chunks.extend(hard_chunks)
+            # Seed next buffer with the tail of the final hard-split chunk
+            # so the next paragraph doesn't lose context across the seam.
+            buffer = hard_chunks[-1][-overlap:] if overlap and hard_chunks else ""
             continue
 
         if buffer and len(buffer) + 2 + len(para) > chunk_size:

@@ -9,7 +9,6 @@ from uuid import uuid4
 import pytest
 from docx import Document as DocxDocument
 from pypdf import PdfWriter
-from reportlab.pdfgen import canvas
 
 from d4bl.services.document_processing.approve import (
     ProcessingError,
@@ -28,18 +27,6 @@ from d4bl.services.document_processing.extractors import (
 )
 
 
-def _make_pdf_bytes(lines: list[str]) -> bytes:
-    """Build a real PDF in memory using reportlab so pypdf can parse it."""
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf)
-    y = 800
-    for line in lines:
-        c.drawString(100, y, line)
-        y -= 20
-    c.save()
-    return buf.getvalue()
-
-
 def _make_docx_bytes(paragraphs: list[str]) -> bytes:
     buf = io.BytesIO()
     doc = DocxDocument()
@@ -50,8 +37,8 @@ def _make_docx_bytes(paragraphs: list[str]) -> bytes:
 
 
 class TestExtractPdf:
-    def test_extracts_text_from_valid_pdf(self):
-        pdf_bytes = _make_pdf_bytes([
+    def test_extracts_text_from_valid_pdf(self, make_pdf_bytes):
+        pdf_bytes = make_pdf_bytes([
             "The racial wealth gap has widened over the past decade.",
             "Black homeownership rates trail white homeownership by 30 points.",
         ])
@@ -140,6 +127,30 @@ class TestChunkText:
     def test_defaults_are_reasonable(self):
         assert DEFAULT_CHUNK_SIZE > DEFAULT_OVERLAP > 0
 
+    def test_rejects_non_positive_chunk_size(self):
+        with pytest.raises(ValueError, match="chunk_size must be positive"):
+            chunk_text("some text", chunk_size=0, overlap=0)
+
+    def test_rejects_negative_overlap(self):
+        with pytest.raises(ValueError, match="overlap must be non-negative"):
+            chunk_text("some text", chunk_size=100, overlap=-1)
+
+    def test_rejects_overlap_geq_chunk_size(self):
+        """overlap >= chunk_size raises instead of exploding to O(n) chunks."""
+        with pytest.raises(ValueError, match="strictly less than chunk_size"):
+            chunk_text("x" * 2000, chunk_size=100, overlap=500)
+
+    def test_overlap_carries_across_hard_split_seam(self):
+        """After hard-splitting a big paragraph, the next paragraph's chunk
+        carries the tail of the hard-split chunk so context isn't lost."""
+        big_para = "A" * 1000
+        follow = "B paragraph content that continues the discussion"
+        text = big_para + "\n\n" + follow
+        chunks = chunk_text(text, chunk_size=400, overlap=80)
+        # The follow-up chunk should contain some trailing As from the
+        # hard-split tail in addition to the new paragraph text.
+        assert any("A" * 20 in c and "B paragraph" in c for c in chunks)
+
 
 def _mock_upload_row(
     *,
@@ -210,6 +221,14 @@ class TestProcessDocumentUpload:
     async def test_missing_full_text_raises(self):
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_mock_upload_row(full_text=None))
+
+        with pytest.raises(ProcessingError, match="no extracted text"):
+            await process_document_upload(db, uuid4())
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_full_text_raises(self):
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_mock_upload_row(full_text="   \n\n  "))
 
         with pytest.raises(ProcessingError, match="no extracted text"):
             await process_document_upload(db, uuid4())

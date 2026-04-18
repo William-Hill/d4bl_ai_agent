@@ -470,7 +470,7 @@ async def review_upload(
             reviewed_at=now,
         )
         await db.commit()
-        logger.warning("Document upload %s processing failed: %s", upload_id, exc)
+        logger.exception("Document upload %s processing failed", upload_id)
         return {
             "id": str(upload_id),
             "status": "processing_failed",
@@ -497,7 +497,10 @@ async def retry_upload_processing(
 ):
     """Retry processing for a document upload in ``processing_failed`` state."""
     result = await db.execute(
-        text("SELECT id, status, upload_type FROM uploads WHERE id = CAST(:uid AS uuid)"),
+        text(
+            "SELECT id, status, upload_type, reviewer_notes "
+            "FROM uploads WHERE id = CAST(:uid AS uuid)"
+        ),
         {"uid": str(upload_id)},
     )
     row = result.mappings().first()
@@ -509,14 +512,17 @@ async def retry_upload_processing(
         raise HTTPException(400, f"Upload is {row['status']}, not processing_failed")
 
     now = datetime.now(timezone.utc)
+    existing_notes = row["reviewer_notes"]
     try:
         await process_document_upload(db, upload_id)
     except Exception as exc:  # noqa: BLE001
+        retry_note = f"Retry failed: {exc}"
+        notes = f"{existing_notes}\n\n{retry_note}" if existing_notes else retry_note
         await _set_upload_status(
             db, upload_id,
             status="processing_failed",
             reviewer_id=user.id,
-            notes=f"Retry failed: {exc}",
+            notes=notes,
             reviewed_at=now,
         )
         await db.commit()
@@ -530,7 +536,7 @@ async def retry_upload_processing(
         db, upload_id,
         status="indexed",
         reviewer_id=user.id,
-        notes=None,
+        notes=existing_notes,  # preserve original approval notes
         reviewed_at=now,
     )
     await db.commit()

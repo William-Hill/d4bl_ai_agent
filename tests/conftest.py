@@ -1,5 +1,6 @@
 """Shared test fixtures for D4BL tests."""
 
+import io
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -7,6 +8,25 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from d4bl.app.auth import CurrentUser, get_current_user
+
+
+@pytest.fixture
+def make_pdf_bytes():
+    """Factory fixture: given a list of text lines, produce a PDF byte string
+    that pypdf can parse. Used by document-processing and upload-API tests."""
+    from reportlab.pdfgen import canvas
+
+    def _make(lines: list[str]) -> bytes:
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf)
+        y = 800
+        for line in lines:
+            c.drawString(100, y, line)
+            y -= 20
+        c.save()
+        return buf.getvalue()
+
+    return _make
 
 _PATCH_SETTINGS_SECRET = "test-jwt-secret"
 

@@ -160,10 +160,11 @@ class TestVectorStore:
 
         self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
         returned_ids = [uuid4() for _ in range(3)]
+        # First call is the idempotent DELETE for this upload_id, then 3 INSERTs.
         mock_db_session.execute = AsyncMock(
             side_effect=[
-                MagicMock(scalar_one=MagicMock(return_value=rid))
-                for rid in returned_ids
+                MagicMock(),  # DELETE response (no rowcount needed)
+                *[MagicMock(scalar_one=MagicMock(return_value=rid)) for rid in returned_ids],
             ]
         )
         mock_db_session.commit = AsyncMock()
@@ -186,17 +187,47 @@ class TestVectorStore:
 
         assert result == returned_ids
         assert self.store.generate_embedding.call_count == 3
-        assert mock_db_session.execute.call_count == 3
+        # 1 DELETE + 3 INSERTs
+        assert mock_db_session.execute.call_count == 4
         mock_db_session.commit.assert_called_once()
 
-        # Inspect the first insert's metadata to confirm enrichment.
-        first_call_params = mock_db_session.execute.call_args_list[0][0][1]
-        metadata = _json.loads(first_call_params["metadata"])
+        # First execute is the DELETE — confirm it targets this upload_id.
+        delete_call_params = mock_db_session.execute.call_args_list[0][0][1]
+        assert delete_call_params == {"upload_id": str(upload_id)}
+
+        # Second execute is the first INSERT — inspect metadata enrichment.
+        first_insert_params = mock_db_session.execute.call_args_list[1][0][1]
+        metadata = _json.loads(first_insert_params["metadata"])
         assert metadata["title"] == "Overlooked: Women and Jails"
         assert metadata["upload_id"] == str(upload_id)
         assert metadata["chunk_index"] == 0
         assert metadata["total_chunks"] == 3
         assert metadata["source_type"] == "staff_upload"
+
+    @pytest.mark.asyncio
+    async def test_store_staff_document_deletes_existing_chunks_first(
+        self, mock_db_session
+    ):
+        """Idempotency: DELETE runs before any INSERT so retries don't duplicate."""
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(),
+                MagicMock(scalar_one=MagicMock(return_value=uuid4())),
+            ]
+        )
+        mock_db_session.commit = AsyncMock()
+
+        await self.store.store_staff_document(
+            db=mock_db_session,
+            upload_id=uuid4(),
+            chunks=["only chunk"],
+            metadata_base={"title": "Test"},
+        )
+
+        first_sql = str(mock_db_session.execute.call_args_list[0][0][0])
+        assert "DELETE FROM scraped_content_vectors" in first_sql
+        assert "'staff_upload'" in first_sql
 
     @pytest.mark.asyncio
     async def test_store_staff_document_empty_chunks_returns_empty(
@@ -242,8 +273,12 @@ class TestVectorStore:
     ):
         """URL-based uploads propagate source_url to the url column."""
         self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
+        # First call is DELETE, second is INSERT.
         mock_db_session.execute = AsyncMock(
-            return_value=MagicMock(scalar_one=MagicMock(return_value=uuid4()))
+            side_effect=[
+                MagicMock(),
+                MagicMock(scalar_one=MagicMock(return_value=uuid4())),
+            ]
         )
         mock_db_session.commit = AsyncMock()
 
@@ -257,8 +292,9 @@ class TestVectorStore:
             },
         )
 
-        call_params = mock_db_session.execute.call_args_list[0][0][1]
-        assert call_params["url"] == "https://propublica.org/article"
+        # INSERT is the second execute call (call_args_list[1]).
+        insert_params = mock_db_session.execute.call_args_list[1][0][1]
+        assert insert_params["url"] == "https://propublica.org/article"
 
 
 class TestHelpers:

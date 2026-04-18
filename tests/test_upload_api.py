@@ -1,26 +1,13 @@
 """Tests for staff upload API schemas and endpoints."""
 
-import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
-from reportlab.pdfgen import canvas
 
 from d4bl.app.api import app
 from d4bl.services.document_processing.extractors import ExtractionError
-
-
-def _make_pdf_bytes(lines: list[str]) -> bytes:
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf)
-    y = 800
-    for line in lines:
-        c.drawString(100, y, line)
-        y -= 20
-    c.save()
-    return buf.getvalue()
 
 
 class TestUploadSchemas:
@@ -311,7 +298,7 @@ class TestUploadEndpoints:
     @pytest.mark.asyncio
     @patch("d4bl.app.upload_routes.extract_url")
     async def test_upload_document_file_extracts_text_at_submit(
-        self, mock_extract, user_client, override_db
+        self, mock_extract, user_client, override_db, make_pdf_bytes
     ):
         """PDF file uploads extract text at submit time, not URL fetch."""
         override_db.execute = AsyncMock()
@@ -322,7 +309,7 @@ class TestUploadEndpoints:
 
         override_db.add = capture_add
 
-        pdf_bytes = _make_pdf_bytes([
+        pdf_bytes = make_pdf_bytes([
             "The racial wealth gap has widened over the past decade.",
             "Homeownership rates trail by 30 percentage points.",
         ])
@@ -368,13 +355,19 @@ class TestUploadEndpoints:
         assert resp.status_code == 403
 
 
-def _mock_review_lookup(mock_session, upload_type: str, status: str = "pending_review"):
+def _mock_review_lookup(
+    mock_session,
+    upload_type: str,
+    status: str = "pending_review",
+    reviewer_notes: str | None = None,
+):
     """Wire up mock execute to return a single upload row then accept updates."""
     lookup = MagicMock()
     lookup.mappings.return_value.first.return_value = {
         "id": "00000000-0000-0000-0000-000000000001",
         "status": status,
         "upload_type": upload_type,
+        "reviewer_notes": reviewer_notes,
     }
     update_result = MagicMock()
     mock_session.execute = AsyncMock(side_effect=[lookup, update_result, update_result])
@@ -468,6 +461,30 @@ class TestRetryProcessing:
 
         assert resp.status_code == 200
         assert resp.json()["status"] == "indexed"
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_retry_success_preserves_existing_reviewer_notes(
+        self, mock_process, admin_client, override_db
+    ):
+        """Successful retry must not clobber notes from the initial approval."""
+        mock_process.return_value = 3
+        original_notes = "Admin approval: great source for housing equity."
+        _mock_review_lookup(
+            override_db,
+            upload_type="document",
+            status="processing_failed",
+            reviewer_notes=original_notes,
+        )
+
+        await admin_client.post(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/retry-processing",
+        )
+
+        # Inspect the UPDATE call — should carry original notes through.
+        update_call = override_db.execute.call_args_list[1]
+        params = update_call[0][1]
+        assert params["notes"] == original_notes
 
     @pytest.mark.asyncio
     async def test_retry_rejects_non_failed_upload(self, admin_client, override_db):

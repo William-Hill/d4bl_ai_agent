@@ -236,7 +236,17 @@ class VectorStore:
         total = len(chunks)
         inserted: list[UUID] = []
 
-        query = text("""
+        # Idempotent: drop any existing chunks for this upload before
+        # inserting the new set. Protects against duplicates after a
+        # partial failure (e.g., chunks committed, status update failed)
+        # and makes retry safe without requiring caller cleanup.
+        delete_existing = text("""
+            DELETE FROM scraped_content_vectors
+            WHERE source = 'staff_upload'
+              AND metadata ->> 'upload_id' = :upload_id
+        """)
+
+        insert_chunk = text("""
             INSERT INTO scraped_content_vectors
             (job_id, url, content, content_type, metadata, embedding, source)
             VALUES (NULL, :url, :content, :content_type, CAST(:metadata AS jsonb), CAST(:embedding AS vector), 'staff_upload')
@@ -244,6 +254,8 @@ class VectorStore:
         """)
 
         try:
+            await db.execute(delete_existing, {"upload_id": str(upload_id)})
+
             for i, chunk in enumerate(chunks):
                 embedding = await self.generate_embedding(chunk)
                 row_metadata = {
@@ -254,7 +266,7 @@ class VectorStore:
                     "source_type": "staff_upload",
                 }
                 result = await db.execute(
-                    query,
+                    insert_chunk,
                     {
                         "url": url,
                         "content": chunk,
