@@ -472,6 +472,28 @@ class TestUploadEndpoints:
         # No Upload row was added.
         assert not override_db.add.called
 
+    @pytest.mark.asyncio
+    async def test_review_datasource_approve_is_pure_flip(self, admin_client, override_db):
+        """Approving a datasource upload is a status flip — no processing call."""
+        mock_db = override_db
+        # First SELECT: upload exists, status=pending_review, type=datasource.
+        fetch_result = MagicMock()
+        fetch_result.mappings.return_value.first.return_value = {
+            "id": "00000000-0000-0000-0000-00000000aaaa",
+            "status": "pending_review",
+            "upload_type": "datasource",
+        }
+        # Subsequent UPDATE executes return a no-op MagicMock.
+        mock_db.execute = AsyncMock(side_effect=[fetch_result, MagicMock()])
+
+        resp = await admin_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-00000000aaaa/review",
+            json={"action": "approve", "notes": None},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "approved"
+
 
 def _mock_review_lookup(
     mock_session,
