@@ -87,14 +87,18 @@ export default function GuidePage() {
             <p>
               <span className="text-white font-semibold">File vs. URL:</span>{' '}
               Upload PDFs or DOCX files directly (25 MB max) for documents you have on disk.
-              For web articles and online reports, paste a URL instead — the platform will fetch
-              and extract the text automatically.
+              For web articles and online reports, paste a URL instead. In either case, the
+              platform extracts the text at submit time so the admin can review the actual
+              content — not just a link that might change later.
             </p>
             <p>
-              <span className="text-white font-semibold">How documents feed the system:</span>{' '}
-              Uploaded documents are chunked and embedded into the vector store. Research agents
-              cite them when answering queries, and they appear in vector search results on{' '}
-              <span className="text-[#00ff32]">/explore</span>.
+              <span className="text-white font-semibold">What happens after approval:</span>{' '}
+              Once an admin approves your upload, the extracted text is split into chunks,
+              embedded into the vector store, and tagged with your name as the contributor.
+              Research agents cite approved documents when answering queries, and they appear
+              in vector search results on <span className="text-[#00ff32]">/explore</span>.
+              If processing fails (rare — usually a timeout on Ollama), the admin sees the
+              error in the review queue and can retry without you needing to resubmit.
             </p>
             <p>
               <span className="text-white font-semibold">Example:</span>{' '}
