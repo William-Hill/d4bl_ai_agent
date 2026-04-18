@@ -168,7 +168,7 @@ export default function GuidePage() {
               <span className="text-white font-semibold">Getting started:</span>{' '}
               Read the{' '}
               <a
-                href="https://github.com/dataforblacklives/d4bl-ai-agent"
+                href="https://github.com/William-Hill/d4bl_ai_agent#quick-start-docker-compose--supabase--langfuse"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#00ff32] hover:underline"
