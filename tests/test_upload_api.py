@@ -21,9 +21,13 @@ class TestUploadSchemas:
             description="County-level health outcomes by race",
             geographic_level="county",
             data_year=2024,
+            geo_column="county_fips",
+            metric_value_column="premature_death_rate",
+            metric_name="premature_death_rate",
         )
         assert req.source_name == "County Health Rankings 2024"
         assert req.geographic_level == "county"
+        assert req.metric_name == "premature_death_rate"
 
     def test_datasource_upload_invalid_geo_level(self):
         from d4bl.app.schemas import DataSourceUploadRequest
@@ -34,6 +38,9 @@ class TestUploadSchemas:
                 description="Test",
                 geographic_level="zipcode",
                 data_year=2024,
+                geo_column="x",
+                metric_value_column="y",
+                metric_name="z",
             )
 
     def test_datasource_upload_blank_name(self):
@@ -45,7 +52,55 @@ class TestUploadSchemas:
                 description="Test",
                 geographic_level="county",
                 data_year=2024,
+                geo_column="x",
+                metric_value_column="y",
+                metric_name="z",
             )
+
+    def test_datasource_upload_requires_mapping_fields(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        # Missing metric_name should fail.
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                data_year=2024,
+                geo_column="county_fips",
+                metric_value_column="rate",
+            )
+
+    def test_datasource_upload_validates_metric_name(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                data_year=2024,
+                geo_column="county_fips",
+                metric_value_column="rate",
+                metric_name="Bad Name",
+            )
+
+    def test_datasource_upload_accepts_optional_race_and_year(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        req = DataSourceUploadRequest(
+            source_name="X",
+            description="X",
+            geographic_level="county",
+            data_year=2024,
+            geo_column="county_fips",
+            metric_value_column="rate",
+            metric_name="eviction_rate",
+            race_column="race",
+            year_column="year",
+        )
+        assert req.race_column == "race"
+        assert req.year_column == "year"
 
     def test_document_upload_valid(self):
         from d4bl.app.schemas import DocumentUploadRequest

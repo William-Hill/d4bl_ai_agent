@@ -639,6 +639,12 @@ class DataSourceUploadRequest(BaseModel):
     data_year: int
     source_url: str | None = None
     category_tags: list[str] | None = None
+    # Declared column mapping — contributor tells us what each CSV column means.
+    geo_column: str
+    metric_value_column: str
+    metric_name: str
+    race_column: str | None = None
+    year_column: str | None = None
 
     @field_validator("source_name")
     @classmethod
@@ -646,6 +652,13 @@ class DataSourceUploadRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Source name cannot be empty")
         return v.strip()
+
+    @field_validator("metric_name")
+    @classmethod
+    def metric_name_valid(cls, v: str) -> str:
+        from d4bl.services.datasource_processing.validation import validate_metric_name
+
+        return validate_metric_name(v)
 
 
 class DocumentUploadRequest(BaseModel):
