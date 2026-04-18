@@ -7,6 +7,7 @@ and feature requests. Includes admin review workflow.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
@@ -38,6 +39,11 @@ from d4bl.services.document_processing.extractors import (
     extract_docx,
     extract_pdf,
     extract_url,
+)
+from d4bl.services.datasource_processing.parser import (
+    DatasourceParseError,
+    MappingConfig,
+    parse_datasource_file,
 )
 
 router = APIRouter(tags=["uploads"])
@@ -86,12 +92,23 @@ async def upload_datasource(
     description: str = Form(...),
     geographic_level: str = Form(...),
     data_year: int = Form(...),
+    geo_column: str = Form(...),
+    metric_value_column: str = Form(...),
+    metric_name: str = Form(...),
+    race_column: str | None = Form(None),
+    year_column: str | None = Form(None),
     source_url: str | None = Form(None),
     category_tags: str | None = Form(None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a CSV/XLSX data source file for review."""
+    """Upload a CSV/XLSX data source with declared column mapping.
+
+    The file is parsed, validated, and normalized at upload time. Rows are
+    bulk-inserted into ``uploaded_datasets`` in the same transaction as the
+    ``Upload`` row. Admin approval later flips the status; no processing step
+    is required post-approval.
+    """
     ext = _file_ext(file.filename)
     if ext not in ALLOWED_DATASOURCE_EXT:
         raise HTTPException(400, f"File type {ext!r} not allowed. Use: {ALLOWED_DATASOURCE_EXT}")
@@ -106,16 +123,35 @@ async def upload_datasource(
             data_year=data_year,
             source_url=source_url,
             category_tags=tags,
+            geo_column=geo_column,
+            metric_value_column=metric_value_column,
+            metric_name=metric_name,
+            race_column=race_column or None,
+            year_column=year_column or None,
         )
     except ValidationError as exc:
         raise HTTPException(422, detail=exc.errors()) from exc
 
-    # File bytes are read for validation only; Supabase Storage upload is deferred.
     content = await file.read()
     if len(content) > MAX_DATASOURCE_SIZE:
         raise HTTPException(400, f"File too large. Max {MAX_DATASOURCE_SIZE // (1024 * 1024)}MB")
     if len(content) == 0:
         raise HTTPException(400, "File is empty")
+
+    mapping = MappingConfig(
+        geo_column=validated.geo_column,
+        metric_value_column=validated.metric_value_column,
+        metric_name=validated.metric_name,
+        race_column=validated.race_column,
+        year_column=validated.year_column,
+        data_year=validated.data_year,
+    )
+    try:
+        parse_result = await asyncio.to_thread(
+            parse_datasource_file, content, ext, mapping,
+        )
+    except DatasourceParseError as exc:
+        raise HTTPException(422, detail=exc.detail) from exc
 
     upload_id = uuid4()
     safe_name = _safe_filename(file.filename)
@@ -135,9 +171,41 @@ async def upload_datasource(
             "data_year": validated.data_year,
             "source_url": validated.source_url,
             "category_tags": validated.category_tags,
+            "mapping": {
+                "geo_column": validated.geo_column,
+                "metric_value_column": validated.metric_value_column,
+                "metric_name": validated.metric_name,
+                "race_column": validated.race_column,
+                "year_column": validated.year_column,
+            },
+            "row_count": parse_result.row_count,
+            "dropped_counts": parse_result.dropped_counts,
+            "preview_rows": parse_result.preview_rows,
         },
     )
     db.add(upload)
+
+    # Bulk insert normalized rows. Chunk to keep each statement reasonable.
+    chunk_size = 1000
+    rows = parse_result.normalized_rows
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
+        params = [
+            {
+                "upload_id": str(upload_id),
+                "row_index": i + j,
+                "data": json.dumps(row),
+            }
+            for j, row in enumerate(chunk)
+        ]
+        await db.execute(
+            text(
+                "INSERT INTO uploaded_datasets (upload_id, row_index, data) "
+                "VALUES (CAST(:upload_id AS uuid), :row_index, CAST(:data AS jsonb))"
+            ),
+            params,
+        )
+
     await db.commit()
     return _upload_to_response(upload)
 

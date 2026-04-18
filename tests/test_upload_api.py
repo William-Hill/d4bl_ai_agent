@@ -409,6 +409,69 @@ class TestUploadEndpoints:
         )
         assert resp.status_code == 403
 
+    @pytest.mark.asyncio
+    async def test_upload_datasource_csv_success(self, user_client, override_db):
+        """A valid CSV + mapping parses, persists an Upload, and bulk-inserts rows."""
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        override_db.execute = AsyncMock(return_value=mock_result)
+
+        # 15 valid county rows with a single metric column.
+        header = "county_fips,rate"
+        rows = "\n".join(f"{13000 + i},{i * 0.5}" for i in range(15))
+        csv_bytes = (header + "\n" + rows + "\n").encode()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/datasource",
+            files={"file": ("counties.csv", csv_bytes, "text/csv")},
+            data={
+                "source_name": "Eviction rates",
+                "description": "County eviction filing rates",
+                "geographic_level": "county",
+                "data_year": "2023",
+                "geo_column": "county_fips",
+                "metric_value_column": "rate",
+                "metric_name": "eviction_rate",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["upload_type"] == "datasource"
+        assert body["status"] == "pending_review"
+        # Upload row was added.
+        assert override_db.add.called
+        # Bulk insert for uploaded_datasets was executed.
+        executed_sql = " ".join(str(call.args[0]) for call in override_db.execute.call_args_list)
+        assert "uploaded_datasets" in executed_sql
+
+    @pytest.mark.asyncio
+    async def test_upload_datasource_missing_column_returns_422(self, user_client, override_db):
+        override_db.execute = AsyncMock()
+
+        csv_bytes = b"county_fips,rate\n13121,14.3\n13089,9.1\n" * 6  # 12 rows
+        resp = await user_client.post(
+            "/api/admin/uploads/datasource",
+            files={"file": ("counties.csv", csv_bytes, "text/csv")},
+            data={
+                "source_name": "X",
+                "description": "X",
+                "geographic_level": "county",
+                "data_year": "2023",
+                "geo_column": "county_fips",
+                "metric_value_column": "rate",
+                "metric_name": "eviction_rate",
+                "race_column": "ethnicity",  # not present in CSV
+            },
+        )
+        assert resp.status_code == 422
+        # The structured detail survives as a dict, not a flattened string.
+        detail = resp.json()["detail"]
+        assert "missing_columns" in detail or (
+            isinstance(detail, list) and any("missing" in str(d) for d in detail)
+        )
+        # No Upload row was added.
+        assert not override_db.add.called
+
 
 def _mock_review_lookup(
     mock_session,
