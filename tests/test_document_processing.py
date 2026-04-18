@@ -151,6 +151,31 @@ class TestChunkText:
         # hard-split tail in addition to the new paragraph text.
         assert any("A" * 20 in c and "B paragraph" in c for c in chunks)
 
+    def test_no_overlap_only_chunk_at_eof_after_hard_split(self):
+        """A document ending on a hard-split paragraph must not emit a
+        trailing chunk that is just the overlap tail — that would be an
+        embedded duplicate that skews retrieval."""
+        big_para = "A" * 1000
+        chunks = chunk_text(big_para, chunk_size=400, overlap=80)
+        # No chunk should be purely the overlap tail from a previous chunk
+        # (that would mean the carryover leaked into the output).
+        for i in range(len(chunks) - 1):
+            tail = chunks[i][-80:]
+            assert chunks[i + 1] != tail, (
+                f"Chunk {i + 1} is just the overlap tail of chunk {i}"
+            )
+
+    def test_no_overlap_only_chunk_between_back_to_back_hard_splits(self):
+        """Two oversized paragraphs in a row must not produce an overlap-only
+        chunk between them."""
+        big_a = "A" * 1000
+        big_b = "B" * 1000
+        chunks = chunk_text(big_a + "\n\n" + big_b, chunk_size=400, overlap=80)
+        # No chunk should consist purely of one character repeated for
+        # exactly overlap chars (which is what the old bug would produce).
+        overlap_only = [c for c in chunks if c == "A" * 80 or c == "B" * 80]
+        assert overlap_only == []
+
 
 def _mock_upload_row(
     *,

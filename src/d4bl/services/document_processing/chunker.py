@@ -50,16 +50,23 @@ def chunk_text(
 
     chunks: list[str] = []
     buffer = ""
+    # carryover holds the tail of the last hard-split chunk so the next
+    # paragraph can start with that context — but it's never emitted as a
+    # standalone chunk (that would create overlap-only duplicates).
+    carryover = ""
 
     for para in paragraphs:
+        if carryover:
+            para = carryover + "\n\n" + para
+            carryover = ""
+
         if len(para) > chunk_size:
             if buffer:
                 chunks.append(buffer)
+                buffer = ""
             hard_chunks = _hard_split(para, chunk_size, overlap)
             chunks.extend(hard_chunks)
-            # Seed next buffer with the tail of the final hard-split chunk
-            # so the next paragraph doesn't lose context across the seam.
-            buffer = hard_chunks[-1][-overlap:] if overlap and hard_chunks else ""
+            carryover = hard_chunks[-1][-overlap:] if overlap and hard_chunks else ""
             continue
 
         if buffer and len(buffer) + 2 + len(para) > chunk_size:
