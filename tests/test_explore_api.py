@@ -5,6 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from d4bl.app.api import app
+from d4bl.infra.database import get_db
+
 
 class TestIndicatorsEndpoint:
     @pytest.mark.asyncio
@@ -723,3 +726,66 @@ class TestStatesEndpoint:
         assert data[0]["state_fips"] == "28"
         assert data[0]["state_name"] == "Mississippi"
         assert data[0]["bill_count"] == 7
+
+
+@pytest.fixture
+async def user_client(override_auth):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+async def unauth_client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+def override_db(mock_db_session):
+    app.dependency_overrides[get_db] = lambda: mock_db_session
+    yield mock_db_session
+    app.dependency_overrides.pop(get_db, None)
+
+
+class TestStaffUploadsAvailable:
+
+    @pytest.mark.asyncio
+    async def test_available_returns_only_approved_datasource_uploads(
+        self, user_client, override_db
+    ):
+        mock_db = override_db
+        rows = [
+            {
+                "id": "00000000-0000-0000-0000-00000000a001",
+                "metadata": {
+                    "source_name": "Eviction Rates 2023",
+                    "geographic_level": "county",
+                    "data_year": 2023,
+                    "mapping": {
+                        "metric_name": "eviction_rate",
+                        "race_column": "race",
+                    },
+                    "row_count": 3142,
+                },
+                "reviewed_at": None,
+                "uploader_name": "Alice",
+            },
+        ]
+        fetch_result = MagicMock()
+        fetch_result.mappings.return_value.all.return_value = rows
+        mock_db.execute = AsyncMock(return_value=fetch_result)
+
+        resp = await user_client.get("/api/explore/staff-uploads/available")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert data[0]["metric_name"] == "eviction_rate"
+        assert data[0]["has_race"] is True
+        assert data[0]["row_count"] == 3142
+
+    @pytest.mark.asyncio
+    async def test_available_requires_auth(self, unauth_client):
+        resp = await unauth_client.get("/api/explore/staff-uploads/available")
+        assert resp.status_code == 401

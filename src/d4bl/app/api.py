@@ -1747,6 +1747,41 @@ async def get_bjs_incarceration(
         raise HTTPException(status_code=500, detail="Failed to fetch BJS incarceration data")
 
 
+@app.get("/api/explore/staff-uploads/available")
+async def list_staff_upload_datasets(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List approved staff-contributed datasource uploads for the picker."""
+    result = await db.execute(
+        text("""
+            SELECT u.id, u.metadata, u.reviewed_at,
+                   p.display_name AS uploader_name
+            FROM uploads u
+            LEFT JOIN profiles p ON p.id = u.user_id
+            WHERE u.upload_type = 'datasource' AND u.status = 'approved'
+            ORDER BY u.reviewed_at DESC NULLS LAST
+        """)
+    )
+    rows = result.mappings().all()
+    out = []
+    for r in rows:
+        metadata = r["metadata"] or {}
+        mapping = metadata.get("mapping") or {}
+        out.append({
+            "upload_id": str(r["id"]),
+            "source_name": metadata.get("source_name"),
+            "metric_name": mapping.get("metric_name"),
+            "geographic_level": metadata.get("geographic_level"),
+            "data_year": metadata.get("data_year"),
+            "has_race": bool(mapping.get("race_column")),
+            "row_count": metadata.get("row_count"),
+            "uploader_name": r["uploader_name"],
+            "approved_at": r["reviewed_at"].isoformat() if r["reviewed_at"] else None,
+        })
+    return out
+
+
 @app.get("/api/explore/census-demographics", response_model=ExploreResponse)
 async def get_census_demographics(
     request: Request,
