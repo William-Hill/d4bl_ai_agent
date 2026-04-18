@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import MetricFilterPanel, { ExploreFilters } from '@/components/explore/MetricFilterPanel';
+import StaffDatasetPicker, { StaffDatasetSummary } from '@/components/explore/StaffDatasetPicker';
 import StateMap from '@/components/explore/StateMap';
 import RacialGapChart from '@/components/explore/RacialGapChart';
 import DataSourceTabs from '@/components/explore/DataSourceTabs';
@@ -27,6 +28,7 @@ interface PersistedFilters {
   race: string | null;
   year: number | null;
   selectedState: string | null;
+  uploadId?: string | null;
 }
 
 function loadPersistedFilters(): PersistedFilters | null {
@@ -49,6 +51,7 @@ function persistFilters(sourceKey: string, filters: ExploreFilters): void {
       race: filters.race,
       year: filters.year,
       selectedState: filters.selectedState,
+      uploadId: filters.uploadId ?? null,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -83,6 +86,7 @@ function resolveInitialState(): { source: DataSourceConfig; filters: ExploreFilt
         race: persisted.race ?? (source.hasRace ? 'total' : null),
         year: persisted.year,
         selectedState: persisted.selectedState,
+        uploadId: persisted.uploadId && source.key === 'staff-uploads' ? persisted.uploadId : null,
       },
     };
   }
@@ -94,6 +98,7 @@ function resolveInitialState(): { source: DataSourceConfig; filters: ExploreFilt
       race: 'total',
       year: null,
       selectedState: null,
+      uploadId: null,
     },
   };
 }
@@ -107,6 +112,7 @@ export default function ExplorePage() {
   const [bills, setBills] = useState<PolicyBill[]>([]);
 
   const [filters, setFilters] = useState<ExploreFilters>(initialState.current.filters);
+  const [activeUploadSummary, setActiveUploadSummary] = useState<StaffDatasetSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didAutoSelectDefaults = useRef(false);
@@ -127,7 +133,9 @@ export default function ExplorePage() {
       race: src.hasRace ? 'total' : null,
       year: null,
       selectedState: null,
+      uploadId: null,
     });
+    setActiveUploadSummary(null);
     setExploreData(null);
     setBills([]);
 
@@ -143,6 +151,11 @@ export default function ExplorePage() {
       setLoading(false);
       return;
     }
+    if (activeSource.key === 'staff-uploads' && !filters.uploadId) {
+      setLoading(false);
+      setExploreData(null);
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -153,6 +166,9 @@ export default function ExplorePage() {
       if (filters.metric) params.set(activeSource.primaryFilterKey, filters.metric);
       if (filters.race) params.set('race', filters.race);
       if (filters.selectedState) params.set('state_fips', filters.selectedState);
+      if (activeSource.key === 'staff-uploads' && filters.uploadId) {
+        params.set('upload_id', filters.uploadId);
+      }
 
       const dataPromise = fetch(`${API_BASE}${activeSource.endpoint}?${params}`, {
         signal, headers: getHeaders(),
@@ -207,6 +223,24 @@ export default function ExplorePage() {
     return () => controller.abort();
   }, [fetchData]);
 
+  /** Restore staff-upload summary after refresh (localStorage has uploadId only). */
+  useEffect(() => {
+    if (activeSource.key !== 'staff-uploads' || !filters.uploadId || !session?.access_token) {
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API_BASE}/api/explore/staff-uploads/available`, { headers: getHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: StaffDatasetSummary[]) => {
+        if (cancelled || !Array.isArray(data)) return;
+        const s = data.find((d) => d.upload_id === filters.uploadId) ?? null;
+        setActiveUploadSummary(s);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSource.key, filters.uploadId, session?.access_token, getHeaders]);
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSelectState = (fips: string, _name?: string) => {
     setFilters((prev) => ({
@@ -257,6 +291,26 @@ export default function ExplorePage() {
   const resolvedMetric = filters.metric || exploreData?.available_metrics?.[0] || '';
   const resolvedYear = filters.year ?? exploreData?.available_years?.[exploreData.available_years.length - 1] ?? 2022;
 
+  const effectiveHasRace =
+    activeSource.key === 'staff-uploads'
+      ? (activeUploadSummary?.has_race ?? false)
+      : activeSource.hasRace;
+
+  const staffUploadRaces =
+    activeSource.key === 'staff-uploads'
+      ? (effectiveHasRace ? (exploreData?.available_races ?? []) : [])
+      : exploreData?.available_races;
+
+  const staffUploadMetrics =
+    activeSource.key === 'staff-uploads'
+      ? (filters.uploadId ? (exploreData?.available_metrics ?? []) : [])
+      : exploreData?.available_metrics;
+
+  const staffUploadYears =
+    activeSource.key === 'staff-uploads'
+      ? (filters.uploadId ? (exploreData?.available_years ?? []) : [])
+      : exploreData?.available_years;
+
   return (
     <div className="min-h-screen bg-[#292929]">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -303,6 +357,22 @@ export default function ExplorePage() {
           <PolicyExploreView />
         ) : (
           <>
+        {activeSource.key === 'staff-uploads' && (
+          <div className="mb-4">
+            <StaffDatasetPicker
+              value={filters.uploadId}
+              onChange={(id, summary) => {
+                setActiveUploadSummary(summary);
+                setFilters((prev) => ({
+                  ...prev,
+                  uploadId: id,
+                  race: null,
+                  year: null,
+                }));
+              }}
+            />
+          </div>
+        )}
         {/* Map + Filters */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 mb-6">
           <div>
@@ -315,6 +385,10 @@ export default function ExplorePage() {
                   <SkeletonBlock className="h-4 w-24" />
                   <SkeletonBlock className="h-4 w-16" />
                 </div>
+              </div>
+            ) : activeSource.key === 'staff-uploads' && !filters.uploadId ? (
+              <div className="text-gray-400 text-sm py-12 text-center">
+                Pick a dataset from the Dataset dropdown above to view it on the map.
               </div>
             ) : exploreData && exploreData.rows.length > 0 ? (
               <div className="relative">
@@ -370,9 +444,9 @@ export default function ExplorePage() {
             <MetricFilterPanel
               filters={filters}
               onChange={setFilters}
-              availableMetrics={exploreData?.available_metrics}
-              availableYears={exploreData?.available_years}
-              availableRaces={exploreData?.available_races}
+              availableMetrics={staffUploadMetrics}
+              availableYears={staffUploadYears}
+              availableRaces={staffUploadRaces}
               primaryFilterLabel={activeSource.primaryFilterLabel}
               accent={activeSource.accent}
               sourceKey={activeSource.key}
@@ -416,7 +490,7 @@ export default function ExplorePage() {
               year={resolvedYear}
               accent={activeSource.accent}
             />
-            {getChartType(activeSource.key, activeSource.hasRace) === "racial-gap" ? (
+            {getChartType(activeSource.key, effectiveHasRace) === "racial-gap" ? (
               <RacialGapChart
                 indicators={exploreData.rows
                   .filter(
