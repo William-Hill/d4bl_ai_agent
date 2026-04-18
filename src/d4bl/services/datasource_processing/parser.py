@@ -6,6 +6,8 @@ validation failure so callers can surface actionable messages via HTTP 422.
 
 from __future__ import annotations
 
+import csv
+import io
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,3 +39,25 @@ class DatasourceParseError(Exception):
     def __init__(self, message: str, *, detail: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.detail = detail or {"message": message}
+
+
+def read_csv_bytes(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
+    """Parse CSV bytes into ``(header, rows)``.
+
+    - Decodes as ``utf-8-sig`` so a UTF-8 BOM is stripped from the first cell.
+    - Trims whitespace from header names (cell values are left raw so downstream
+      coercion can handle whitespace consistently).
+    - Raises ``DatasourceParseError`` if the file is empty or has no header row.
+    """
+    if not content:
+        raise DatasourceParseError("file is empty")
+    text = content.decode("utf-8-sig", errors="replace")
+    reader = csv.reader(io.StringIO(text))
+    try:
+        raw_header = next(reader)
+    except StopIteration:
+        raise DatasourceParseError("file has no header row")
+
+    header = [h.strip() for h in raw_header]
+    rows = [dict(zip(header, r)) for r in reader if any(cell.strip() for cell in r)]
+    return header, rows

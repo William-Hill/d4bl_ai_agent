@@ -119,3 +119,41 @@ class TestDatasourceParseError:
         )
         assert err.detail == {"missing_columns": ["race"]}
         assert "missing columns" in str(err)
+
+
+class TestReadCsvBytes:
+    def test_basic_csv(self):
+        from d4bl.services.datasource_processing.parser import read_csv_bytes
+
+        raw = b"county_fips,rate\n13121,14.3\n13089,9.1\n"
+        header, rows = read_csv_bytes(raw)
+        assert header == ["county_fips", "rate"]
+        assert rows == [{"county_fips": "13121", "rate": "14.3"},
+                        {"county_fips": "13089", "rate": "9.1"}]
+
+    def test_utf8_with_bom(self):
+        from d4bl.services.datasource_processing.parser import read_csv_bytes
+
+        raw = "\ufeffcounty_fips,rate\n13121,14.3\n".encode("utf-8")
+        header, _rows = read_csv_bytes(raw)
+        # BOM must not contaminate the first header name.
+        assert header == ["county_fips", "rate"]
+
+    def test_trims_header_whitespace(self):
+        from d4bl.services.datasource_processing.parser import read_csv_bytes
+
+        raw = b" county_fips , rate \n13121, 14.3\n"
+        header, rows = read_csv_bytes(raw)
+        assert header == ["county_fips", "rate"]
+        assert rows[0]["county_fips"] == "13121"
+        # Cell whitespace preserved so the value-column coercion can strip it.
+        assert rows[0]["rate"] == " 14.3"
+
+    def test_empty_csv_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            read_csv_bytes,
+        )
+
+        with pytest.raises(DatasourceParseError):
+            read_csv_bytes(b"")
