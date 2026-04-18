@@ -71,7 +71,15 @@ def chunk_text(
 
         if buffer and len(buffer) + 2 + len(para) > chunk_size:
             chunks.append(buffer)
-            buffer = buffer[-overlap:] + "\n\n" + para if overlap else para
+            if overlap:
+                # Cap carried tail to the space left for para so the new
+                # chunk never exceeds chunk_size. If para alone fills the
+                # budget, drop the tail entirely.
+                max_tail = max(chunk_size - len(para) - 2, 0)
+                tail_len = min(overlap, max_tail)
+                buffer = f"{buffer[-tail_len:]}\n\n{para}" if tail_len else para
+            else:
+                buffer = para
         elif buffer:
             buffer = buffer + "\n\n" + para
         else:
@@ -84,6 +92,15 @@ def chunk_text(
 
 
 def _hard_split(text: str, chunk_size: int, overlap: int) -> list[str]:
-    """Character-window split for paragraphs larger than chunk_size."""
+    """Character-window split for paragraphs larger than chunk_size.
+
+    Stops once a window reaches EOF so a trailing slice fully covered by
+    the previous window is not emitted as a duplicate.
+    """
     stride = max(chunk_size - overlap, 1)
-    return [text[i : i + chunk_size] for i in range(0, len(text), stride)]
+    result: list[str] = []
+    for start in range(0, len(text), stride):
+        result.append(text[start : start + chunk_size])
+        if start + chunk_size >= len(text):
+            break
+    return result

@@ -102,6 +102,9 @@ class TestChunkText:
         assert "paragraph three" in chunks[0]
 
     def test_overlap_preserves_context_across_chunks(self):
+        """Rolled-over chunks carry as much tail context as fits within
+        chunk_size. The full overlap is ideal; a shorter tail is acceptable
+        when the next paragraph would push the chunk over the limit."""
         paras = [
             "A" * 200,
             "B" * 200,
@@ -109,8 +112,9 @@ class TestChunkText:
         ]
         chunks = chunk_text("\n\n".join(paras), chunk_size=250, overlap=50)
         assert len(chunks) >= 2
-        tail_of_first = chunks[0][-50:]
-        assert tail_of_first in chunks[1]
+        # Some As from the end of chunk 0 must appear at the start of chunk 1.
+        assert chunks[1].startswith("A")
+        assert chunks[0][-1] == "A"
 
     def test_preserves_chunk_ordering(self):
         parts = ["alpha", "beta", "gamma", "delta", "epsilon"]
@@ -175,6 +179,32 @@ class TestChunkText:
         # exactly overlap chars (which is what the old bug would produce).
         overlap_only = [c for c in chunks if c == "A" * 80 or c == "B" * 80]
         assert overlap_only == []
+
+    def test_rollover_chunk_never_exceeds_chunk_size(self):
+        """Flushing a near-full buffer before a near-full paragraph must not
+        emit a chunk larger than chunk_size even with overlap carried."""
+        # buffer fills with 3 paragraphs of ~100 chars (under 400), then a
+        # 300-char paragraph triggers flush; carried overlap + 300 should be
+        # capped at chunk_size.
+        text = "\n\n".join([
+            "A" * 100,
+            "A" * 100,
+            "A" * 100,
+            "B" * 300,
+        ])
+        chunks = chunk_text(text, chunk_size=400, overlap=100)
+        assert all(len(c) <= 400 for c in chunks), [len(c) for c in chunks]
+
+    def test_hard_split_does_not_emit_redundant_trailing_window(self):
+        """_hard_split must stop once a window reaches EOF — otherwise a
+        40-char tail fully covered by the previous window gets duplicated."""
+        text = "A" * 1000
+        chunks = chunk_text(text, chunk_size=400, overlap=80)
+        # With stride=320 and chunk_size=400, we expect 3 windows
+        # [0:400], [320:720], [640:1000]. A 4th window [960:1000] would be
+        # a 40-char duplicate — fully contained in the previous window.
+        assert len(chunks) == 3
+        assert chunks[-1] == text[640:1000]
 
 
 def _mock_upload_row(
