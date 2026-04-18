@@ -6,6 +6,8 @@ and feature requests. Includes admin review workflow.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from uuid import UUID, uuid4
@@ -30,6 +32,13 @@ from d4bl.infra.database import (
     Upload,
     get_db,
 )
+from d4bl.services.document_processing.approve import process_document_upload
+from d4bl.services.document_processing.extractors import (
+    ExtractionError,
+    extract_docx,
+    extract_pdf,
+    extract_url,
+)
 
 router = APIRouter(tags=["uploads"])
 
@@ -37,6 +46,10 @@ MAX_DATASOURCE_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_DOCUMENT_SIZE = 25 * 1024 * 1024  # 25 MB
 ALLOWED_DATASOURCE_EXT = {".csv", ".xlsx"}
 ALLOWED_DOCUMENT_EXT = {".pdf", ".docx"}
+MAX_PREVIEW_CHARS = 5000
+MAX_FULL_TEXT_CHARS = 500_000
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_filename(raw: str | None) -> str:
@@ -158,12 +171,12 @@ async def upload_document(
     upload_id = uuid4()
     file_size = None
     filename = None
+    full_text: str | None = None
 
     if file:
         ext = _file_ext(file.filename)
         if ext not in ALLOWED_DOCUMENT_EXT:
             raise HTTPException(400, f"File type {ext!r} not allowed. Use: {ALLOWED_DOCUMENT_EXT}")
-        # File bytes are read for validation only; Supabase Storage upload is deferred.
         content = await file.read()
         if len(content) > MAX_DOCUMENT_SIZE:
             raise HTTPException(400, f"File too large. Max {MAX_DOCUMENT_SIZE // (1024 * 1024)}MB")
@@ -171,6 +184,24 @@ async def upload_document(
             raise HTTPException(400, "File is empty")
         file_size = len(content)
         filename = _safe_filename(file.filename)
+        # Extract text at submit so approval processing can chunk + embed
+        # without needing the raw file back (Supabase Storage is deferred).
+        try:
+            extractor = extract_pdf if ext == ".pdf" else extract_docx
+            full_text = await asyncio.to_thread(extractor, content)
+        except ExtractionError as exc:
+            raise HTTPException(422, f"Could not extract content from file: {exc}") from exc
+    elif validated.url:
+        # Fetch the URL on submit so the admin reviews the actual text,
+        # not just a link — the linked page could change between
+        # submission and approval.
+        try:
+            full_text = await asyncio.to_thread(extract_url, validated.url)
+        except ExtractionError as exc:
+            raise HTTPException(422, f"Could not extract content from URL: {exc}") from exc
+
+    preview_text = full_text[:MAX_PREVIEW_CHARS] if full_text else None
+    stored_full_text = full_text[:MAX_FULL_TEXT_CHARS] if full_text else None
 
     upload = Upload(
         id=upload_id,
@@ -185,6 +216,8 @@ async def upload_document(
             "document_type": validated.document_type,
             "topic_tags": validated.topic_tags,
             "url": validated.url,
+            "preview_text": preview_text,
+            "full_text": stored_full_text,
         },
     )
     db.add(upload)
@@ -264,7 +297,10 @@ async def submit_feature_request(
 
 
 VALID_UPLOAD_TYPES = {"datasource", "document", "query", "feature_request"}
-VALID_UPLOAD_STATUSES = {"pending_review", "approved", "rejected", "processing", "live"}
+VALID_UPLOAD_STATUSES = {
+    "pending_review", "approved", "rejected", "processing", "live",
+    "indexed", "processing_failed",
+}
 
 
 @router.get("/api/admin/uploads")
@@ -339,6 +375,38 @@ async def list_uploads(
     ]
 
 
+async def _set_upload_status(
+    db: AsyncSession,
+    upload_id: UUID,
+    *,
+    status: str,
+    reviewer_id: UUID | None,
+    notes: str | None,
+    reviewed_at: datetime | None,
+) -> None:
+    """Update an upload's status and review metadata."""
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        text("""
+            UPDATE uploads
+            SET status = :status,
+                reviewer_id = CAST(:reviewer_id AS uuid),
+                reviewer_notes = :notes,
+                reviewed_at = :reviewed_at,
+                updated_at = :updated_at
+            WHERE id = CAST(:uid AS uuid)
+        """),
+        {
+            "status": status,
+            "reviewer_id": str(reviewer_id) if reviewer_id else None,
+            "notes": notes,
+            "reviewed_at": reviewed_at,
+            "updated_at": now,
+            "uid": str(upload_id),
+        },
+    )
+
+
 @router.patch("/api/admin/uploads/{upload_id}/review")
 async def review_upload(
     upload_id: UUID,
@@ -346,9 +414,16 @@ async def review_upload(
     user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Approve or reject an upload (admin only)."""
+    """Approve or reject an upload (admin only).
+
+    Approving a ``document`` upload also triggers inline processing —
+    extract text is chunked, embedded, and written to the vector store.
+    On failure the upload is marked ``processing_failed`` and the error
+    is stored in ``reviewer_notes``; the admin can retry via
+    ``POST /api/admin/uploads/{upload_id}/retry-processing``.
+    """
     result = await db.execute(
-        text("SELECT id, status FROM uploads WHERE id = CAST(:uid AS uuid)"),
+        text("SELECT id, status, upload_type FROM uploads WHERE id = CAST(:uid AS uuid)"),
         {"uid": str(upload_id)},
     )
     row = result.mappings().first()
@@ -357,26 +432,112 @@ async def review_upload(
     if row["status"] != "pending_review":
         raise HTTPException(400, f"Upload is already {row['status']}")
 
-    new_status = "approved" if body.action == "approve" else "rejected"
     now = datetime.now(timezone.utc)
 
-    await db.execute(
-        text("""
-            UPDATE uploads
-            SET status = :status, reviewer_id = CAST(:reviewer_id AS uuid),
-                reviewer_notes = :notes, reviewed_at = :reviewed_at,
-                updated_at = :updated_at
-            WHERE id = CAST(:uid AS uuid)
-        """),
-        {
-            "status": new_status,
-            "reviewer_id": str(user.id),
-            "notes": body.notes,
-            "reviewed_at": now,
-            "updated_at": now,
-            "uid": str(upload_id),
-        },
+    if body.action == "reject":
+        await _set_upload_status(
+            db, upload_id,
+            status="rejected",
+            reviewer_id=user.id,
+            notes=body.notes,
+            reviewed_at=now,
+        )
+        await db.commit()
+        return {"id": str(upload_id), "status": "rejected", "reviewed_at": now.isoformat()}
+
+    if row["upload_type"] != "document":
+        await _set_upload_status(
+            db, upload_id,
+            status="approved",
+            reviewer_id=user.id,
+            notes=body.notes,
+            reviewed_at=now,
+        )
+        await db.commit()
+        return {"id": str(upload_id), "status": "approved", "reviewed_at": now.isoformat()}
+
+    try:
+        await process_document_upload(db, upload_id)
+    except Exception as exc:  # noqa: BLE001 — any processing failure is admin-visible
+        error_note = f"Processing failed: {exc}"
+        if body.notes:
+            error_note = f"{body.notes}\n\n{error_note}"
+        await _set_upload_status(
+            db, upload_id,
+            status="processing_failed",
+            reviewer_id=user.id,
+            notes=error_note,
+            reviewed_at=now,
+        )
+        await db.commit()
+        logger.exception("Document upload %s processing failed", upload_id)
+        return {
+            "id": str(upload_id),
+            "status": "processing_failed",
+            "reviewed_at": now.isoformat(),
+            "error": str(exc),
+        }
+
+    await _set_upload_status(
+        db, upload_id,
+        status="indexed",
+        reviewer_id=user.id,
+        notes=body.notes,
+        reviewed_at=now,
     )
     await db.commit()
+    return {"id": str(upload_id), "status": "indexed", "reviewed_at": now.isoformat()}
 
-    return {"id": str(upload_id), "status": new_status, "reviewed_at": now.isoformat()}
+
+@router.post("/api/admin/uploads/{upload_id}/retry-processing")
+async def retry_upload_processing(
+    upload_id: UUID,
+    user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retry processing for a document upload in ``processing_failed`` state."""
+    result = await db.execute(
+        text(
+            "SELECT id, status, upload_type, reviewer_notes "
+            "FROM uploads WHERE id = CAST(:uid AS uuid)"
+        ),
+        {"uid": str(upload_id)},
+    )
+    row = result.mappings().first()
+    if not row:
+        raise HTTPException(404, "Upload not found")
+    if row["upload_type"] != "document":
+        raise HTTPException(400, "Only document uploads can be retried")
+    if row["status"] != "processing_failed":
+        raise HTTPException(400, f"Upload is {row['status']}, not processing_failed")
+
+    now = datetime.now(timezone.utc)
+    existing_notes = row["reviewer_notes"]
+    try:
+        await process_document_upload(db, upload_id)
+    except Exception as exc:  # noqa: BLE001
+        retry_note = f"Retry failed: {exc}"
+        notes = f"{existing_notes}\n\n{retry_note}" if existing_notes else retry_note
+        await _set_upload_status(
+            db, upload_id,
+            status="processing_failed",
+            reviewer_id=user.id,
+            notes=notes,
+            reviewed_at=now,
+        )
+        await db.commit()
+        return {
+            "id": str(upload_id),
+            "status": "processing_failed",
+            "error": str(exc),
+        }
+
+    await _set_upload_status(
+        db, upload_id,
+        status="indexed",
+        reviewer_id=user.id,
+        notes=existing_notes,  # preserve original approval notes
+        reviewed_at=now,
+    )
+    await db.commit()
+    return {"id": str(upload_id), "status": "indexed", "reviewed_at": now.isoformat()}

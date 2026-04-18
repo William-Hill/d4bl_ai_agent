@@ -16,6 +16,8 @@ const STATUS_STYLES: Record<string, string> = {
   rejected: 'bg-red-900 text-red-300 border border-red-700',
   processing: 'bg-blue-900 text-blue-300 border border-blue-700',
   live: 'bg-emerald-900 text-emerald-300 border border-emerald-600',
+  indexed: 'bg-emerald-900 text-emerald-300 border border-emerald-600',
+  processing_failed: 'bg-red-950 text-red-400 border border-red-800',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -24,6 +26,8 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: 'Rejected',
   processing: 'Processing',
   live: 'Live',
+  indexed: 'Indexed',
+  processing_failed: 'Processing Failed',
 };
 
 function getPreviewText(record: UploadRecord): string {

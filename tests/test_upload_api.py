@@ -1,12 +1,13 @@
 """Tests for staff upload API schemas and endpoints."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from d4bl.app.api import app
+from d4bl.services.document_processing.extractors import ExtractionError
 
 
 class TestUploadSchemas:
@@ -217,6 +218,130 @@ class TestUploadEndpoints:
         assert data["upload_type"] == "feature_request"
 
     @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_url_populates_preview(
+        self, mock_extract, user_client, override_db
+    ):
+        """URL-based document upload fetches preview text on submit."""
+        mock_extract.return_value = "Full extracted article text about racial equity."
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        override_db.execute = AsyncMock(return_value=mock_result)
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={
+                "title": "ProPublica racial equity investigation",
+                "document_type": "article",
+                "url": "https://propublica.org/article",
+            },
+        )
+
+        assert resp.status_code == 200
+        mock_extract.assert_called_once_with("https://propublica.org/article")
+        # The ORM object wrote the preview into metadata_; we can't read it back
+        # from the response, but we can confirm the call path by inspecting the
+        # upload captured via override_db.add.
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_url_extraction_failure_returns_422(
+        self, mock_extract, user_client, override_db
+    ):
+        """If URL extraction fails, caller sees a 422 with the error message."""
+        mock_extract.side_effect = ExtractionError("Could not fetch URL: network timeout")
+        override_db.execute = AsyncMock()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={
+                "title": "Broken link",
+                "document_type": "article",
+                "url": "https://unreachable.example/404",
+            },
+        )
+
+        assert resp.status_code == 422
+        assert "Could not extract content" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_preview_is_truncated(
+        self, mock_extract, user_client, override_db
+    ):
+        """Preview text is capped at MAX_PREVIEW_CHARS."""
+        from d4bl.app.upload_routes import MAX_PREVIEW_CHARS
+
+        mock_extract.return_value = "x" * (MAX_PREVIEW_CHARS * 3)
+        override_db.execute = AsyncMock()
+
+        captured: dict = {}
+
+        def capture_add(obj):
+            captured["upload"] = obj
+
+        override_db.add = capture_add
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={
+                "title": "Very long article",
+                "document_type": "article",
+                "url": "https://example.com/long",
+            },
+        )
+
+        assert resp.status_code == 200
+        upload = captured["upload"]
+        assert len(upload.metadata_["preview_text"]) == MAX_PREVIEW_CHARS
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_file_extracts_text_at_submit(
+        self, mock_extract, user_client, override_db, make_pdf_bytes
+    ):
+        """PDF file uploads extract text at submit time, not URL fetch."""
+        override_db.execute = AsyncMock()
+        captured: dict = {}
+
+        def capture_add(obj):
+            captured["upload"] = obj
+
+        override_db.add = capture_add
+
+        pdf_bytes = make_pdf_bytes([
+            "The racial wealth gap has widened over the past decade.",
+            "Homeownership rates trail by 30 percentage points.",
+        ])
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={"title": "Report", "document_type": "report"},
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        )
+
+        assert resp.status_code == 200
+        mock_extract.assert_not_called()
+        upload = captured["upload"]
+        assert "racial wealth gap" in upload.metadata_["full_text"]
+        assert "racial wealth gap" in upload.metadata_["preview_text"]
+
+    @pytest.mark.asyncio
+    async def test_upload_document_bad_pdf_returns_422(
+        self, user_client, override_db
+    ):
+        """Malformed PDF bytes fail extraction and yield 422."""
+        override_db.execute = AsyncMock()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={"title": "Report", "document_type": "report"},
+            files={"file": ("test.pdf", b"not a pdf", "application/pdf")},
+        )
+
+        assert resp.status_code == 422
+        assert "Could not extract content from file" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
     async def test_list_uploads_requires_auth(self, unauth_client):
         resp = await unauth_client.get("/api/admin/uploads")
         assert resp.status_code == 401
@@ -226,5 +351,170 @@ class TestUploadEndpoints:
         resp = await user_client.patch(
             "/api/admin/uploads/00000000-0000-0000-0000-000000000001/review",
             json={"action": "approve"},
+        )
+        assert resp.status_code == 403
+
+
+def _mock_review_lookup(
+    mock_session,
+    upload_type: str,
+    status: str = "pending_review",
+    reviewer_notes: str | None = None,
+):
+    """Wire up mock execute to return a single upload row then accept updates."""
+    lookup = MagicMock()
+    lookup.mappings.return_value.first.return_value = {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "status": status,
+        "upload_type": upload_type,
+        "reviewer_notes": reviewer_notes,
+    }
+    update_result = MagicMock()
+    mock_session.execute = AsyncMock(side_effect=[lookup, update_result, update_result])
+    mock_session.commit = AsyncMock()
+
+
+class TestReviewFlow:
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_approve_document_runs_processor_and_marks_indexed(
+        self, mock_process, admin_client, override_db
+    ):
+        mock_process.return_value = 5  # 5 chunks written
+        _mock_review_lookup(override_db, upload_type="document")
+
+        resp = await admin_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/review",
+            json={"action": "approve"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "indexed"
+        mock_process.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_approve_document_processing_failure_marks_processing_failed(
+        self, mock_process, admin_client, override_db
+    ):
+        mock_process.side_effect = RuntimeError("ollama unavailable")
+        _mock_review_lookup(override_db, upload_type="document")
+
+        resp = await admin_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/review",
+            json={"action": "approve"},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "processing_failed"
+        assert "ollama unavailable" in body["error"]
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_approve_non_document_skips_processing(
+        self, mock_process, admin_client, override_db
+    ):
+        """Datasource/query approvals don't trigger document processing."""
+        _mock_review_lookup(override_db, upload_type="datasource")
+
+        resp = await admin_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/review",
+            json={"action": "approve"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
+        mock_process.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_reject_document_skips_processing(
+        self, mock_process, admin_client, override_db
+    ):
+        _mock_review_lookup(override_db, upload_type="document")
+
+        resp = await admin_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/review",
+            json={"action": "reject", "notes": "Not relevant"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "rejected"
+        mock_process.assert_not_called()
+
+
+class TestRetryProcessing:
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_retry_happy_path(self, mock_process, admin_client, override_db):
+        mock_process.return_value = 3
+        _mock_review_lookup(
+            override_db, upload_type="document", status="processing_failed"
+        )
+
+        resp = await admin_client.post(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/retry-processing",
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "indexed"
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.process_document_upload")
+    async def test_retry_success_preserves_existing_reviewer_notes(
+        self, mock_process, admin_client, override_db
+    ):
+        """Successful retry must not clobber notes from the initial approval."""
+        mock_process.return_value = 3
+        original_notes = "Admin approval: great source for housing equity."
+        _mock_review_lookup(
+            override_db,
+            upload_type="document",
+            status="processing_failed",
+            reviewer_notes=original_notes,
+        )
+
+        await admin_client.post(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/retry-processing",
+        )
+
+        # Inspect the UPDATE call — should carry original notes through.
+        update_call = override_db.execute.call_args_list[1]
+        params = update_call[0][1]
+        assert params["notes"] == original_notes
+
+    @pytest.mark.asyncio
+    async def test_retry_rejects_non_failed_upload(self, admin_client, override_db):
+        _mock_review_lookup(
+            override_db, upload_type="document", status="indexed"
+        )
+
+        resp = await admin_client.post(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/retry-processing",
+        )
+
+        assert resp.status_code == 400
+        assert "not processing_failed" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_retry_rejects_non_document(self, admin_client, override_db):
+        _mock_review_lookup(
+            override_db, upload_type="datasource", status="processing_failed"
+        )
+
+        resp = await admin_client.post(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/retry-processing",
+        )
+
+        assert resp.status_code == 400
+        assert "Only document uploads" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_retry_requires_admin(self, user_client):
+        resp = await user_client.post(
+            "/api/admin/uploads/00000000-0000-0000-0000-000000000001/retry-processing",
         )
         assert resp.status_code == 403
