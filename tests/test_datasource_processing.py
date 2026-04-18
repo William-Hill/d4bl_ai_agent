@@ -191,3 +191,144 @@ class TestReadXlsxBytes:
         raw = make_xlsx_bytes([], [])
         with pytest.raises(DatasourceParseError):
             read_xlsx_bytes(raw)
+
+
+def _make_mapping(**overrides):
+    from d4bl.services.datasource_processing.parser import MappingConfig
+
+    defaults = dict(
+        geo_column="county_fips",
+        metric_value_column="rate",
+        metric_name="eviction_rate",
+        race_column=None,
+        year_column=None,
+        data_year=2023,
+    )
+    defaults.update(overrides)
+    return MappingConfig(**defaults)
+
+
+class TestParseDatasourceFile:
+    def test_valid_csv_without_race_or_year(self):
+        from d4bl.services.datasource_processing.parser import parse_datasource_file
+
+        raw = b"county_fips,rate\n" + b"\n".join(
+            f"{13000 + i},{i * 0.5}".encode() for i in range(15)
+        )
+        result = parse_datasource_file(raw, ".csv", _make_mapping())
+        assert result.row_count == 15
+        assert result.dropped_counts == {"bad_fips": 0, "non_numeric": 0, "bad_year": 0}
+        assert result.normalized_rows[0]["state_fips"] == "13"
+        assert result.normalized_rows[0]["year"] == 2023
+        assert result.normalized_rows[0]["race"] is None
+        assert len(result.preview_rows) == min(20, result.row_count)
+
+    def test_valid_csv_with_race_and_year(self):
+        from d4bl.services.datasource_processing.parser import parse_datasource_file
+
+        lines = ["county_fips,race,year,rate"]
+        for i in range(12):
+            lines.append(f"{13000 + i},Black,2023,{i * 0.5}")
+        raw = "\n".join(lines).encode()
+        result = parse_datasource_file(
+            raw, ".csv",
+            _make_mapping(race_column="race", year_column="year"),
+        )
+        assert all(r["race"] == "Black" for r in result.normalized_rows)
+        assert all(r["year"] == 2023 for r in result.normalized_rows)
+
+    def test_missing_declared_column_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            parse_datasource_file,
+        )
+
+        raw = b"county_fips,rate\n13121,14.3\n"
+        with pytest.raises(DatasourceParseError) as exc_info:
+            parse_datasource_file(raw, ".csv", _make_mapping(race_column="ethnicity"))
+        assert "missing_columns" in exc_info.value.detail
+        assert "ethnicity" in exc_info.value.detail["missing_columns"]
+
+    def test_many_bad_fips_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            parse_datasource_file,
+        )
+
+        lines = ["county_fips,rate"]
+        # 3 good, 10 bad → >10% bad
+        for i in range(3):
+            lines.append(f"{13000 + i},{i}")
+        for i in range(10):
+            lines.append(f"X{i},{i}")
+        raw = "\n".join(lines).encode()
+        with pytest.raises(DatasourceParseError) as exc_info:
+            parse_datasource_file(raw, ".csv", _make_mapping())
+        assert exc_info.value.detail["dropped"]["reason"] == "bad_fips"
+
+    def test_few_bad_fips_drops_silently(self):
+        from d4bl.services.datasource_processing.parser import parse_datasource_file
+
+        lines = ["county_fips,rate"]
+        for i in range(20):
+            lines.append(f"{13000 + i},{i}")
+        lines.append("XX,99")  # 1 bad out of 21 → <10%
+        raw = "\n".join(lines).encode()
+        result = parse_datasource_file(raw, ".csv", _make_mapping())
+        assert result.row_count == 20
+        assert result.dropped_counts["bad_fips"] == 1
+
+    def test_many_non_numeric_values_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            parse_datasource_file,
+        )
+
+        lines = ["county_fips,rate"]
+        for i in range(5):
+            lines.append(f"{13000 + i},{i}")
+        for i in range(10):
+            lines.append(f"{13100 + i},NaN")
+        raw = "\n".join(lines).encode()
+        with pytest.raises(DatasourceParseError) as exc_info:
+            parse_datasource_file(raw, ".csv", _make_mapping())
+        assert exc_info.value.detail["dropped"]["reason"] == "non_numeric"
+
+    def test_too_few_valid_rows_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            parse_datasource_file,
+        )
+
+        raw = b"county_fips,rate\n13121,14.3\n13089,9.1\n"
+        with pytest.raises(DatasourceParseError) as exc_info:
+            parse_datasource_file(raw, ".csv", _make_mapping())
+        assert exc_info.value.detail["reason"] == "too_few_rows"
+
+    def test_percent_and_comma_values_coerce(self):
+        from d4bl.services.datasource_processing.parser import parse_datasource_file
+
+        lines = ["county_fips,rate"]
+        for i in range(12):
+            lines.append(f"{13000 + i},\"1,234.{i}%\"")
+        raw = "\n".join(lines).encode()
+        result = parse_datasource_file(raw, ".csv", _make_mapping())
+        assert result.normalized_rows[0]["value"] > 1000
+
+    def test_unsupported_extension_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            parse_datasource_file,
+        )
+
+        with pytest.raises(DatasourceParseError):
+            parse_datasource_file(b"...", ".txt", _make_mapping())
+
+    def test_xlsx_input(self, make_xlsx_bytes):
+        from d4bl.services.datasource_processing.parser import parse_datasource_file
+
+        header = ["county_fips", "rate"]
+        rows = [[f"{13000 + i}", i * 0.5] for i in range(15)]
+        raw = make_xlsx_bytes(header, rows)
+        result = parse_datasource_file(raw, ".xlsx", _make_mapping())
+        assert result.row_count == 15
