@@ -6,6 +6,7 @@ and feature requests. Includes admin review workflow.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from uuid import UUID, uuid4
@@ -30,6 +31,10 @@ from d4bl.infra.database import (
     Upload,
     get_db,
 )
+from d4bl.services.document_processing.extractors import (
+    ExtractionError,
+    extract_url,
+)
 
 router = APIRouter(tags=["uploads"])
 
@@ -37,6 +42,7 @@ MAX_DATASOURCE_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_DOCUMENT_SIZE = 25 * 1024 * 1024  # 25 MB
 ALLOWED_DATASOURCE_EXT = {".csv", ".xlsx"}
 ALLOWED_DOCUMENT_EXT = {".pdf", ".docx"}
+MAX_PREVIEW_CHARS = 5000
 
 
 def _safe_filename(raw: str | None) -> str:
@@ -158,6 +164,7 @@ async def upload_document(
     upload_id = uuid4()
     file_size = None
     filename = None
+    preview_text = None
 
     if file:
         ext = _file_ext(file.filename)
@@ -171,6 +178,15 @@ async def upload_document(
             raise HTTPException(400, "File is empty")
         file_size = len(content)
         filename = _safe_filename(file.filename)
+    elif validated.url:
+        # Fetch the URL on submit so the admin reviews the actual text,
+        # not just a link — the linked page could change between
+        # submission and approval.
+        try:
+            full_text = await asyncio.to_thread(extract_url, validated.url)
+        except ExtractionError as exc:
+            raise HTTPException(422, f"Could not extract content from URL: {exc}") from exc
+        preview_text = full_text[:MAX_PREVIEW_CHARS]
 
     upload = Upload(
         id=upload_id,
@@ -185,6 +201,7 @@ async def upload_document(
             "document_type": validated.document_type,
             "topic_tags": validated.topic_tags,
             "url": validated.url,
+            "preview_text": preview_text,
         },
     )
     db.add(upload)

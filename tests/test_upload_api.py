@@ -1,12 +1,13 @@
 """Tests for staff upload API schemas and endpoints."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from d4bl.app.api import app
+from d4bl.services.document_processing.extractors import ExtractionError
 
 
 class TestUploadSchemas:
@@ -215,6 +216,110 @@ class TestUploadEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["upload_type"] == "feature_request"
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_url_populates_preview(
+        self, mock_extract, user_client, override_db
+    ):
+        """URL-based document upload fetches preview text on submit."""
+        mock_extract.return_value = "Full extracted article text about racial equity."
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        override_db.execute = AsyncMock(return_value=mock_result)
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={
+                "title": "ProPublica racial equity investigation",
+                "document_type": "article",
+                "url": "https://propublica.org/article",
+            },
+        )
+
+        assert resp.status_code == 200
+        mock_extract.assert_called_once_with("https://propublica.org/article")
+        # The ORM object wrote the preview into metadata_; we can't read it back
+        # from the response, but we can confirm the call path by inspecting the
+        # upload captured via override_db.add.
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_url_extraction_failure_returns_422(
+        self, mock_extract, user_client, override_db
+    ):
+        """If URL extraction fails, caller sees a 422 with the error message."""
+        mock_extract.side_effect = ExtractionError("Could not fetch URL: network timeout")
+        override_db.execute = AsyncMock()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={
+                "title": "Broken link",
+                "document_type": "article",
+                "url": "https://unreachable.example/404",
+            },
+        )
+
+        assert resp.status_code == 422
+        assert "Could not extract content" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_preview_is_truncated(
+        self, mock_extract, user_client, override_db
+    ):
+        """Preview text is capped at MAX_PREVIEW_CHARS."""
+        from d4bl.app.upload_routes import MAX_PREVIEW_CHARS
+
+        mock_extract.return_value = "x" * (MAX_PREVIEW_CHARS * 3)
+        override_db.execute = AsyncMock()
+
+        captured: dict = {}
+
+        def capture_add(obj):
+            captured["upload"] = obj
+
+        override_db.add = capture_add
+
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={
+                "title": "Very long article",
+                "document_type": "article",
+                "url": "https://example.com/long",
+            },
+        )
+
+        assert resp.status_code == 200
+        upload = captured["upload"]
+        assert len(upload.metadata_["preview_text"]) == MAX_PREVIEW_CHARS
+
+    @pytest.mark.asyncio
+    @patch("d4bl.app.upload_routes.extract_url")
+    async def test_upload_document_file_skips_url_fetch(
+        self, mock_extract, user_client, override_db
+    ):
+        """File uploads don't trigger a URL fetch, and preview stays None."""
+        override_db.execute = AsyncMock()
+        captured: dict = {}
+
+        def capture_add(obj):
+            captured["upload"] = obj
+
+        override_db.add = capture_add
+
+        fake_pdf = b"%PDF-1.4\n%%EOF\n" + b"x" * 100
+        resp = await user_client.post(
+            "/api/admin/uploads/document",
+            data={"title": "Report", "document_type": "report"},
+            files={"file": ("test.pdf", fake_pdf, "application/pdf")},
+        )
+
+        assert resp.status_code == 200
+        mock_extract.assert_not_called()
+        upload = captured["upload"]
+        assert upload.metadata_["preview_text"] is None
 
     @pytest.mark.asyncio
     async def test_list_uploads_requires_auth(self, unauth_client):
