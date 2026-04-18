@@ -141,8 +141,8 @@ class VectorStore:
 
             query = text("""
                 INSERT INTO scraped_content_vectors
-                (job_id, url, content, content_type, metadata, embedding)
-                VALUES (:job_id, :url, :content, :content_type, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
+                (job_id, url, content, content_type, metadata, embedding, source)
+                VALUES (:job_id, :url, :content, :content_type, CAST(:metadata AS jsonb), CAST(:embedding AS vector), 'research_job')
                 RETURNING id
             """)
 
@@ -202,6 +202,80 @@ class VectorStore:
 
         logger.info("Stored %s/%s items in vector DB", stored_count, len(items))
         return stored_count
+
+    async def store_staff_document(
+        self,
+        db: AsyncSession,
+        upload_id: UUID,
+        chunks: list[str],
+        metadata_base: dict[str, Any],
+    ) -> list[UUID]:
+        """Store staff-uploaded document chunks with embeddings.
+
+        Each chunk becomes one row in scraped_content_vectors with
+        source='staff_upload' and job_id=NULL. The per-chunk metadata
+        merges metadata_base with chunk_index/total_chunks/upload_id so
+        agents can cite the origin and reconstruct document order.
+
+        Args:
+            db: Database session
+            upload_id: Upload row this document came from
+            chunks: Output of chunker.chunk_text — one entry per chunk
+            metadata_base: Shared metadata (title, uploader_email,
+                source_url, original_filename, etc.)
+
+        Returns:
+            List of inserted row UUIDs in chunk order. Empty list if
+            no chunks were provided.
+        """
+        if not chunks:
+            return []
+
+        url = metadata_base.get("source_url")
+        content_type = metadata_base.get("content_type", "document")
+        total = len(chunks)
+        inserted: list[UUID] = []
+
+        query = text("""
+            INSERT INTO scraped_content_vectors
+            (job_id, url, content, content_type, metadata, embedding, source)
+            VALUES (NULL, :url, :content, :content_type, CAST(:metadata AS jsonb), CAST(:embedding AS vector), 'staff_upload')
+            RETURNING id
+        """)
+
+        try:
+            for i, chunk in enumerate(chunks):
+                embedding = await self.generate_embedding(chunk)
+                row_metadata = {
+                    **metadata_base,
+                    "upload_id": str(upload_id),
+                    "chunk_index": i,
+                    "total_chunks": total,
+                    "source_type": "staff_upload",
+                }
+                result = await db.execute(
+                    query,
+                    {
+                        "url": url,
+                        "content": chunk,
+                        "content_type": content_type,
+                        "metadata": json.dumps(row_metadata),
+                        "embedding": self._format_embedding(embedding),
+                    },
+                )
+                inserted.append(result.scalar_one())
+
+            await db.commit()
+            logger.info(
+                "Stored staff document upload_id=%s as %d chunks",
+                upload_id, total,
+            )
+            return inserted
+
+        except Exception:
+            logger.exception("Failed to store staff document upload_id=%s", upload_id)
+            await db.rollback()
+            raise
 
     async def search_similar(
         self,

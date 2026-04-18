@@ -151,6 +151,115 @@ class TestVectorStore:
         assert count == 2
         assert self.store.generate_embedding.call_count == 2
 
+    @pytest.mark.asyncio
+    async def test_store_staff_document_inserts_one_row_per_chunk(
+        self, mock_db_session
+    ):
+        """store_staff_document embeds and inserts one row per chunk."""
+        import json as _json
+
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
+        returned_ids = [uuid4() for _ in range(3)]
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one=MagicMock(return_value=rid))
+                for rid in returned_ids
+            ]
+        )
+        mock_db_session.commit = AsyncMock()
+
+        upload_id = uuid4()
+        chunks = ["chunk one text", "chunk two text", "chunk three text"]
+        metadata_base = {
+            "title": "Overlooked: Women and Jails",
+            "uploader_email": "alice@d4bl.org",
+            "source_url": None,
+            "original_filename": "vera_overlooked.pdf",
+        }
+
+        result = await self.store.store_staff_document(
+            db=mock_db_session,
+            upload_id=upload_id,
+            chunks=chunks,
+            metadata_base=metadata_base,
+        )
+
+        assert result == returned_ids
+        assert self.store.generate_embedding.call_count == 3
+        assert mock_db_session.execute.call_count == 3
+        mock_db_session.commit.assert_called_once()
+
+        # Inspect the first insert's metadata to confirm enrichment.
+        first_call_params = mock_db_session.execute.call_args_list[0][0][1]
+        metadata = _json.loads(first_call_params["metadata"])
+        assert metadata["title"] == "Overlooked: Women and Jails"
+        assert metadata["upload_id"] == str(upload_id)
+        assert metadata["chunk_index"] == 0
+        assert metadata["total_chunks"] == 3
+        assert metadata["source_type"] == "staff_upload"
+
+    @pytest.mark.asyncio
+    async def test_store_staff_document_empty_chunks_returns_empty(
+        self, mock_db_session
+    ):
+        """Empty chunks list should short-circuit without DB calls."""
+        self.store.generate_embedding = AsyncMock()
+        mock_db_session.execute = AsyncMock()
+
+        result = await self.store.store_staff_document(
+            db=mock_db_session,
+            upload_id=uuid4(),
+            chunks=[],
+            metadata_base={"title": "Empty doc"},
+        )
+
+        assert result == []
+        self.store.generate_embedding.assert_not_called()
+        mock_db_session.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_store_staff_document_rollback_on_error(self, mock_db_session):
+        """If any chunk fails to insert, rollback and re-raise."""
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
+        mock_db_session.execute = AsyncMock(side_effect=RuntimeError("db down"))
+        mock_db_session.commit = AsyncMock()
+        mock_db_session.rollback = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="db down"):
+            await self.store.store_staff_document(
+                db=mock_db_session,
+                upload_id=uuid4(),
+                chunks=["only chunk"],
+                metadata_base={"title": "Test"},
+            )
+
+        mock_db_session.rollback.assert_called_once()
+        mock_db_session.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_store_staff_document_uses_source_url_when_present(
+        self, mock_db_session
+    ):
+        """URL-based uploads propagate source_url to the url column."""
+        self.store.generate_embedding = AsyncMock(return_value=[0.1] * 1024)
+        mock_db_session.execute = AsyncMock(
+            return_value=MagicMock(scalar_one=MagicMock(return_value=uuid4()))
+        )
+        mock_db_session.commit = AsyncMock()
+
+        await self.store.store_staff_document(
+            db=mock_db_session,
+            upload_id=uuid4(),
+            chunks=["some content"],
+            metadata_base={
+                "title": "ProPublica investigation",
+                "source_url": "https://propublica.org/article",
+            },
+        )
+
+        call_params = mock_db_session.execute.call_args_list[0][0][1]
+        assert call_params["url"] == "https://propublica.org/article"
+
 
 class TestHelpers:
     """Tests for extracted helper methods."""

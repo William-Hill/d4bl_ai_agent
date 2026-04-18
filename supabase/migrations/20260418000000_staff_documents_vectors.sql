@@ -11,5 +11,12 @@ ALTER TABLE scraped_content_vectors
 CREATE INDEX IF NOT EXISTS scraped_content_vectors_source_idx
     ON scraped_content_vectors(source);
 
+-- Enforce the invariant that every research-job row still has a job_id.
+-- Staff-upload rows are allowed to have job_id = NULL; other future source
+-- types are unconstrained by this check.
+ALTER TABLE scraped_content_vectors
+    ADD CONSTRAINT scraped_content_vectors_source_job_id_check
+    CHECK (source <> 'research_job' OR job_id IS NOT NULL);
+
 -- Staff-upload rows will have source = 'staff_upload' and job_id = NULL.
 -- Research-job rows keep source = 'research_job' and job_id = <uuid>.
