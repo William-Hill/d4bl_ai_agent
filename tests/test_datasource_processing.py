@@ -84,3 +84,38 @@ class TestCoerceYear:
     def test_rejects(self, bad):
         with pytest.raises(ValueError):
             coerce_year(bad)
+
+
+class TestMappingConfig:
+    def test_required_fields_only(self):
+        from d4bl.services.datasource_processing.parser import MappingConfig
+
+        m = MappingConfig(
+            geo_column="county_fips",
+            metric_value_column="rate",
+            metric_name="eviction_rate",
+        )
+        assert m.race_column is None
+        assert m.year_column is None
+
+    def test_metric_name_validated_in_post_init(self):
+        from d4bl.services.datasource_processing.parser import MappingConfig
+
+        with pytest.raises(ValueError):
+            MappingConfig(
+                geo_column="county_fips",
+                metric_value_column="rate",
+                metric_name="Bad Name",
+            )
+
+
+class TestDatasourceParseError:
+    def test_has_structured_detail(self):
+        from d4bl.services.datasource_processing.parser import DatasourceParseError
+
+        err = DatasourceParseError(
+            "missing columns",
+            detail={"missing_columns": ["race"]},
+        )
+        assert err.detail == {"missing_columns": ["race"]}
+        assert "missing columns" in str(err)
