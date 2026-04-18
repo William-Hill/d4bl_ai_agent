@@ -157,3 +157,37 @@ class TestReadCsvBytes:
 
         with pytest.raises(DatasourceParseError):
             read_csv_bytes(b"")
+
+
+class TestReadXlsxBytes:
+    def test_basic_xlsx(self, make_xlsx_bytes):
+        from d4bl.services.datasource_processing.parser import read_xlsx_bytes
+
+        raw = make_xlsx_bytes(
+            ["county_fips", "rate"],
+            [["13121", 14.3], ["13089", 9.1]],
+        )
+        header, rows = read_xlsx_bytes(raw)
+        assert header == ["county_fips", "rate"]
+        assert rows[0]["county_fips"] == "13121"
+        assert rows[0]["rate"] in ("14.3", 14.3)
+
+    def test_skips_empty_rows(self, make_xlsx_bytes):
+        from d4bl.services.datasource_processing.parser import read_xlsx_bytes
+
+        raw = make_xlsx_bytes(
+            ["county_fips", "rate"],
+            [["13121", 14.3], [None, None], ["13089", 9.1]],
+        )
+        _header, rows = read_xlsx_bytes(raw)
+        assert len(rows) == 2
+
+    def test_empty_workbook_raises(self, make_xlsx_bytes):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            read_xlsx_bytes,
+        )
+
+        raw = make_xlsx_bytes([], [])
+        with pytest.raises(DatasourceParseError):
+            read_xlsx_bytes(raw)

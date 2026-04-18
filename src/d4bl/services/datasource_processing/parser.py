@@ -11,6 +11,8 @@ import io
 from dataclasses import dataclass
 from typing import Any
 
+from openpyxl import load_workbook
+
 from .validation import validate_metric_name
 
 
@@ -60,4 +62,40 @@ def read_csv_bytes(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
 
     header = [h.strip() for h in raw_header]
     rows = [dict(zip(header, r)) for r in reader if any(cell.strip() for cell in r)]
+    return header, rows
+
+
+def read_xlsx_bytes(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
+    """Parse XLSX bytes into ``(header, rows)`` using openpyxl.
+
+    - Reads the first worksheet only.
+    - ``header`` is taken from row 1, trimmed of whitespace.
+    - Empty rows (all cells None / blank) are skipped.
+    - Non-string cell values are stringified so downstream coercion sees the
+      same shape as the CSV reader.
+    """
+    if not content:
+        raise DatasourceParseError("file is empty")
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as exc:
+        raise DatasourceParseError(f"could not open xlsx: {exc}") from exc
+
+    ws = wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        raw_header = next(rows_iter)
+    except StopIteration:
+        raise DatasourceParseError("file has no header row")
+
+    header = [("" if h is None else str(h)).strip() for h in raw_header]
+    if not any(header):
+        raise DatasourceParseError("header row is empty")
+
+    rows: list[dict[str, str]] = []
+    for raw_row in rows_iter:
+        if raw_row is None or all(cell is None or str(cell).strip() == "" for cell in raw_row):
+            continue
+        row = {h: ("" if v is None else str(v)) for h, v in zip(header, raw_row)}
+        rows.append(row)
     return header, rows
