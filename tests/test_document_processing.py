@@ -1,14 +1,20 @@
-"""Tests for document_processing extractors and chunker."""
+"""Tests for document_processing extractors, chunker, and approve flow."""
 
 from __future__ import annotations
 
 import io
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from docx import Document as DocxDocument
 from pypdf import PdfWriter
 from reportlab.pdfgen import canvas
 
+from d4bl.services.document_processing.approve import (
+    ProcessingError,
+    process_document_upload,
+)
 from d4bl.services.document_processing.chunker import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_OVERLAP,
@@ -133,3 +139,77 @@ class TestChunkText:
 
     def test_defaults_are_reasonable(self):
         assert DEFAULT_CHUNK_SIZE > DEFAULT_OVERLAP > 0
+
+
+def _mock_upload_row(
+    *,
+    upload_type: str = "document",
+    full_text: str | None = "Some extracted text about racial equity.\n\nMore content.",
+    title: str = "Test Doc",
+    uploader_email: str = "alice@d4bl.org",
+    filename: str = "doc.pdf",
+):
+    mapping = {
+        "id": uuid4(),
+        "upload_type": upload_type,
+        "original_filename": filename,
+        "metadata": {
+            "title": title,
+            "document_type": "report",
+            "topic_tags": ["equity"],
+            "url": None,
+            "full_text": full_text,
+        },
+        "uploader_email": uploader_email,
+    }
+    result = MagicMock()
+    result.mappings.return_value.first.return_value = mapping
+    return result
+
+
+class TestProcessDocumentUpload:
+
+    @pytest.mark.asyncio
+    @patch("d4bl.services.document_processing.approve.get_vector_store")
+    async def test_happy_path_chunks_and_indexes(self, mock_get_store):
+        fake_store = MagicMock()
+        fake_store.store_staff_document = AsyncMock(return_value=[uuid4(), uuid4()])
+        mock_get_store.return_value = fake_store
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_mock_upload_row())
+
+        count = await process_document_upload(db, uuid4())
+
+        assert count == 2
+        fake_store.store_staff_document.assert_awaited_once()
+        call_kwargs = fake_store.store_staff_document.await_args.kwargs
+        assert call_kwargs["metadata_base"]["title"] == "Test Doc"
+        assert call_kwargs["metadata_base"]["uploader_email"] == "alice@d4bl.org"
+        assert call_kwargs["chunks"]  # non-empty
+
+    @pytest.mark.asyncio
+    async def test_missing_upload_raises(self):
+        db = AsyncMock()
+        result = MagicMock()
+        result.mappings.return_value.first.return_value = None
+        db.execute = AsyncMock(return_value=result)
+
+        with pytest.raises(ProcessingError, match="not found"):
+            await process_document_upload(db, uuid4())
+
+    @pytest.mark.asyncio
+    async def test_non_document_upload_raises(self):
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_mock_upload_row(upload_type="datasource"))
+
+        with pytest.raises(ProcessingError, match="not a document"):
+            await process_document_upload(db, uuid4())
+
+    @pytest.mark.asyncio
+    async def test_missing_full_text_raises(self):
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_mock_upload_row(full_text=None))
+
+        with pytest.raises(ProcessingError, match="no extracted text"):
+            await process_document_upload(db, uuid4())
