@@ -789,3 +789,50 @@ class TestStaffUploadsAvailable:
     async def test_available_requires_auth(self, unauth_client):
         resp = await unauth_client.get("/api/explore/staff-uploads/available")
         assert resp.status_code == 401
+
+
+class TestStaffUploadsExplore:
+
+    @pytest.mark.asyncio
+    async def test_returns_explore_response_shape(self, user_client, override_db):
+        mock_db = override_db
+        # First call: fetch metadata + metric_name.
+        meta_result = MagicMock()
+        meta_result.mappings.return_value.first.return_value = {
+            "source_name": "Eviction Rates 2023",
+            "mapping": {"metric_name": "eviction_rate", "race_column": "race"},
+        }
+        # Second call: aggregated rows.
+        rows_result = MagicMock()
+        rows_result.mappings.return_value.all.return_value = [
+            {"state_fips": "13", "value": 14.3, "race": "Black", "year": 2023},
+            {"state_fips": "06", "value": 9.1, "race": None, "year": 2023},
+        ]
+        mock_db.execute = AsyncMock(side_effect=[meta_result, rows_result])
+
+        resp = await user_client.get(
+            "/api/explore/staff-uploads?upload_id=00000000-0000-0000-0000-00000000a001"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available_metrics"] == ["eviction_rate"]
+        assert len(data["rows"]) == 2
+        assert data["rows"][0]["metric"] == "eviction_rate"
+        assert data["rows"][0]["state_name"]  # non-empty string
+
+    @pytest.mark.asyncio
+    async def test_missing_upload_id_returns_422(self, user_client, override_db):
+        resp = await user_client.get("/api/explore/staff-uploads")
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_non_approved_upload_returns_404(self, user_client, override_db):
+        mock_db = override_db
+        meta_result = MagicMock()
+        meta_result.mappings.return_value.first.return_value = None
+        mock_db.execute = AsyncMock(return_value=meta_result)
+
+        resp = await user_client.get(
+            "/api/explore/staff-uploads?upload_id=00000000-0000-0000-0000-00000000dead"
+        )
+        assert resp.status_code == 404
