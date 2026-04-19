@@ -237,6 +237,8 @@ export default function RelatedDocuments({
       <button
         type="button"
         onClick={toggleCollapse}
+        aria-expanded={!collapsed}
+        aria-controls="related-documents-panel"
         className="flex w-full items-center justify-between px-3 py-2 text-xs text-[#999] hover:text-white"
       >
         <span>
@@ -247,7 +249,7 @@ export default function RelatedDocuments({
       </button>
 
       {!collapsed && (
-        <div className="px-3 pb-3 space-y-3">
+        <div id="related-documents-panel" className="px-3 pb-3 space-y-3">
           <div className="flex flex-wrap gap-2">
             {chips.map((c) => (
               <button
