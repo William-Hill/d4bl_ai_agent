@@ -802,6 +802,7 @@ def generate_query_parser_pairs_v2(
     *,
     resume: bool = False,
     checkpoint_dir: Path | None = None,
+    include_approved_example_queries: bool = True,
 ) -> list[dict]:
     """Generate v2 query parser pairs targeting diverse entity types.
 
@@ -814,6 +815,8 @@ def generate_query_parser_pairs_v2(
         outfile: Optional output path for incremental writes.
         resume: If True, resume from the last checkpoint per entity type.
         checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
+        include_approved_example_queries: When True, inject approved staff queries
+            into the intersectional batch; order is snapshotted for ``--resume``.
 
     Returns:
         A list of ChatML pair dicts.
@@ -854,31 +857,61 @@ def generate_query_parser_pairs_v2(
     pairs: list[dict] = []
 
     task_name = TASK_QUERY_PARSER_V2
-
-    staff_for_v2 = deque(
-        (
-            {
-                "question": text,
-                "entity_type": "intersectional",
-                "seed_data": r,
-            }
-            for r in fetch_approved_example_queries(conn, limit=400)
-            if (text := (r.get("query_text") or "").strip())
-        ),
-    )
-    if staff_for_v2:
-        print(
-            f"[{task_name}] {len(staff_for_v2)} approved staff queries available "
-            "for intersectional batch injection",
-            flush=True,
-        )
+    cp_dir = checkpoint_dir or PAIRS_DIR
+    staff_snap = cp_dir / ".query_parser_v2_staff_snapshot.json"
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+        staff_snap.unlink(missing_ok=True)
 
     # Guard against stale output when checkpoint is missing/empty but resume=True
     entity_cps = {et: _load_checkpoint(task_name, et, checkpoint_dir=checkpoint_dir) for et in type_counts}
     effective_resume = resume and any(cp["last_attempted_idx"] >= 0 for cp in entity_cps.values())
+
+    if include_approved_example_queries:
+        if effective_resume and staff_snap.exists():
+            try:
+                raw = json.loads(staff_snap.read_text(encoding="utf-8"))
+                staff_for_v2 = deque(raw if isinstance(raw, list) else [])
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Could not read v2 staff snapshot; continuing without: %s", exc)
+                staff_for_v2 = deque()
+        elif not effective_resume:
+            staff_for_v2 = deque(
+                (
+                    {
+                        "question": text,
+                        "entity_type": "intersectional",
+                        "seed_data": r,
+                    }
+                    for r in fetch_approved_example_queries(conn, limit=400)
+                    if (text := (r.get("query_text") or "").strip())
+                ),
+            )
+            if staff_for_v2:
+                try:
+                    staff_snap.write_text(
+                        json.dumps(list(staff_for_v2), ensure_ascii=False, default=str),
+                        encoding="utf-8",
+                    )
+                except OSError as exc:
+                    logger.warning("Could not write v2 staff snapshot: %s", exc)
+        else:
+            staff_for_v2 = deque()
+            logger.info(
+                "[%s] Resuming without %s — intersectional staff injection skipped.",
+                task_name,
+                staff_snap.name,
+            )
+    else:
+        staff_for_v2 = deque()
+
+    if staff_for_v2:
+        print(
+            f"[{task_name}] {len(staff_for_v2)} approved staff queries staged "
+            "for intersectional batch injection",
+            flush=True,
+        )
 
     fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = 0
@@ -1527,6 +1560,7 @@ def generate_query_parser_pairs(
     *,
     resume: bool = False,
     checkpoint_dir: Path | None = None,
+    include_approved_example_queries: bool = True,
 ) -> list[dict]:
     """Generate query parser training pairs via Claude distillation.
 
@@ -1540,23 +1574,59 @@ def generate_query_parser_pairs(
             progress survives interruption.
         resume: If True, resume from the last checkpoint.
         checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
+        include_approved_example_queries: When True (default), prepend approved
+            staff queries; persisted to a sidecar JSON while resuming so indices
+            stay aligned with the initial run.
 
     Returns:
         A list of ChatML pair dicts.
     """
     task_name = TASK_QUERY_PARSER
     subtask = "_default"
+    cp_dir = checkpoint_dir or PAIRS_DIR
+    staff_snapshot = cp_dir / ".query_parser_staff_snapshot.json"
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+        staff_snapshot.unlink(missing_ok=True)
 
     cp = _load_checkpoint(task_name, subtask, checkpoint_dir=checkpoint_dir)
     if resume and cp["status"] == "completed":
         print(f"[{task_name}] Already completed — skipping", flush=True)
         return []
 
+    effective_resume = resume and cp["last_attempted_idx"] >= 0
+
     seed_rows = _load_seed_rows(conn)
-    staff_rows = fetch_approved_example_queries(conn, limit=max(count, 200))
+
+    if include_approved_example_queries:
+        if effective_resume and staff_snapshot.exists():
+            try:
+                raw = json.loads(staff_snapshot.read_text(encoding="utf-8"))
+                staff_rows = raw if isinstance(raw, list) else []
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Could not read staff snapshot; continuing without: %s", exc)
+                staff_rows = []
+        elif not effective_resume:
+            staff_rows = fetch_approved_example_queries(conn, limit=max(count, 200))
+            if staff_rows:
+                try:
+                    staff_snapshot.write_text(
+                        json.dumps(staff_rows, ensure_ascii=False, default=str),
+                        encoding="utf-8",
+                    )
+                except OSError as exc:
+                    logger.warning("Could not write staff snapshot: %s", exc)
+        else:
+            staff_rows = []
+            logger.info(
+                "[%s] Resuming without %s — approved staff prefix unavailable for this run.",
+                task_name,
+                staff_snapshot.name,
+            )
+    else:
+        staff_rows = []
+
     questions = merge_staff_example_queries_for_parser(seed_rows, count, staff_rows)
     n_staff_merged = sum(
         q.get("seed_data", {}).get("source") == "staff_example_query" for q in questions
@@ -1571,7 +1641,6 @@ def generate_query_parser_pairs(
     pairs: list[dict] = []
 
     # Guard against stale output when checkpoint is missing/empty but resume=True
-    effective_resume = resume and cp["last_attempted_idx"] >= 0
     fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = cp["pairs_written"] if effective_resume else 0
 
@@ -1832,10 +1901,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Resume from checkpoint instead of starting fresh.",
     )
+    parser.add_argument(
+        "--no-include-approved-example-queries",
+        action="store_false",
+        dest="include_approved_example_queries",
+        default=True,
+        help=(
+            "Disable merging approved staff example queries into query_parser and "
+            "query_parser_v2 distill runs."
+        ),
+    )
     return parser
 
 
-def main(task: str, *, resume: bool = False) -> None:
+def main(task: str, *, resume: bool = False, include_approved_example_queries: bool = True) -> None:
     """Run the selected task generator and write pairs to PAIRS_DIR.
 
     Args:
@@ -1874,10 +1953,12 @@ def main(task: str, *, resume: bool = False) -> None:
     try:
         PAIRS_DIR.mkdir(parents=True, exist_ok=True)
 
+        inc = include_approved_example_queries
         _TASK_MAP = {
             "query_parser": lambda: generate_query_parser_pairs(
                 conn, count=PAIRS_PER_TASK, outfile=PAIRS_DIR / "query_parser.jsonl",
                 resume=resume,
+                include_approved_example_queries=inc,
             ),
             "explainer": lambda: generate_explainer_pairs(
                 conn, count=PAIRS_PER_TASK, outfile=PAIRS_DIR / "explainer.jsonl",
@@ -1897,6 +1978,7 @@ def main(task: str, *, resume: bool = False) -> None:
                 conn, count=PARSER_V2_ENTITY_PAIRS,
                 outfile=PAIRS_DIR / "query_parser_v2.jsonl",
                 resume=resume,
+                include_approved_example_queries=inc,
             ),
             "evaluator_v3": lambda: generate_doc_hallucination_pairs(
                 conn, count_per_subtask=DOC_EVALUATOR_PAIRS_PER_SUBTASK,
@@ -1948,4 +2030,8 @@ def main(task: str, *, resume: bool = False) -> None:
 if __name__ == "__main__":
     _parser = _build_arg_parser()
     _args = _parser.parse_args()
-    main(_args.task, resume=_args.resume)
+    main(
+        _args.task,
+        resume=_args.resume,
+        include_approved_example_queries=_args.include_approved_example_queries,
+    )

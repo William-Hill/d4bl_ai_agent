@@ -1876,17 +1876,24 @@ async def list_example_query_templates(
     db: AsyncSession = Depends(get_db),
 ):
     """List approved staff-submitted example queries for Explore NL templates."""
-    result = await db.execute(
-        text("""
-            SELECT eq.id, eq.query_text, eq.description, eq.summary_format
-            FROM example_queries eq
-            INNER JOIN uploads u ON u.id = eq.upload_id
-            WHERE u.upload_type = 'query' AND u.status = 'approved'
-            ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC
-            LIMIT 50
-        """)
-    )
-    rows = result.mappings().all()
+    try:
+        result = await db.execute(
+            text("""
+                SELECT eq.id, eq.query_text, eq.description, eq.summary_format
+                FROM example_queries eq
+                INNER JOIN uploads u ON u.id = eq.upload_id
+                WHERE u.upload_type = 'query' AND u.status = 'approved'
+                ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC
+                LIMIT 50
+            """)
+        )
+        rows = result.mappings().all()
+    except Exception:
+        logger.warning(
+            "example_query_templates: returning empty list (schema or DB error)",
+            exc_info=True,
+        )
+        return []
     return [
         {
             "id": str(r["id"]),

@@ -61,7 +61,9 @@ export default function ExploreQueryBar({
     return () => {
       cancelled = true;
     };
-  }, [getHeaders]);
+    // Intentionally once on mount: getHeaders identity can change each render and would refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = useCallback(
     async (e?: FormEvent) => {

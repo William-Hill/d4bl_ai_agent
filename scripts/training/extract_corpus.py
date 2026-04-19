@@ -180,13 +180,15 @@ def main(tables: list[str] | None = None, max_per_table: int = MAX_PASSAGES_PER_
 
     from scripts.ingestion.helpers import get_db_connection
 
+    import psycopg2.errors  # lazy — same dependency path as extract_table
+
     conn = get_db_connection()
     try:
         for table in target_tables:
             logger.info("Extracting %s (max %d rows)…", table, max_per_table)
             try:
                 passages = extract_table(conn, table, max_per_table)
-            except Exception as exc:  # noqa: BLE001
+            except psycopg2.errors.UndefinedTable as exc:
                 if table == "approved_example_queries":
                     logger.warning(
                         "Skipping approved example queries (tables may be absent): %s",
