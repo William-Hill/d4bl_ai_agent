@@ -670,9 +670,10 @@ def run_health_checks(phase_name: str, stats: dict) -> dict[str, dict]:
         if last3[-1] <= last3[0]:
             checks["eval_trend"] = {"status": "pass", "message": "eval_loss trending down"}
         else:
+            formatted_last3 = [f'{loss:.3f}' for loss in last3]
             checks["eval_trend"] = {
                 "status": "warn",
-                "message": f"eval_loss rising over last 3 checkpoints: {[f'{loss:.3f}' for loss in last3]}",
+                "message": f"eval_loss rising over last 3 checkpoints: {formatted_last3}",
             }
 
     return checks
