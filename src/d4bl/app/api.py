@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import String, desc, func, select, text
+from sqlalchemy import String, bindparam, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -55,6 +55,8 @@ from d4bl.app.schemas import (
     QueryRequest,
     QueryResponse,
     QuerySourceItem,
+    RelatedDocumentItem,
+    RelatedDocumentsResponse,
     ResearchRequest,
     ResearchResponse,
     StateSummaryItem,
@@ -431,6 +433,154 @@ async def fetch_research_job(db: AsyncSession, job_uuid: UUID) -> ResearchJob:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+_RELATED_DOC_CONTENT_TYPES: frozenset[str] = frozenset(
+    {"policy_bill", "research_report", "scraped", "scraped_web"}
+)
+
+
+def _parse_related_doc_types_param(raw: str | None) -> list[str]:
+    """Return sorted content_type values for the documents query (allowlist-only).
+
+    When *raw* is omitted or blank, all allowed types are used. When *raw* is
+    non-blank but contains no allowed tokens, returns an empty list (caller
+    should respond with 422).
+    """
+    if not raw or not raw.strip():
+        return sorted(_RELATED_DOC_CONTENT_TYPES)
+    picked = [t.strip() for t in raw.split(",") if t.strip() in _RELATED_DOC_CONTENT_TYPES]
+    return sorted(set(picked))
+
+
+def _normalize_metric_for_document_search(metric: str | None) -> tuple[bool, str, str]:
+    """Return (has_metric, slug_lower, human_phrase_lower) for safe substring matching."""
+    if not metric or not metric.strip():
+        return False, "", ""
+    slug = metric.strip().lower()[:120]
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789_ -")
+    slug = "".join(ch for ch in slug if ch in allowed).strip()
+    if not slug:
+        return False, "", ""
+    human = slug.replace("_", " ")
+    return True, slug, human
+
+
+async def _fetch_related_documents(
+    db: AsyncSession,
+    *,
+    viewer_user_id: UUID,
+    state_fips: str,
+    metric: str | None,
+    content_types: list[str],
+    sort: str,
+    order: str,
+    limit: int,
+) -> RelatedDocumentsResponse:
+    """Load documents linked to a state, optionally narrowed by metric text."""
+    if not content_types:
+        return RelatedDocumentsResponse(documents=[], total=0)
+
+    abbrev = FIPS_TO_ABBREV.get(state_fips)
+    if not abbrev:
+        raise HTTPException(status_code=422, detail="Invalid state_fips")
+    state_name = FIPS_TO_NAME.get(state_fips, "")
+    has_metric, metric_slug, metric_human = _normalize_metric_for_document_search(metric)
+    # Metric filtering uses strpos / metadata::text (no GIN yet). Revisit if this becomes hot.
+
+    sort_col = {"created_at": "created_at", "title": "title", "content_type": "content_type"}.get(
+        sort,
+        "created_at",
+    )
+    order_sql = "ASC" if order.lower() == "asc" else "DESC"
+    nulls = "NULLS LAST" if sort_col in ("created_at", "title") else ""
+
+    metric_clause = "TRUE"
+    params: dict[str, object] = {
+        "abbrev": abbrev,
+        "state_name": state_name.lower(),
+        "limit": limit,
+        "viewer_id": str(viewer_user_id),
+        "ct_types": tuple(content_types),
+    }
+    if has_metric:
+        metric_clause = """(
+            strpos(lower(COALESCE(d.title, '')), :metric_slug) > 0
+            OR strpos(lower(COALESCE(d.metadata::text, '')), :metric_slug) > 0
+            OR strpos(lower(COALESCE(c.content, '')), :metric_slug) > 0
+            OR strpos(lower(COALESCE(c.content, '')), :metric_human) > 0
+        )"""
+        params["metric_slug"] = metric_slug
+        params["metric_human"] = metric_human
+
+    stmt = (
+        text(
+            f"""
+        SELECT * FROM (
+            SELECT
+                d.id::text AS id,
+                d.title,
+                d.source_url,
+                d.content_type,
+                d.source_key,
+                CASE WHEN d.job_id IS NULL THEN NULL ELSE d.job_id::text END AS job_id,
+                d.created_at,
+                LEFT(COALESCE(c.content, ''), 320) AS snippet,
+                d.metadata AS metadata,
+                COUNT(*) OVER() AS _total
+            FROM documents d
+            LEFT JOIN LATERAL (
+                SELECT content FROM document_chunks
+                WHERE document_id = d.id
+                ORDER BY chunk_index ASC
+                LIMIT 1
+            ) c ON true
+            WHERE d.content_type IN :ct_types
+              AND (
+                (d.content_type = 'policy_bill' AND COALESCE(d.metadata->>'state', '') = :abbrev)
+                OR (strpos(lower(COALESCE(d.title, '')), :state_name) > 0)
+                OR (strpos(lower(COALESCE(c.content, '')), :state_name) > 0)
+              )
+              AND ({metric_clause})
+              AND (
+                d.job_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM research_jobs rj
+                    WHERE rj.job_id = d.job_id
+                      AND rj.user_id = CAST(:viewer_id AS uuid)
+                )
+              )
+        ) sub
+        ORDER BY sub.{sort_col} {order_sql} {nulls}
+        LIMIT :limit
+        """
+        ).bindparams(bindparam("ct_types", expanding=True))
+    )
+
+    result = await db.execute(stmt, params)
+    rows = result.mappings().all()
+    total = int(rows[0]["_total"]) if rows else 0
+    items: list[RelatedDocumentItem] = []
+    for r in rows:
+        meta = r.get("metadata")
+        if meta is not None and not isinstance(meta, dict):
+            meta = None
+        ca = r.get("created_at")
+        created = ca.isoformat() if hasattr(ca, "isoformat") else (str(ca) if ca else None)
+        items.append(
+            RelatedDocumentItem(
+                id=r["id"],
+                title=r.get("title"),
+                source_url=r.get("source_url"),
+                content_type=r["content_type"],
+                source_key=r.get("source_key"),
+                job_id=r.get("job_id"),
+                created_at=created,
+                snippet=r.get("snippet") or None,
+                metadata=meta,
+            )
+        )
+    return RelatedDocumentsResponse(documents=items, total=total)
 
 
 _background_tasks: set = set()
@@ -2052,6 +2202,51 @@ async def get_policies(
     except Exception as e:
         logger.error("Error fetching policies: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching policies") from e
+
+
+@app.get("/api/documents", response_model=RelatedDocumentsResponse)
+async def list_related_documents(
+    state_fips: str,
+    metric: str | None = None,
+    types: str | None = None,
+    sort: str = "created_at",
+    order: str = "desc",
+    limit: int = 50,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Related documents for Explore: policy bills, research reports, scraped pages.
+
+    Requires ``state_fips``. Optional ``metric`` keeps rows whose title, JSON metadata,
+    or first text chunk matches the metric slug or a humanized phrase (underscores to spaces).
+    ``types`` is a comma-separated subset of policy_bill,research_report,scraped,scraped_web.
+    Job-linked rows are limited to research jobs owned by the authenticated user.
+    """
+    if sort not in {"created_at", "title", "content_type"}:
+        raise HTTPException(status_code=422, detail="Invalid sort field")
+    o = order.lower()
+    if o not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="Invalid order")
+    lim = max(1, min(limit, 200))
+    ct = _parse_related_doc_types_param(types)
+    if types and types.strip() and not ct:
+        raise HTTPException(status_code=422, detail="Invalid document types")
+    try:
+        return await _fetch_related_documents(
+            db,
+            viewer_user_id=user.id,
+            state_fips=state_fips,
+            metric=metric,
+            content_types=ct,
+            sort=sort,
+            order=o,
+            limit=lim,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error listing related documents: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error listing documents") from e
 
 
 @app.get("/api/explore/states", response_model=list[StateSummaryItem])
