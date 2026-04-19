@@ -82,7 +82,7 @@ def main():
         print("STAGE 2: Claude Distillation")
         print("=" * 60)
         from scripts.training.generate_training_pairs import main as distill_main
-        distill_main(task=args.task)
+        distill_main(task=args.task, include_approved_example_queries=True)
 
     if args.stage in ("prepare", "all"):
         print("\n" + "=" * 60)

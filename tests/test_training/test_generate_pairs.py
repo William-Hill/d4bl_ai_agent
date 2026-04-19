@@ -456,6 +456,28 @@ class TestCLIFlags:
         )
         assert result.returncode == 0, result.stderr
 
+    def test_include_approved_defaults_false(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'query_parser']); "
+             "assert args.include_approved_example_queries is False"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_include_approved_flag_true(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'query_parser', '--include-approved-example-queries']); "
+             "assert args.include_approved_example_queries is True"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_new_v3_task_choices_accepted(self):
         for task in ["evaluator_v3", "query_parser_v3"]:
             result = subprocess.run(

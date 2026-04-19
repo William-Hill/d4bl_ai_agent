@@ -802,7 +802,7 @@ def generate_query_parser_pairs_v2(
     *,
     resume: bool = False,
     checkpoint_dir: Path | None = None,
-    include_approved_example_queries: bool = True,
+    include_approved_example_queries: bool = False,
 ) -> list[dict]:
     """Generate v2 query parser pairs targeting diverse entity types.
 
@@ -869,14 +869,20 @@ def generate_query_parser_pairs_v2(
     effective_resume = resume and any(cp["last_attempted_idx"] >= 0 for cp in entity_cps.values())
 
     if include_approved_example_queries:
-        if effective_resume and staff_snap.exists():
+        if effective_resume:
+            if not staff_snap.exists():
+                raise RuntimeError(
+                    f"{task_name}: --resume with --include-approved-example-queries requires "
+                    f"{staff_snap.name} from the initial run.",
+                )
             try:
                 raw = json.loads(staff_snap.read_text(encoding="utf-8"))
                 staff_for_v2 = deque(raw if isinstance(raw, list) else [])
             except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("Could not read v2 staff snapshot; continuing without: %s", exc)
-                staff_for_v2 = deque()
-        elif not effective_resume:
+                raise RuntimeError(
+                    f"{task_name}: could not read {staff_snap.name}; cannot resume safely.",
+                ) from exc
+        else:
             staff_for_v2 = deque(
                 (
                     {
@@ -896,13 +902,6 @@ def generate_query_parser_pairs_v2(
                     )
                 except OSError as exc:
                     logger.warning("Could not write v2 staff snapshot: %s", exc)
-        else:
-            staff_for_v2 = deque()
-            logger.info(
-                "[%s] Resuming without %s — intersectional staff injection skipped.",
-                task_name,
-                staff_snap.name,
-            )
     else:
         staff_for_v2 = deque()
 
@@ -1560,7 +1559,7 @@ def generate_query_parser_pairs(
     *,
     resume: bool = False,
     checkpoint_dir: Path | None = None,
-    include_approved_example_queries: bool = True,
+    include_approved_example_queries: bool = False,
 ) -> list[dict]:
     """Generate query parser training pairs via Claude distillation.
 
@@ -1574,9 +1573,10 @@ def generate_query_parser_pairs(
             progress survives interruption.
         resume: If True, resume from the last checkpoint.
         checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
-        include_approved_example_queries: When True (default), prepend approved
-            staff queries; persisted to a sidecar JSON while resuming so indices
-            stay aligned with the initial run.
+        include_approved_example_queries: When True, prepend approved staff
+            queries; persisted to a sidecar JSON while resuming so indices stay
+            aligned with the initial run. Default False (opt-in via CLI or
+            ``run_training_pipeline``).
 
     Returns:
         A list of ChatML pair dicts.
@@ -1600,14 +1600,20 @@ def generate_query_parser_pairs(
     seed_rows = _load_seed_rows(conn)
 
     if include_approved_example_queries:
-        if effective_resume and staff_snapshot.exists():
+        if effective_resume:
+            if not staff_snapshot.exists():
+                raise RuntimeError(
+                    f"{task_name}: --resume with --include-approved-example-queries requires "
+                    f"{staff_snapshot.name} from the initial run.",
+                )
             try:
                 raw = json.loads(staff_snapshot.read_text(encoding="utf-8"))
                 staff_rows = raw if isinstance(raw, list) else []
             except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("Could not read staff snapshot; continuing without: %s", exc)
-                staff_rows = []
-        elif not effective_resume:
+                raise RuntimeError(
+                    f"{task_name}: could not read {staff_snapshot.name}; cannot resume safely.",
+                ) from exc
+        else:
             staff_rows = fetch_approved_example_queries(conn, limit=max(count, 200))
             if staff_rows:
                 try:
@@ -1617,13 +1623,6 @@ def generate_query_parser_pairs(
                     )
                 except OSError as exc:
                     logger.warning("Could not write staff snapshot: %s", exc)
-        else:
-            staff_rows = []
-            logger.info(
-                "[%s] Resuming without %s — approved staff prefix unavailable for this run.",
-                task_name,
-                staff_snapshot.name,
-            )
     else:
         staff_rows = []
 
@@ -1902,19 +1901,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Resume from checkpoint instead of starting fresh.",
     )
     parser.add_argument(
-        "--no-include-approved-example-queries",
-        action="store_false",
-        dest="include_approved_example_queries",
-        default=True,
+        "--include-approved-example-queries",
+        action="store_true",
+        default=False,
         help=(
-            "Disable merging approved staff example queries into query_parser and "
-            "query_parser_v2 distill runs."
+            "Merge approved staff example queries into query_parser and "
+            "query_parser_v2 distill runs (writes sidecar JSON for --resume)."
         ),
     )
     return parser
 
 
-def main(task: str, *, resume: bool = False, include_approved_example_queries: bool = True) -> None:
+def main(task: str, *, resume: bool = False, include_approved_example_queries: bool = False) -> None:
     """Run the selected task generator and write pairs to PAIRS_DIR.
 
     Args:

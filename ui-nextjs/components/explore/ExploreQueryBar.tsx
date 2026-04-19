@@ -34,7 +34,7 @@ export default function ExploreQueryBar({
   year,
   accent,
 }: ExploreQueryBarProps) {
-  const { getHeaders } = useAuthHeaders();
+  const { session, getHeaders } = useAuthHeaders();
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
@@ -42,6 +42,10 @@ export default function ExploreQueryBar({
   const [templates, setTemplates] = useState<ExampleQueryTemplate[]>([]);
 
   useEffect(() => {
+    if (!session?.access_token) {
+      return;
+    }
+
     let cancelled = false;
 
     async function loadTemplates() {
@@ -61,9 +65,7 @@ export default function ExploreQueryBar({
     return () => {
       cancelled = true;
     };
-    // Intentionally once on mount: getHeaders identity can change each render and would refetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [session?.access_token, getHeaders]);
 
   const handleSubmit = useCallback(
     async (e?: FormEvent) => {
