@@ -52,6 +52,8 @@ from d4bl.app.schemas import (
     PipelinePath,
     PipelineStep,
     PolicyBillItem,
+    RelatedDocumentItem,
+    RelatedDocumentsResponse,
     QueryRequest,
     QueryResponse,
     QuerySourceItem,
@@ -431,6 +433,135 @@ async def fetch_research_job(db: AsyncSession, job_uuid: UUID) -> ResearchJob:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+_RELATED_DOC_CONTENT_TYPES: frozenset[str] = frozenset(
+    {"policy_bill", "research_report", "scraped", "scraped_web"}
+)
+
+
+def _parse_related_doc_types_param(raw: str | None) -> list[str]:
+    """Return sorted content_type values for the documents query (allowlist-only)."""
+    if not raw or not raw.strip():
+        return sorted(_RELATED_DOC_CONTENT_TYPES)
+    picked = [t.strip() for t in raw.split(",") if t.strip() in _RELATED_DOC_CONTENT_TYPES]
+    return sorted(set(picked)) if picked else sorted(_RELATED_DOC_CONTENT_TYPES)
+
+
+def _normalize_metric_for_document_search(metric: str | None) -> tuple[bool, str, str]:
+    """Return (has_metric, slug_lower, human_phrase_lower) for safe substring matching."""
+    if not metric or not metric.strip():
+        return False, "", ""
+    slug = metric.strip().lower()[:120]
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789_ -")
+    slug = "".join(ch for ch in slug if ch in allowed).strip()
+    if not slug:
+        return False, "", ""
+    human = slug.replace("_", " ")
+    return True, slug, human
+
+
+async def _fetch_related_documents(
+    db: AsyncSession,
+    *,
+    state_fips: str,
+    metric: str | None,
+    content_types: list[str],
+    sort: str,
+    order: str,
+    limit: int,
+) -> RelatedDocumentsResponse:
+    """Load documents linked to a state, optionally narrowed by metric text."""
+    abbrev = FIPS_TO_ABBREV.get(state_fips)
+    if not abbrev:
+        raise HTTPException(status_code=422, detail="Invalid state_fips")
+    state_name = FIPS_TO_NAME.get(state_fips, "")
+    has_metric, metric_slug, metric_human = _normalize_metric_for_document_search(metric)
+
+    type_sql = ",".join(f"'{t}'" for t in content_types)
+    sort_col = {"created_at": "created_at", "title": "title", "content_type": "content_type"}.get(
+        sort,
+        "created_at",
+    )
+    order_sql = "ASC" if order.lower() == "asc" else "DESC"
+    nulls = "NULLS LAST" if sort_col == "title" else ""
+
+    metric_clause = "TRUE"
+    params: dict[str, object] = {
+        "abbrev": abbrev,
+        "abbrev_lc": abbrev.lower(),
+        "state_name": state_name.lower(),
+        "limit": limit,
+    }
+    if has_metric:
+        metric_clause = """(
+            strpos(lower(COALESCE(d.title, '')), :metric_slug) > 0
+            OR strpos(lower(COALESCE(d.metadata::text, '')), :metric_slug) > 0
+            OR strpos(lower(COALESCE(c.content, '')), :metric_slug) > 0
+            OR strpos(lower(COALESCE(c.content, '')), :metric_human) > 0
+        )"""
+        params["metric_slug"] = metric_slug
+        params["metric_human"] = metric_human
+
+    stmt = text(
+        f"""
+        SELECT * FROM (
+            SELECT
+                d.id::text AS id,
+                d.title,
+                d.source_url,
+                d.content_type,
+                d.source_key,
+                CASE WHEN d.job_id IS NULL THEN NULL ELSE d.job_id::text END AS job_id,
+                d.created_at,
+                LEFT(COALESCE(c.content, ''), 320) AS snippet,
+                d.metadata AS metadata,
+                COUNT(*) OVER() AS _total
+            FROM documents d
+            LEFT JOIN LATERAL (
+                SELECT content FROM document_chunks
+                WHERE document_id = d.id
+                ORDER BY chunk_index ASC
+                LIMIT 1
+            ) c ON true
+            WHERE d.content_type IN ({type_sql})
+              AND (
+                (d.content_type = 'policy_bill' AND COALESCE(d.metadata->>'state', '') = :abbrev)
+                OR (strpos(lower(COALESCE(d.title, '')), :state_name) > 0)
+                OR (strpos(lower(COALESCE(d.source_url, '')), :abbrev_lc) > 0)
+                OR (strpos(lower(COALESCE(c.content, '')), :state_name) > 0)
+              )
+              AND ({metric_clause})
+        ) sub
+        ORDER BY sub.{sort_col} {order_sql} {nulls}
+        LIMIT :limit
+        """
+    )
+
+    result = await db.execute(stmt, params)
+    rows = result.mappings().all()
+    total = int(rows[0]["_total"]) if rows else 0
+    items: list[RelatedDocumentItem] = []
+    for r in rows:
+        meta = r.get("metadata")
+        if meta is not None and not isinstance(meta, dict):
+            meta = None
+        ca = r.get("created_at")
+        created = ca.isoformat() if hasattr(ca, "isoformat") else (str(ca) if ca else None)
+        items.append(
+            RelatedDocumentItem(
+                id=r["id"],
+                title=r.get("title"),
+                source_url=r.get("source_url"),
+                content_type=r["content_type"],
+                source_key=r.get("source_key"),
+                job_id=r.get("job_id"),
+                created_at=created,
+                snippet=r.get("snippet") or None,
+                metadata=meta,
+            )
+        )
+    return RelatedDocumentsResponse(documents=items, total=total)
 
 
 _background_tasks: set = set()
@@ -2052,6 +2183,47 @@ async def get_policies(
     except Exception as e:
         logger.error("Error fetching policies: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching policies") from e
+
+
+@app.get("/api/documents", response_model=RelatedDocumentsResponse)
+async def list_related_documents(
+    state_fips: str,
+    metric: str | None = None,
+    types: str | None = None,
+    sort: str = "created_at",
+    order: str = "desc",
+    limit: int = 50,
+    _user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Related documents for Explore: policy bills, research reports, scraped pages.
+
+    Requires ``state_fips``. Optional ``metric`` keeps rows whose title, JSON metadata,
+    or first text chunk matches the metric slug or a humanized phrase (underscores to spaces).
+    ``types`` is a comma-separated subset of policy_bill,research_report,scraped,scraped_web.
+    """
+    if sort not in {"created_at", "title", "content_type"}:
+        raise HTTPException(status_code=422, detail="Invalid sort field")
+    o = order.lower()
+    if o not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="Invalid order")
+    lim = max(1, min(limit, 200))
+    ct = _parse_related_doc_types_param(types)
+    try:
+        return await _fetch_related_documents(
+            db,
+            state_fips=state_fips,
+            metric=metric,
+            content_types=ct,
+            sort=sort,
+            order=o,
+            limit=lim,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error listing related documents: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error listing documents") from e
 
 
 @app.get("/api/explore/states", response_model=list[StateSummaryItem])

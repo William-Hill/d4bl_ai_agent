@@ -39,6 +39,24 @@ export interface PolicyBill {
   url: string | null;
 }
 
+/** Document row from GET /api/documents (Explore related documents). */
+export interface RelatedDocument {
+  id: string;
+  title: string | null;
+  source_url: string | null;
+  content_type: string;
+  source_key: string | null;
+  job_id: string | null;
+  created_at: string | null;
+  snippet: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface RelatedDocumentsResponse {
+  documents: RelatedDocument[];
+  total: number;
+}
+
 /** Individual task output from a CrewAI agent. */
 export interface ResearchTaskOutput {
   agent?: string;

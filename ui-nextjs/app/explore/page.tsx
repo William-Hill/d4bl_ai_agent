@@ -13,6 +13,7 @@ import PolicyExploreView from '@/components/explore/PolicyExploreView';
 import StateAnnotation from '@/components/explore/StateAnnotation';
 import ExplainPanel from '@/components/explore/ExplainPanel';
 import ExploreQueryBar from '@/components/explore/ExploreQueryBar';
+import RelatedDocuments from '@/components/explore/RelatedDocuments';
 import MapLegend from '@/components/explore/MapLegend';
 import DataTable from '@/components/explore/DataTable';
 import { IndicatorRow, PolicyBill, ExploreResponse } from '@/lib/types';
@@ -522,6 +523,16 @@ export default function ExplorePage() {
               />
             )}
           </div>
+        )}
+
+        {filters.selectedState && exploreData && exploreData.rows.length > 0 && (
+          <RelatedDocuments
+            stateFips={filters.selectedState}
+            metric={resolvedMetric || null}
+            accent={activeSource.accent}
+            getHeaders={getHeaders}
+            sessionReady={Boolean(session?.access_token)}
+          />
         )}
 
         {/* Conversational Query Bar */}

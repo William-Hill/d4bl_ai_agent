@@ -170,6 +170,27 @@ class PolicyBillItem(BaseModel):
     url: str | None = None
 
 
+class RelatedDocumentItem(BaseModel):
+    """Unified document row for Explore related-documents panel."""
+
+    id: str
+    title: str | None = None
+    source_url: str | None = None
+    content_type: str
+    source_key: str | None = None
+    job_id: str | None = None
+    created_at: str | None = None
+    snippet: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+class RelatedDocumentsResponse(BaseModel):
+    """Paginated related documents for a state (and optional metric) context."""
+
+    documents: list[RelatedDocumentItem]
+    total: int
+
+
 class StateSummaryItem(BaseModel):
     """Per-state metadata: available metrics, bill count, and latest year."""
 
