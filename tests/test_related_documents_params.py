@@ -12,6 +12,10 @@ def test_parse_types_filters_unknown():
     assert _parse_related_doc_types_param("policy_bill,nope") == ["policy_bill"]
 
 
+def test_parse_types_all_invalid_returns_empty():
+    assert _parse_related_doc_types_param("nope,bad") == []
+
+
 def test_parse_types_multiple():
     got = _parse_related_doc_types_param("scraped_web, policy_bill ")
     assert got == ["policy_bill", "scraped_web"]

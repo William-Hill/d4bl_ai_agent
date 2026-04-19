@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import String, desc, func, select, text
+from sqlalchemy import String, bindparam, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -52,11 +52,11 @@ from d4bl.app.schemas import (
     PipelinePath,
     PipelineStep,
     PolicyBillItem,
-    RelatedDocumentItem,
-    RelatedDocumentsResponse,
     QueryRequest,
     QueryResponse,
     QuerySourceItem,
+    RelatedDocumentItem,
+    RelatedDocumentsResponse,
     ResearchRequest,
     ResearchResponse,
     StateSummaryItem,
@@ -441,11 +441,16 @@ _RELATED_DOC_CONTENT_TYPES: frozenset[str] = frozenset(
 
 
 def _parse_related_doc_types_param(raw: str | None) -> list[str]:
-    """Return sorted content_type values for the documents query (allowlist-only)."""
+    """Return sorted content_type values for the documents query (allowlist-only).
+
+    When *raw* is omitted or blank, all allowed types are used. When *raw* is
+    non-blank but contains no allowed tokens, returns an empty list (caller
+    should respond with 422).
+    """
     if not raw or not raw.strip():
         return sorted(_RELATED_DOC_CONTENT_TYPES)
     picked = [t.strip() for t in raw.split(",") if t.strip() in _RELATED_DOC_CONTENT_TYPES]
-    return sorted(set(picked)) if picked else sorted(_RELATED_DOC_CONTENT_TYPES)
+    return sorted(set(picked))
 
 
 def _normalize_metric_for_document_search(metric: str | None) -> tuple[bool, str, str]:
@@ -464,6 +469,7 @@ def _normalize_metric_for_document_search(metric: str | None) -> tuple[bool, str
 async def _fetch_related_documents(
     db: AsyncSession,
     *,
+    viewer_user_id: UUID,
     state_fips: str,
     metric: str | None,
     content_types: list[str],
@@ -472,19 +478,21 @@ async def _fetch_related_documents(
     limit: int,
 ) -> RelatedDocumentsResponse:
     """Load documents linked to a state, optionally narrowed by metric text."""
+    if not content_types:
+        return RelatedDocumentsResponse(documents=[], total=0)
+
     abbrev = FIPS_TO_ABBREV.get(state_fips)
     if not abbrev:
         raise HTTPException(status_code=422, detail="Invalid state_fips")
     state_name = FIPS_TO_NAME.get(state_fips, "")
     has_metric, metric_slug, metric_human = _normalize_metric_for_document_search(metric)
 
-    type_sql = ",".join(f"'{t}'" for t in content_types)
     sort_col = {"created_at": "created_at", "title": "title", "content_type": "content_type"}.get(
         sort,
         "created_at",
     )
     order_sql = "ASC" if order.lower() == "asc" else "DESC"
-    nulls = "NULLS LAST" if sort_col == "title" else ""
+    nulls = "NULLS LAST" if sort_col in ("created_at", "title") else ""
 
     metric_clause = "TRUE"
     params: dict[str, object] = {
@@ -492,6 +500,8 @@ async def _fetch_related_documents(
         "abbrev_lc": abbrev.lower(),
         "state_name": state_name.lower(),
         "limit": limit,
+        "viewer_id": str(viewer_user_id),
+        "ct_types": tuple(content_types),
     }
     if has_metric:
         metric_clause = """(
@@ -503,8 +513,9 @@ async def _fetch_related_documents(
         params["metric_slug"] = metric_slug
         params["metric_human"] = metric_human
 
-    stmt = text(
-        f"""
+    stmt = (
+        text(
+            f"""
         SELECT * FROM (
             SELECT
                 d.id::text AS id,
@@ -524,7 +535,7 @@ async def _fetch_related_documents(
                 ORDER BY chunk_index ASC
                 LIMIT 1
             ) c ON true
-            WHERE d.content_type IN ({type_sql})
+            WHERE d.content_type IN :ct_types
               AND (
                 (d.content_type = 'policy_bill' AND COALESCE(d.metadata->>'state', '') = :abbrev)
                 OR (strpos(lower(COALESCE(d.title, '')), :state_name) > 0)
@@ -532,10 +543,19 @@ async def _fetch_related_documents(
                 OR (strpos(lower(COALESCE(c.content, '')), :state_name) > 0)
               )
               AND ({metric_clause})
+              AND (
+                d.job_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM research_jobs rj
+                    WHERE rj.job_id = d.job_id
+                      AND rj.user_id = CAST(:viewer_id AS uuid)
+                )
+              )
         ) sub
         ORDER BY sub.{sort_col} {order_sql} {nulls}
         LIMIT :limit
         """
+        ).bindparams(bindparam("ct_types", expanding=True))
     )
 
     result = await db.execute(stmt, params)
@@ -2193,7 +2213,7 @@ async def list_related_documents(
     sort: str = "created_at",
     order: str = "desc",
     limit: int = 50,
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Related documents for Explore: policy bills, research reports, scraped pages.
@@ -2201,6 +2221,7 @@ async def list_related_documents(
     Requires ``state_fips``. Optional ``metric`` keeps rows whose title, JSON metadata,
     or first text chunk matches the metric slug or a humanized phrase (underscores to spaces).
     ``types`` is a comma-separated subset of policy_bill,research_report,scraped,scraped_web.
+    Job-linked rows are limited to research jobs owned by the authenticated user.
     """
     if sort not in {"created_at", "title", "content_type"}:
         raise HTTPException(status_code=422, detail="Invalid sort field")
@@ -2209,9 +2230,12 @@ async def list_related_documents(
         raise HTTPException(status_code=422, detail="Invalid order")
     lim = max(1, min(limit, 200))
     ct = _parse_related_doc_types_param(types)
+    if types and types.strip() and not ct:
+        raise HTTPException(status_code=422, detail="Invalid document types")
     try:
         return await _fetch_related_documents(
             db,
+            viewer_user_id=user.id,
             state_fips=state_fips,
             metric=metric,
             content_types=ct,

@@ -71,13 +71,29 @@ function HeaderCell({ col, label, align = 'left', sortKey, sortDir, accent, onSo
     date: 'created_at',
   };
   const sk = map[col];
+  const ariaSort =
+    sortKey === sk ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
+  const sortLabel =
+    sortKey === sk
+      ? `${label}, sorted ${sortDir === 'asc' ? 'ascending' : 'descending'}`
+      : `${label}, activate to sort`;
+
   return (
     <th
-      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[#999] cursor-pointer select-none whitespace-nowrap hover:text-[#ccc] transition-colors ${align === 'right' ? 'text-right' : 'text-left'}`}
-      onClick={() => onSort(col)}
+      aria-sort={ariaSort}
+      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[#999] whitespace-nowrap ${align === 'right' ? 'text-right' : 'text-left'}`}
     >
-      {label}
-      <SortIcon active={sortKey === sk} dir={sortDir} accent={accent} />
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={`inline-flex items-center cursor-pointer select-none hover:text-[#ccc] transition-colors ${
+          align === 'right' ? 'justify-end w-full text-right' : 'text-left'
+        }`}
+        aria-label={sortLabel}
+      >
+        {label}
+        <SortIcon active={sortKey === sk} dir={sortDir} accent={accent} />
+      </button>
     </th>
   );
 }
@@ -127,6 +143,10 @@ export default function RelatedDocuments({
       return;
     }
 
+    if (collapsed) {
+      return;
+    }
+
     const controller = new AbortController();
     (async () => {
       setLoading(true);
@@ -160,7 +180,7 @@ export default function RelatedDocuments({
     })();
 
     return () => controller.abort();
-  }, [sessionReady, stateFips, metric, sortKey, sortDir, typesParam, getHeaders]);
+  }, [sessionReady, stateFips, metric, sortKey, sortDir, typesParam, getHeaders, collapsed]);
 
   function handleHeaderSort(col: ColKey) {
     const map: Record<ColKey, SortKey> = {
@@ -195,7 +215,11 @@ export default function RelatedDocuments({
         <h2 className="text-sm font-semibold text-[#e5e5e5]">Related documents</h2>
         <span className="text-xs text-[#666]">
           {metricLabel}
-          {total > 0 ? ` · ${total} match${total === 1 ? '' : 'es'}` : ''}
+          {total > 0
+            ? rows.length < total
+              ? ` · Showing ${rows.length} of ${total} match${total === 1 ? '' : 'es'}`
+              : ` · ${total} match${total === 1 ? '' : 'es'}`
+            : ''}
         </span>
       </div>
 
@@ -281,6 +305,12 @@ export default function RelatedDocuments({
                   {rows.map((doc) => {
                     const href =
                       doc.source_url && /^https?:\/\//i.test(doc.source_url) ? doc.source_url : null;
+                    const noUrlTitle =
+                      doc.source_key && !href
+                        ? 'No public URL yet for this storage-backed document.'
+                        : doc.job_id && !href
+                          ? 'No direct link; open Research and find this job in history.'
+                          : undefined;
                     return (
                       <tr
                         key={doc.id}
@@ -312,7 +342,7 @@ export default function RelatedDocuments({
                               Open ↗
                             </a>
                           ) : (
-                            <span className="text-xs text-[#555]">
+                            <span className="text-xs text-[#555]" title={noUrlTitle}>
                               {doc.content_type === 'research_report' ? 'Report' : '—'}
                             </span>
                           )}
