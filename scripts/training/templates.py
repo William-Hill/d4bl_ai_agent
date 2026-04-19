@@ -262,9 +262,7 @@ def render_example_query_passage(row: dict) -> str:
     if not query_text:
         return ""
     desc = (row.get("description") or "").strip()
-    if desc:
-        return (
-            f"Example equity research question: {query_text}\n\n"
-            f"Contributor framing: {desc}"
-        )
-    return f"Example equity research question: {query_text}"
+    lead = f"Example equity research question: {query_text}"
+    if not desc:
+        return lead
+    return f"{lead}\n\nContributor framing: {desc}"

@@ -43,7 +43,8 @@ export default function ExploreQueryBar({
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function loadTemplates() {
       try {
         const resp = await fetch(`${API_BASE}/api/explore/example-query-templates`, {
           headers: getHeaders(),
@@ -54,7 +55,9 @@ export default function ExploreQueryBar({
       } catch {
         /* ignore — templates are optional */
       }
-    })();
+    }
+
+    void loadTemplates();
     return () => {
       cancelled = true;
     };

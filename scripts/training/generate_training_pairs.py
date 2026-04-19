@@ -856,13 +856,15 @@ def generate_query_parser_pairs_v2(
     task_name = TASK_QUERY_PARSER_V2
 
     staff_for_v2 = deque(
-        {
-            "question": (r.get("query_text") or "").strip(),
-            "entity_type": "intersectional",
-            "seed_data": r,
-        }
-        for r in fetch_approved_example_queries(conn, limit=400)
-        if (r.get("query_text") or "").strip()
+        (
+            {
+                "question": text,
+                "entity_type": "intersectional",
+                "seed_data": r,
+            }
+            for r in fetch_approved_example_queries(conn, limit=400)
+            if (text := (r.get("query_text") or "").strip())
+        ),
     )
     if staff_for_v2:
         print(
@@ -1269,20 +1271,18 @@ def fetch_approved_example_queries(conn: Any, *, limit: int = 500) -> list[dict]
     import psycopg2.errors
     import psycopg2.extras
 
+    sql = """
+        SELECT eq.query_text, eq.description, eq.summary_format,
+               eq.curated_answer, eq.relevant_sources
+        FROM example_queries eq
+        INNER JOIN uploads u ON u.id = eq.upload_id
+        WHERE u.upload_type = 'query' AND u.status = 'approved'
+        ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC
+        LIMIT %s
+    """
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT eq.query_text, eq.description, eq.summary_format,
-                       eq.curated_answer, eq.relevant_sources
-                FROM example_queries eq
-                INNER JOIN uploads u ON u.id = eq.upload_id
-                WHERE u.upload_type = 'query' AND u.status = 'approved'
-                ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC
-                LIMIT %s
-                """,
-                (limit,),
-            )
+            cur.execute(sql, (limit,))
             return [dict(r) for r in cur.fetchall()]
     except psycopg2.errors.UndefinedTable:
         logger.warning(
@@ -1309,6 +1309,8 @@ def merge_staff_example_queries_for_parser(
 
     staff_questions: list[dict] = []
     for row in staff_rows:
+        if len(staff_questions) >= total_count:
+            break
         text = (row.get("query_text") or "").strip()
         if not text:
             continue
@@ -1324,8 +1326,7 @@ def merge_staff_example_queries_for_parser(
             },
         )
 
-    staff_questions = staff_questions[:total_count]
-    remainder = max(0, total_count - len(staff_questions))
+    remainder = total_count - len(staff_questions)
     synthetic = (
         generate_query_parser_questions(seed_rows, count=remainder) if remainder else []
     )
@@ -1558,7 +1559,7 @@ def generate_query_parser_pairs(
     staff_rows = fetch_approved_example_queries(conn, limit=max(count, 200))
     questions = merge_staff_example_queries_for_parser(seed_rows, count, staff_rows)
     n_staff_merged = sum(
-        1 for q in questions if q.get("seed_data", {}).get("source") == "staff_example_query"
+        q.get("seed_data", {}).get("source") == "staff_example_query" for q in questions
     )
     if n_staff_merged:
         print(
