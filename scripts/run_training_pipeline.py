@@ -44,6 +44,15 @@ def main():
     )
     parser.add_argument("--max-per-table", type=_positive_int, default=10_000)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--include-approved-example-queries",
+        action="store_true",
+        default=False,
+        help=(
+            "Merge approved staff example queries into query_parser and "
+            "query_parser_v2 distill runs (writes sidecar JSON for --resume)."
+        ),
+    )
     args = parser.parse_args()
 
     # v2/v3 tasks map to their base task for the prepare stage
@@ -82,7 +91,10 @@ def main():
         print("STAGE 2: Claude Distillation")
         print("=" * 60)
         from scripts.training.generate_training_pairs import main as distill_main
-        distill_main(task=args.task)
+        distill_main(
+            task=args.task,
+            include_approved_example_queries=args.include_approved_example_queries,
+        )
 
     if args.stage in ("prepare", "all"):
         print("\n" + "=" * 60)

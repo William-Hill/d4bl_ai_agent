@@ -14,6 +14,7 @@ from scripts.training.generate_training_pairs import (
     _validate_json,
     format_as_chatml,
     generate_query_parser_questions,
+    merge_staff_example_queries_for_parser,
     write_pairs_jsonl,
 )
 
@@ -221,6 +222,44 @@ class TestGenerateQueryParserQuestions:
 
 
 # ---------------------------------------------------------------------------
+# merge_staff_example_queries_for_parser
+# ---------------------------------------------------------------------------
+
+
+class TestMergeStaffExampleQueriesForParser:
+    def test_staff_prefixed_with_community_style(self):
+        seeds = [
+            {"state_name": "Mississippi", "metric": "poverty_rate", "race": "black", "year": 2020},
+        ]
+        staff = [{"query_text": "  Custom organizer question?  ", "description": "Housing"}]
+        out = merge_staff_example_queries_for_parser(seeds, 4, staff)
+        assert len(out) == 4
+        assert out[0]["question"] == "Custom organizer question?"
+        assert out[0]["style"] == "community"
+        assert out[0]["seed_data"]["source"] == "staff_example_query"
+
+    def test_truncates_staff_when_total_smaller(self):
+        seeds = [{"state_name": "MS", "metric": "poverty_rate", "race": "black", "year": 2020}]
+        staff = [
+            {"query_text": "One", "description": ""},
+            {"query_text": "Two", "description": ""},
+        ]
+        out = merge_staff_example_queries_for_parser(seeds, 1, staff)
+        assert len(out) == 1
+        assert out[0]["question"] == "One"
+
+    def test_skips_blank_staff_queries(self):
+        seeds = [{"state_name": "MS", "metric": "poverty_rate", "race": "black", "year": 2020}]
+        staff = [
+            {"query_text": "   ", "description": ""},
+            {"query_text": "Valid", "description": ""},
+        ]
+        out = merge_staff_example_queries_for_parser(seeds, 2, staff)
+        assert len(out) == 2
+        assert out[0]["question"] == "Valid"
+
+
+# ---------------------------------------------------------------------------
 # _validate_json
 # ---------------------------------------------------------------------------
 
@@ -413,6 +452,28 @@ class TestCLIFlags:
              "p = _build_arg_parser(); "
              "args = p.parse_args(['--task', 'evaluator_v2']); "
              "assert args.resume is False"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_include_approved_defaults_false(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'query_parser']); "
+             "assert args.include_approved_example_queries is False"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_include_approved_flag_true(self):
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from scripts.training.generate_training_pairs import _build_arg_parser; "
+             "p = _build_arg_parser(); "
+             "args = p.parse_args(['--task', 'query_parser', '--include-approved-example-queries']); "
+             "assert args.include_approved_example_queries is True"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0, result.stderr

@@ -5,11 +5,13 @@ distilling responses from a large Claude model (teacher) into a format
 suitable for training a smaller model (student).
 
 Supported tasks:
-  - query_parser: NL question → structured JSON parse
+  - query_parser: NL question → structured JSON parse (includes approved staff
+    example queries from ``example_queries`` when present)
   - explainer: Census/health data → structured narrative explanation
   - evaluator: (context, output) → evaluation judgment
   - evaluator_v2: Perturbation-based hallucination + tiered quality
-  - query_parser_v2: Entity-type-diverse question parsing
+  - query_parser_v2: Entity-type-diverse question parsing (approved staff queries
+    are injected into the intersectional batch when available)
   - evaluator_v3: Document-chunk hallucination detection
   - query_parser_v3: Community framing question parsing
 
@@ -24,11 +26,15 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import logging
 import os
 import random
 import time
+from collections import deque
 from pathlib import Path
 from typing import IO, Any, Union
+
+logger = logging.getLogger(__name__)
 
 from scripts.training.config import (
     COMMUNITY_FRAMING_PAIRS,
@@ -796,6 +802,7 @@ def generate_query_parser_pairs_v2(
     *,
     resume: bool = False,
     checkpoint_dir: Path | None = None,
+    include_approved_example_queries: bool = False,
 ) -> list[dict]:
     """Generate v2 query parser pairs targeting diverse entity types.
 
@@ -808,6 +815,8 @@ def generate_query_parser_pairs_v2(
         outfile: Optional output path for incremental writes.
         resume: If True, resume from the last checkpoint per entity type.
         checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
+        include_approved_example_queries: When True, inject approved staff queries
+            into the intersectional batch; order is snapshotted for ``--resume``.
 
     Returns:
         A list of ChatML pair dicts.
@@ -848,13 +857,60 @@ def generate_query_parser_pairs_v2(
     pairs: list[dict] = []
 
     task_name = TASK_QUERY_PARSER_V2
+    cp_dir = checkpoint_dir or PAIRS_DIR
+    staff_snap = cp_dir / ".query_parser_v2_staff_snapshot.json"
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+        staff_snap.unlink(missing_ok=True)
 
     # Guard against stale output when checkpoint is missing/empty but resume=True
     entity_cps = {et: _load_checkpoint(task_name, et, checkpoint_dir=checkpoint_dir) for et in type_counts}
     effective_resume = resume and any(cp["last_attempted_idx"] >= 0 for cp in entity_cps.values())
+
+    if include_approved_example_queries:
+        if effective_resume:
+            if not staff_snap.exists():
+                raise RuntimeError(
+                    f"{task_name}: --resume with --include-approved-example-queries requires "
+                    f"{staff_snap.name} from the initial run.",
+                )
+            try:
+                raw = json.loads(staff_snap.read_text(encoding="utf-8"))
+                staff_for_v2 = deque(raw if isinstance(raw, list) else [])
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(
+                    f"{task_name}: could not read {staff_snap.name}; cannot resume safely.",
+                ) from exc
+        else:
+            staff_for_v2 = deque(
+                (
+                    {
+                        "question": text,
+                        "entity_type": "intersectional",
+                        "seed_data": r,
+                    }
+                    for r in fetch_approved_example_queries(conn, limit=400)
+                    if (text := (r.get("query_text") or "").strip())
+                ),
+            )
+            if staff_for_v2:
+                try:
+                    staff_snap.write_text(
+                        json.dumps(list(staff_for_v2), ensure_ascii=False, default=str),
+                        encoding="utf-8",
+                    )
+                except OSError as exc:
+                    logger.warning("Could not write v2 staff snapshot: %s", exc)
+    else:
+        staff_for_v2 = deque()
+
+    if staff_for_v2:
+        print(
+            f"[{task_name}] {len(staff_for_v2)} approved staff queries staged "
+            "for intersectional batch injection",
+            flush=True,
+        )
 
     fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = 0
@@ -873,6 +929,11 @@ def generate_query_parser_pairs_v2(
             questions = generate_query_parser_questions_v2(
                 seed_rows, count=type_count, entity_type=entity_type,
             )
+            if entity_type == "intersectional" and staff_for_v2:
+                n_take = min(len(staff_for_v2), max(1, type_count // 5))
+                injected = [staff_for_v2.popleft() for _ in range(n_take)]
+                tail = max(0, type_count - len(injected))
+                questions = injected + questions[:tail]
             for idx, q in enumerate(questions):
                 if resume and idx <= cp["last_attempted_idx"]:
                     continue
@@ -1233,6 +1294,77 @@ def _validate_json(text: str) -> dict | None:
     return obj
 
 
+def fetch_approved_example_queries(conn: Any, *, limit: int = 500) -> list[dict]:
+    """Load contributor example queries that passed admin review.
+
+    Returns rows with query_text, description, summary_format, and optional
+    curated_answer / relevant_sources. Empty list if tables are missing or on error.
+    """
+    import psycopg2.errors
+    import psycopg2.extras
+
+    sql = """
+        SELECT eq.query_text, eq.description, eq.summary_format,
+               eq.curated_answer, eq.relevant_sources
+        FROM example_queries eq
+        INNER JOIN uploads u ON u.id = eq.upload_id
+        WHERE u.upload_type = 'query' AND u.status = 'approved'
+        ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC
+        LIMIT %s
+    """
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, (limit,))
+            return [dict(r) for r in cur.fetchall()]
+    except psycopg2.errors.UndefinedTable:
+        logger.warning(
+            "example_queries / uploads tables missing — skip approved query seeds",
+        )
+        return []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not load approved example queries: %s", exc)
+        return []
+
+
+def merge_staff_example_queries_for_parser(
+    seed_rows: list[dict],
+    total_count: int,
+    staff_rows: list[dict],
+) -> list[dict]:
+    """Build query-parser distillation questions: approved staff first, then synthetic.
+
+    Staff-submitted questions use the *community* style in the teacher prompt to
+    match organizer-voiced language.
+    """
+    if total_count <= 0:
+        return []
+
+    staff_questions: list[dict] = []
+    for row in staff_rows:
+        if len(staff_questions) >= total_count:
+            break
+        text = (row.get("query_text") or "").strip()
+        if not text:
+            continue
+        staff_questions.append(
+            {
+                "question": text,
+                "style": "community",
+                "seed_data": {
+                    "source": "staff_example_query",
+                    "description": row.get("description"),
+                    "summary_format": row.get("summary_format"),
+                },
+            },
+        )
+
+    remainder = total_count - len(staff_questions)
+    synthetic = (
+        generate_query_parser_questions(seed_rows, count=remainder) if remainder else []
+    )
+    return staff_questions + synthetic
+
+
 def generate_query_parser_questions(
     seed_rows: list[dict],
     count: int,
@@ -1427,6 +1559,7 @@ def generate_query_parser_pairs(
     *,
     resume: bool = False,
     checkpoint_dir: Path | None = None,
+    include_approved_example_queries: bool = False,
 ) -> list[dict]:
     """Generate query parser training pairs via Claude distillation.
 
@@ -1440,29 +1573,73 @@ def generate_query_parser_pairs(
             progress survives interruption.
         resume: If True, resume from the last checkpoint.
         checkpoint_dir: Directory for checkpoint file. Defaults to PAIRS_DIR.
+        include_approved_example_queries: When True, prepend approved staff
+            queries; persisted to a sidecar JSON while resuming so indices stay
+            aligned with the initial run. Default False (opt-in via CLI or
+            ``run_training_pipeline``).
 
     Returns:
         A list of ChatML pair dicts.
     """
     task_name = TASK_QUERY_PARSER
     subtask = "_default"
+    cp_dir = checkpoint_dir or PAIRS_DIR
+    staff_snapshot = cp_dir / ".query_parser_staff_snapshot.json"
 
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
+        staff_snapshot.unlink(missing_ok=True)
 
     cp = _load_checkpoint(task_name, subtask, checkpoint_dir=checkpoint_dir)
     if resume and cp["status"] == "completed":
         print(f"[{task_name}] Already completed — skipping", flush=True)
         return []
 
+    effective_resume = resume and cp["last_attempted_idx"] >= 0
+
     seed_rows = _load_seed_rows(conn)
-    questions = generate_query_parser_questions(seed_rows, count=count)
+
+    if include_approved_example_queries:
+        if effective_resume:
+            if not staff_snapshot.exists():
+                raise RuntimeError(
+                    f"{task_name}: --resume with --include-approved-example-queries requires "
+                    f"{staff_snapshot.name} from the initial run.",
+                )
+            try:
+                raw = json.loads(staff_snapshot.read_text(encoding="utf-8"))
+                staff_rows = raw if isinstance(raw, list) else []
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(
+                    f"{task_name}: could not read {staff_snapshot.name}; cannot resume safely.",
+                ) from exc
+        else:
+            staff_rows = fetch_approved_example_queries(conn, limit=max(count, 200))
+            if staff_rows:
+                try:
+                    staff_snapshot.write_text(
+                        json.dumps(staff_rows, ensure_ascii=False, default=str),
+                        encoding="utf-8",
+                    )
+                except OSError as exc:
+                    logger.warning("Could not write staff snapshot: %s", exc)
+    else:
+        staff_rows = []
+
+    questions = merge_staff_example_queries_for_parser(seed_rows, count, staff_rows)
+    n_staff_merged = sum(
+        q.get("seed_data", {}).get("source") == "staff_example_query" for q in questions
+    )
+    if n_staff_merged:
+        print(
+            f"[query_parser] {n_staff_merged} approved staff example queries in distill batch",
+            flush=True,
+        )
 
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []
 
     # Guard against stale output when checkpoint is missing/empty but resume=True
-    effective_resume = resume and cp["last_attempted_idx"] >= 0
     fh = _open_incremental_writer(outfile, resume=effective_resume)
     pair_count = cp["pairs_written"] if effective_resume else 0
 
@@ -1723,10 +1900,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Resume from checkpoint instead of starting fresh.",
     )
+    parser.add_argument(
+        "--include-approved-example-queries",
+        action="store_true",
+        default=False,
+        help=(
+            "Merge approved staff example queries into query_parser and "
+            "query_parser_v2 distill runs (writes sidecar JSON for --resume)."
+        ),
+    )
     return parser
 
 
-def main(task: str, *, resume: bool = False) -> None:
+def main(task: str, *, resume: bool = False, include_approved_example_queries: bool = False) -> None:
     """Run the selected task generator and write pairs to PAIRS_DIR.
 
     Args:
@@ -1765,10 +1951,12 @@ def main(task: str, *, resume: bool = False) -> None:
     try:
         PAIRS_DIR.mkdir(parents=True, exist_ok=True)
 
+        inc = include_approved_example_queries
         _TASK_MAP = {
             "query_parser": lambda: generate_query_parser_pairs(
                 conn, count=PAIRS_PER_TASK, outfile=PAIRS_DIR / "query_parser.jsonl",
                 resume=resume,
+                include_approved_example_queries=inc,
             ),
             "explainer": lambda: generate_explainer_pairs(
                 conn, count=PAIRS_PER_TASK, outfile=PAIRS_DIR / "explainer.jsonl",
@@ -1788,6 +1976,7 @@ def main(task: str, *, resume: bool = False) -> None:
                 conn, count=PARSER_V2_ENTITY_PAIRS,
                 outfile=PAIRS_DIR / "query_parser_v2.jsonl",
                 resume=resume,
+                include_approved_example_queries=inc,
             ),
             "evaluator_v3": lambda: generate_doc_hallucination_pairs(
                 conn, count_per_subtask=DOC_EVALUATOR_PAIRS_PER_SUBTASK,
@@ -1839,4 +2028,8 @@ def main(task: str, *, resume: bool = False) -> None:
 if __name__ == "__main__":
     _parser = _build_arg_parser()
     _args = _parser.parse_args()
-    main(_args.task, resume=_args.resume)
+    main(
+        _args.task,
+        resume=_args.resume,
+        include_approved_example_queries=_args.include_approved_example_queries,
+    )

@@ -1,8 +1,15 @@
 'use client';
 
-import { useState, useCallback, FormEvent, KeyboardEvent } from 'react';
+import { useState, useCallback, useEffect, FormEvent, KeyboardEvent } from 'react';
 import { API_BASE } from '@/lib/api';
 import { useAuthHeaders } from '@/hooks/useAuthHeaders';
+
+interface ExampleQueryTemplate {
+  id: string;
+  query_text: string;
+  description: string;
+  summary_format: string;
+}
 
 interface ExploreQueryBarProps {
   source: string;
@@ -27,11 +34,38 @@ export default function ExploreQueryBar({
   year,
   accent,
 }: ExploreQueryBarProps) {
-  const { getHeaders } = useAuthHeaders();
+  const { session, getHeaders } = useAuthHeaders();
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<ExampleQueryTemplate[]>([]);
+
+  useEffect(() => {
+    if (!session?.access_token) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadTemplates() {
+      try {
+        const resp = await fetch(`${API_BASE}/api/explore/example-query-templates`, {
+          headers: getHeaders(),
+        });
+        if (!resp.ok) return;
+        const data = (await resp.json()) as ExampleQueryTemplate[];
+        if (!cancelled && Array.isArray(data)) setTemplates(data);
+      } catch {
+        /* ignore — templates are optional */
+      }
+    }
+
+    void loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, getHeaders]);
 
   const handleSubmit = useCallback(
     async (e?: FormEvent) => {
@@ -86,6 +120,28 @@ export default function ExploreQueryBar({
 
   return (
     <div className="mt-6 mb-4">
+      {templates.length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-500 mb-2">Try a contributor example</p>
+          <div className="flex flex-wrap gap-2">
+            {templates.map((t) => {
+              const label =
+                t.query_text.length > 72 ? `${t.query_text.slice(0, 70)}…` : t.query_text;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  title={t.description ? `${t.query_text}\n\n${t.description}` : t.query_text}
+                  onClick={() => setQuestion(t.query_text)}
+                  className="text-left text-xs px-2.5 py-1.5 rounded-md border border-[#404040] bg-[#141414] text-gray-200 hover:border-gray-500 transition-colors max-w-full"
+                >
+                  <span className="line-clamp-2">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           type="text"
