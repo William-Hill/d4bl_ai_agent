@@ -156,3 +156,25 @@ def override_admin_auth():
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original_overrides)
+
+
+@pytest.fixture
+def make_xlsx_bytes():
+    """Factory fixture: given ``header`` + ``rows``, produce XLSX bytes.
+
+    ``rows`` is a list of lists aligned with ``header``. Returns raw bytes
+    suitable for feeding to the datasource parser.
+    """
+    from openpyxl import Workbook
+
+    def _make(header: list[str], rows: list[list]) -> bytes:
+        wb = Workbook()
+        ws = wb.active
+        ws.append(header)
+        for row in rows:
+            ws.append(row)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    return _make

@@ -355,6 +355,18 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     sourceUrl: "https://bjs.ojp.gov/",
     hasData: true,
   },
+  {
+    key: "staff-uploads",
+    label: "Staff Uploads",
+    accent: "#a29bfe",
+    endpoint: "/api/explore/staff-uploads",
+    hasRace: true,
+    primaryFilterKey: "metric",
+    primaryFilterLabel: "Dataset",
+    description: "Approved data sources contributed by staff. Each dataset reflects its contributor's methodology and column definitions.",
+    sourceUrl: "/guide",
+    hasData: true,
+  },
 ];
 
 // Metric direction: true = high is good, false = high is bad, null = neutral
@@ -385,6 +397,7 @@ export const METRIC_DIRECTION: Record<string, Record<string, boolean | null>> = 
   "census-demographics": { default: null },
   "cdc-mortality": { default: false },
   bjs: { default: false },
+  "staff-uploads": { default: null },
 };
 
 export function getMetricDirection(sourceKey: string, metric: string): boolean | null {

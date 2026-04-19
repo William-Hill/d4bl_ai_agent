@@ -55,8 +55,17 @@ export default function ReviewDetail({ upload, onReviewed }: ReviewDetailProps) 
     }
   };
 
+  const mapping = upload.metadata?.mapping as Record<string, string | null> | undefined;
+  const previewRows = upload.metadata?.preview_rows as Array<Record<string, unknown>> | undefined;
+  const rowCount = upload.metadata?.row_count as number | undefined;
+  const isDatasource = upload.upload_type === 'datasource';
+
+  const HIDE_GENERIC_KEYS = new Set(['mapping', 'preview_rows', 'row_count', 'dropped_counts', 'full_text', 'preview_text']);
+
   const metadataEntries = upload.metadata
-    ? Object.entries(upload.metadata).filter(([, v]) => v !== null && v !== undefined && v !== '')
+    ? Object.entries(upload.metadata).filter(
+        ([k, v]) => v !== null && v !== undefined && v !== '' && !HIDE_GENERIC_KEYS.has(k),
+      )
     : [];
 
   return (
@@ -91,6 +100,51 @@ export default function ReviewDetail({ upload, onReviewed }: ReviewDetailProps) 
           <p className="text-gray-300">{upload.status}</p>
         </div>
       </div>
+
+      {isDatasource && mapping && (
+        <div className="space-y-3">
+          <div>
+            <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Column mapping</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <div><span className="text-gray-500">geo:</span> <span className="text-gray-200">{mapping.geo_column}</span></div>
+              <div><span className="text-gray-500">value:</span> <span className="text-gray-200">{mapping.metric_value_column}</span></div>
+              <div><span className="text-gray-500">metric name:</span> <span className="text-gray-200">{mapping.metric_name}</span></div>
+              <div><span className="text-gray-500">race:</span> <span className="text-gray-200">{mapping.race_column ?? <em>(none)</em>}</span></div>
+              <div><span className="text-gray-500">year:</span> <span className="text-gray-200">{mapping.year_column ?? <em>(uses data_year)</em>}</span></div>
+            </div>
+          </div>
+          <div className="text-sm text-gray-400">
+            {rowCount ?? 0} rows · geographic level: {String(upload.metadata?.geographic_level ?? '')} · data year: {String(upload.metadata?.data_year ?? '')}
+          </div>
+          {previewRows && previewRows.length > 0 && (
+            <div>
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Preview (first {previewRows.length})</p>
+              <div className="overflow-x-auto">
+                <table className="text-xs text-gray-300 border border-[#404040]">
+                  <thead className="bg-[#292929]">
+                    <tr>
+                      <th className="px-2 py-1 text-left">state_fips</th>
+                      <th className="px-2 py-1 text-left">race</th>
+                      <th className="px-2 py-1 text-left">year</th>
+                      <th className="px-2 py-1 text-left">value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i} className="border-t border-[#404040]">
+                        <td className="px-2 py-1">{String(row.state_fips ?? '')}</td>
+                        <td className="px-2 py-1">{row.race == null ? '—' : String(row.race)}</td>
+                        <td className="px-2 py-1">{String(row.year ?? '')}</td>
+                        <td className="px-2 py-1">{String(row.value ?? '')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Metadata key-value pairs */}
       {metadataEntries.length > 0 && (

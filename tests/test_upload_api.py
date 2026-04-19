@@ -21,9 +21,13 @@ class TestUploadSchemas:
             description="County-level health outcomes by race",
             geographic_level="county",
             data_year=2024,
+            geo_column="county_fips",
+            metric_value_column="premature_death_rate",
+            metric_name="premature_death_rate",
         )
         assert req.source_name == "County Health Rankings 2024"
         assert req.geographic_level == "county"
+        assert req.metric_name == "premature_death_rate"
 
     def test_datasource_upload_invalid_geo_level(self):
         from d4bl.app.schemas import DataSourceUploadRequest
@@ -34,6 +38,9 @@ class TestUploadSchemas:
                 description="Test",
                 geographic_level="zipcode",
                 data_year=2024,
+                geo_column="x",
+                metric_value_column="y",
+                metric_name="z",
             )
 
     def test_datasource_upload_blank_name(self):
@@ -45,6 +52,96 @@ class TestUploadSchemas:
                 description="Test",
                 geographic_level="county",
                 data_year=2024,
+                geo_column="x",
+                metric_value_column="y",
+                metric_name="z",
+            )
+
+    def test_datasource_upload_requires_mapping_fields(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        # Missing metric_name should fail.
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                data_year=2024,
+                geo_column="county_fips",
+                metric_value_column="rate",
+            )
+
+    def test_datasource_upload_validates_metric_name(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                data_year=2024,
+                geo_column="county_fips",
+                metric_value_column="rate",
+                metric_name="Bad Name",
+            )
+
+    def test_datasource_upload_accepts_optional_race_and_year(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        req = DataSourceUploadRequest(
+            source_name="X",
+            description="X",
+            geographic_level="county",
+            data_year=2024,
+            geo_column="county_fips",
+            metric_value_column="rate",
+            metric_name="eviction_rate",
+            race_column="race",
+            year_column="year",
+        )
+        assert req.race_column == "race"
+        assert req.year_column == "year"
+
+    def test_datasource_upload_year_column_only(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        req = DataSourceUploadRequest(
+            source_name="X",
+            description="X",
+            geographic_level="county",
+            geo_column="county_fips",
+            metric_value_column="rate",
+            metric_name="eviction_rate",
+            year_column="year",
+        )
+        assert req.data_year is None
+        assert req.year_column == "year"
+
+    def test_datasource_upload_requires_year_source(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                geo_column="county_fips",
+                metric_value_column="rate",
+                metric_name="eviction_rate",
+            )
+
+    def test_datasource_upload_rejects_whitespace_geo_column(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                data_year=2024,
+                geo_column="   ",
+                metric_value_column="rate",
+                metric_name="eviction_rate",
             )
 
     def test_document_upload_valid(self):
@@ -353,6 +450,120 @@ class TestUploadEndpoints:
             json={"action": "approve"},
         )
         assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_upload_datasource_csv_success(self, user_client, override_db):
+        """A valid CSV + mapping parses, persists an Upload, and bulk-inserts rows."""
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        override_db.execute = AsyncMock(return_value=mock_result)
+
+        # 15 valid county rows with a single metric column.
+        header = "county_fips,rate"
+        rows = "\n".join(f"{13000 + i},{i * 0.5}" for i in range(15))
+        csv_bytes = (header + "\n" + rows + "\n").encode()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/datasource",
+            files={"file": ("counties.csv", csv_bytes, "text/csv")},
+            data={
+                "source_name": "Eviction rates",
+                "description": "County eviction filing rates",
+                "geographic_level": "county",
+                "data_year": "2023",
+                "geo_column": "county_fips",
+                "metric_value_column": "rate",
+                "metric_name": "eviction_rate",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["upload_type"] == "datasource"
+        assert body["status"] == "pending_review"
+        # Upload row was added.
+        assert override_db.add.called
+        # Bulk insert for uploaded_datasets was executed.
+        executed_sql = " ".join(str(call.args[0]) for call in override_db.execute.call_args_list)
+        assert "uploaded_datasets" in executed_sql
+
+    @pytest.mark.asyncio
+    async def test_upload_datasource_year_column_without_data_year(
+        self, user_client, override_db
+    ):
+        """When year_column is set, data_year may be omitted on the multipart form."""
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        override_db.execute = AsyncMock(return_value=mock_result)
+
+        header = "county_fips,year,rate"
+        rows = "\n".join(f"{13000 + i},2023,{i * 0.5}" for i in range(15))
+        csv_bytes = (header + "\n" + rows + "\n").encode()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/datasource",
+            files={"file": ("counties.csv", csv_bytes, "text/csv")},
+            data={
+                "source_name": "Eviction rates",
+                "description": "County eviction filing rates",
+                "geographic_level": "county",
+                "geo_column": "county_fips",
+                "metric_value_column": "rate",
+                "metric_name": "eviction_rate",
+                "year_column": "year",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert override_db.add.called
+
+    @pytest.mark.asyncio
+    async def test_upload_datasource_missing_column_returns_422(self, user_client, override_db):
+        override_db.execute = AsyncMock()
+
+        csv_bytes = b"county_fips,rate\n13121,14.3\n13089,9.1\n" * 6  # 12 rows
+        resp = await user_client.post(
+            "/api/admin/uploads/datasource",
+            files={"file": ("counties.csv", csv_bytes, "text/csv")},
+            data={
+                "source_name": "X",
+                "description": "X",
+                "geographic_level": "county",
+                "data_year": "2023",
+                "geo_column": "county_fips",
+                "metric_value_column": "rate",
+                "metric_name": "eviction_rate",
+                "race_column": "ethnicity",  # not present in CSV
+            },
+        )
+        assert resp.status_code == 422
+        # The structured detail survives as a dict, not a flattened string.
+        detail = resp.json()["detail"]
+        assert "missing_columns" in detail or (
+            isinstance(detail, list) and any("missing" in str(d) for d in detail)
+        )
+        # No Upload row was added.
+        assert not override_db.add.called
+
+    @pytest.mark.asyncio
+    async def test_review_datasource_approve_is_pure_flip(self, admin_client, override_db):
+        """Approving a datasource upload is a status flip — no processing call."""
+        mock_db = override_db
+        # First SELECT: upload exists, status=pending_review, type=datasource.
+        fetch_result = MagicMock()
+        fetch_result.mappings.return_value.first.return_value = {
+            "id": "00000000-0000-0000-0000-00000000aaaa",
+            "status": "pending_review",
+            "upload_type": "datasource",
+        }
+        # Subsequent UPDATE executes return a no-op MagicMock.
+        mock_db.execute = AsyncMock(side_effect=[fetch_result, MagicMock()])
+
+        resp = await admin_client.patch(
+            "/api/admin/uploads/00000000-0000-0000-0000-00000000aaaa/review",
+            json={"action": "approve", "notes": None},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "approved"
 
 
 def _mock_review_lookup(

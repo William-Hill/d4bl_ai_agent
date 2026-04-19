@@ -258,8 +258,11 @@ class TestFieldDefaults:
         s = _fresh_settings(ADMIN_EMAIL="admin@example.com")
         assert s.admin_email == "admin@example.com"
 
-    def test_task_model_settings_default_to_empty(self):
+    def test_task_model_settings_default_to_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Task-specific model settings default to empty string (use general model)."""
+        monkeypatch.delenv("QUERY_PARSER_MODEL", raising=False)
+        monkeypatch.delenv("EXPLAINER_MODEL", raising=False)
+        monkeypatch.delenv("EVALUATOR_MODEL", raising=False)
         s = _fresh_settings()
         assert s.query_parser_model == ""
         assert s.explainer_model == ""

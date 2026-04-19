@@ -1747,6 +1747,129 @@ async def get_bjs_incarceration(
         raise HTTPException(status_code=500, detail="Failed to fetch BJS incarceration data")
 
 
+@app.get("/api/explore/staff-uploads", response_model=ExploreResponse)
+async def get_staff_upload_rows(
+    request: Request,
+    upload_id: UUID,
+    state_fips: str | None = None,
+    race: str | None = None,
+    year: int | None = None,
+    limit: int = 1000,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return rows for one approved staff-uploaded datasource in the shared
+    ``ExploreResponse`` shape so the frontend reuses built-in map/chart/table
+    components unchanged."""
+    cache_key = f"{request.url.path}?{request.query_params}"
+    cached = explore_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    meta_result = await db.execute(
+        text("""
+            SELECT metadata ->> 'source_name' AS source_name,
+                   metadata -> 'mapping'      AS mapping
+            FROM uploads
+            WHERE id = CAST(:uid AS uuid)
+              AND upload_type = 'datasource'
+              AND status = 'approved'
+        """),
+        {"uid": str(upload_id)},
+    )
+    meta_row = meta_result.mappings().first()
+    if not meta_row:
+        raise HTTPException(404, "Not found or not approved")
+    mapping = meta_row["mapping"] or {}
+    metric_name = mapping.get("metric_name") or "metric"
+
+    params: dict = {
+        "uid": str(upload_id),
+        "state_fips": state_fips,
+        "race": race,
+        "year": year,
+        "limit": max(1, min(limit, 5000)),
+    }
+    rows_result = await db.execute(
+        text("""
+            SELECT ud.data ->> 'state_fips'               AS state_fips,
+                   AVG((ud.data ->> 'value')::float)      AS value,
+                   ud.data ->> 'race'                     AS race,
+                   (ud.data ->> 'year')::int              AS year
+            FROM uploaded_datasets ud
+            JOIN uploads u ON u.id = ud.upload_id
+            WHERE u.id = CAST(:uid AS uuid)
+              AND u.upload_type = 'datasource'
+              AND u.status = 'approved'
+              AND (:state_fips IS NULL OR ud.data ->> 'state_fips' = :state_fips)
+              AND (:race IS NULL OR ud.data ->> 'race' = :race)
+              AND (:year IS NULL OR (ud.data ->> 'year')::int = :year)
+            GROUP BY state_fips, race, year
+            ORDER BY state_fips, race, year
+            LIMIT :limit
+        """),
+        params,
+    )
+    rows_raw = rows_result.mappings().all()
+
+    rows = [
+        {
+            "state_fips": r["state_fips"],
+            "state_name": FIPS_TO_STATE_NAME.get(r["state_fips"], r["state_fips"]),
+            "value": float(r["value"]) if r["value"] is not None else 0.0,
+            "metric": metric_name,
+            "year": r["year"],
+            "race": r["race"],
+        }
+        for r in rows_raw
+    ]
+
+    response = {
+        "rows": rows,
+        "national_average": compute_national_avg(rows),
+        "available_metrics": [metric_name],
+        "available_years": distinct_values(rows, "year"),
+        "available_races": distinct_values(rows, "race"),
+    }
+    explore_cache.set(cache_key, response)
+    return response
+
+
+@app.get("/api/explore/staff-uploads/available")
+async def list_staff_upload_datasets(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List approved staff-contributed datasource uploads for the picker."""
+    result = await db.execute(
+        text("""
+            SELECT u.id, u.metadata, u.reviewed_at,
+                   p.display_name AS uploader_name
+            FROM uploads u
+            LEFT JOIN profiles p ON p.id = u.user_id
+            WHERE u.upload_type = 'datasource' AND u.status = 'approved'
+            ORDER BY u.reviewed_at DESC NULLS LAST
+        """)
+    )
+    rows = result.mappings().all()
+    out = []
+    for r in rows:
+        metadata = r["metadata"] or {}
+        mapping = metadata.get("mapping") or {}
+        out.append({
+            "upload_id": str(r["id"]),
+            "source_name": metadata.get("source_name"),
+            "metric_name": mapping.get("metric_name"),
+            "geographic_level": metadata.get("geographic_level"),
+            "data_year": metadata.get("data_year"),
+            "has_race": bool(mapping.get("race_column")),
+            "row_count": metadata.get("row_count"),
+            "uploader_name": r["uploader_name"],
+            "approved_at": r["reviewed_at"].isoformat() if r["reviewed_at"] else None,
+        })
+    return out
+
+
 @app.get("/api/explore/census-demographics", response_model=ExploreResponse)
 async def get_census_demographics(
     request: Request,

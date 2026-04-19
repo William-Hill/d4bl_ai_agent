@@ -5,6 +5,36 @@ import { useAuth } from '@/lib/auth-context';
 import { API_BASE } from '@/lib/api';
 import UploadHistory from './UploadHistory';
 
+function formatUploadError(detail: unknown): string | null {
+  if (!detail) return null;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => {
+      if (typeof d === 'string') return d;
+      if (d && typeof d === 'object' && 'msg' in d) return String((d as { msg: unknown }).msg);
+      return JSON.stringify(d);
+    }).join('; ');
+  }
+  if (typeof detail === 'object') {
+    const obj = detail as Record<string, unknown>;
+    if (Array.isArray(obj.missing_columns)) {
+      return `Missing columns in file header: ${(obj.missing_columns as string[]).join(', ')}`;
+    }
+    if (obj.dropped && typeof obj.dropped === 'object') {
+      const d = obj.dropped as Record<string, unknown>;
+      return `Too many invalid rows (${d.reason}): ${d.count} of ${d.total}`;
+    }
+    if (obj.reason === 'too_few_rows') {
+      return `Only ${obj.valid} valid rows after validation — need at least 10.`;
+    }
+    if (obj.reason === 'no_data_rows') {
+      return 'The file has a header but no data rows.';
+    }
+    if (typeof obj.message === 'string') return obj.message;
+  }
+  return JSON.stringify(detail);
+}
+
 export default function UploadDataSource() {
   const { session } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -20,6 +50,13 @@ export default function UploadDataSource() {
   const [dataYear, setDataYear] = useState(() => new Date().getFullYear());
   const [sourceUrl, setSourceUrl] = useState('');
   const [categoryTags, setCategoryTags] = useState('');
+  const [geoColumn, setGeoColumn] = useState('');
+  const [metricValueColumn, setMetricValueColumn] = useState('');
+  const [metricName, setMetricName] = useState('');
+  const [hasRaceColumn, setHasRaceColumn] = useState(false);
+  const [raceColumn, setRaceColumn] = useState('');
+  const [hasYearColumn, setHasYearColumn] = useState(false);
+  const [yearColumn, setYearColumn] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +76,14 @@ export default function UploadDataSource() {
       formData.append('source_name', sourceName);
       formData.append('description', description);
       formData.append('geographic_level', geographicLevel);
-      formData.append('data_year', String(dataYear));
+      if (!hasYearColumn) {
+        formData.append('data_year', String(dataYear));
+      }
+      formData.append('geo_column', geoColumn);
+      formData.append('metric_value_column', metricValueColumn);
+      formData.append('metric_name', metricName);
+      if (hasRaceColumn && raceColumn) formData.append('race_column', raceColumn);
+      if (hasYearColumn && yearColumn) formData.append('year_column', yearColumn);
       if (sourceUrl) formData.append('source_url', sourceUrl);
       if (categoryTags) formData.append('category_tags', categoryTags);
 
@@ -61,10 +105,17 @@ export default function UploadDataSource() {
         setDataYear(new Date().getFullYear());
         setSourceUrl('');
         setCategoryTags('');
+        setGeoColumn('');
+        setMetricValueColumn('');
+        setMetricName('');
+        setHasRaceColumn(false);
+        setRaceColumn('');
+        setHasYearColumn(false);
+        setYearColumn('');
         setRefreshKey((k) => k + 1);
       } else {
         const data = await resp.json().catch(() => ({}));
-        setError(data.detail || 'Upload failed. Please try again.');
+        setError(formatUploadError(data.detail) || 'Upload failed. Please try again.');
       }
     } catch {
       setError('Upload failed. Please check your connection and try again.');
@@ -153,23 +204,29 @@ export default function UploadDataSource() {
             </select>
           </div>
 
-          {/* Data year */}
-          <div>
-            <label htmlFor="ds-data-year" className="block text-sm font-medium text-gray-300 mb-1">
-              Data Year <span className="text-red-400">*</span>
-            </label>
-            <input
-              id="ds-data-year"
-              type="number"
-              value={dataYear}
-              onChange={(e) => setDataYear(Number(e.target.value))}
-              required
-              min={1990}
-              max={new Date().getFullYear() + 1}
-              className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
-                         focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
-            />
-          </div>
+          {/* Data year (constant) — omitted when a per-row year column is mapped */}
+          {!hasYearColumn ? (
+            <div>
+              <label htmlFor="ds-data-year" className="block text-sm font-medium text-gray-300 mb-1">
+                Data Year <span className="text-red-400">*</span>
+              </label>
+              <input
+                id="ds-data-year"
+                type="number"
+                value={dataYear}
+                onChange={(e) => setDataYear(Number(e.target.value))}
+                required
+                min={1990}
+                max={new Date().getFullYear() + 1}
+                className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                           focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+              />
+            </div>
+          ) : (
+            <div className="flex items-end pb-2 text-xs text-gray-500">
+              Year values come from the year column below (no single constant year).
+            </div>
+          )}
         </div>
 
         {/* Source URL (optional) */}
@@ -202,6 +259,127 @@ export default function UploadDataSource() {
             className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
                        focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
           />
+        </div>
+
+        <div className="pt-3 border-t border-[#404040]">
+          <h3 className="text-sm font-semibold text-white mb-2">Column mapping</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Tell the admin which column means what. Missing or incorrect mappings
+            show up as an error immediately.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="ds-geo-column" className="block text-sm font-medium text-gray-300 mb-1">
+                Geo column name <span className="text-red-400">*</span>
+              </label>
+              <input
+                id="ds-geo-column"
+                type="text"
+                value={geoColumn}
+                onChange={(e) => setGeoColumn(e.target.value)}
+                required
+                placeholder="e.g. county_fips"
+                className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                           focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                State (2-digit), county (5-digit), or tract (11-digit) FIPS code column.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="ds-metric-value-column" className="block text-sm font-medium text-gray-300 mb-1">
+                Metric value column <span className="text-red-400">*</span>
+              </label>
+              <input
+                id="ds-metric-value-column"
+                type="text"
+                value={metricValueColumn}
+                onChange={(e) => setMetricValueColumn(e.target.value)}
+                required
+                placeholder="e.g. filing_rate"
+                className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                           focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                The numeric column to plot on the map.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label htmlFor="ds-metric-name" className="block text-sm font-medium text-gray-300 mb-1">
+              Metric name <span className="text-red-400">*</span>
+            </label>
+            <input
+              id="ds-metric-name"
+              type="text"
+              value={metricName}
+              onChange={(e) => setMetricName(e.target.value)}
+              required
+              pattern="[a-z0-9_]{1,64}"
+              placeholder="e.g. eviction_filing_rate"
+              className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                         focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Lowercase, snake_case, 1–64 chars. Becomes the metric identifier on /explore.
+            </p>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={hasRaceColumn}
+                onChange={(e) => setHasRaceColumn(e.target.checked)}
+              />
+              This dataset has a racial/ethnic breakdown column
+            </label>
+            {hasRaceColumn && (
+              <div>
+                <label htmlFor="ds-race-column" className="block text-sm font-medium text-gray-300 mb-1">
+                  Race/ethnicity column <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="ds-race-column"
+                  type="text"
+                  value={raceColumn}
+                  onChange={(e) => setRaceColumn(e.target.value)}
+                  required
+                  placeholder="e.g. race"
+                  className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                             focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+                />
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={hasYearColumn}
+                onChange={(e) => setHasYearColumn(e.target.checked)}
+              />
+              This dataset has a year column
+            </label>
+            {hasYearColumn && (
+              <div>
+                <label htmlFor="ds-year-column" className="block text-sm font-medium text-gray-300 mb-1">
+                  Year column <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="ds-year-column"
+                  type="text"
+                  value={yearColumn}
+                  onChange={(e) => setYearColumn(e.target.value)}
+                  required
+                  placeholder="e.g. year"
+                  className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                             focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         <button

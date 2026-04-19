@@ -52,23 +52,37 @@ export default function GuidePage() {
             </p>
             <p>
               <span className="text-white font-semibold">How to upload:</span>{' '}
-              Go to <span className="text-[#00ff32]">Admin &gt; Data Sources</span> tab. Fill in
-              the source name, select your file, and add any relevant notes. Your submission
-              enters the review queue immediately.
+              Go to <span className="text-[#00ff32]">Admin &gt; Data Sources</span> tab.
+              Fill in the source name, select your file, and add any relevant notes.
+              You&apos;ll also declare which column is the geographic identifier, which
+              column holds the metric value, and a short snake_case name for the metric.
+              If your file has racial or yearly breakdowns, you can map those columns too.
+              Your submission enters the review queue immediately.
             </p>
             <p>
               <span className="text-white font-semibold">What happens after:</span>{' '}
-              An admin reviews your upload and marks it approved or rejected.
-              Automated processing and indexing is planned for a follow-up release.
+              When you upload, the platform parses your file immediately, validates the
+              columns you mapped, and surfaces any errors back to you — so you know it
+              landed cleanly before an admin ever sees it. An admin then reviews your
+              declared mapping and a preview of the parsed rows. Once approved, your
+              dataset appears under the <span className="text-[#00ff32]">Staff Uploads</span>{' '}
+              tab on <span className="text-[#00ff32]">/explore</span>, where users can
+              view it on the state map alongside built-in sources. Rejected uploads
+              never reach <span className="text-[#00ff32]">/explore</span>.
             </p>
             <p>
               <span className="text-white font-semibold">Example:</span>{' '}
               A county-level CSV from{' '}
-              <span className="text-gray-300">County Health Rankings</span> with columns like{' '}
-              <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">county_fips</code>,{' '}
+              <span className="text-gray-300">County Health Rankings</span> with columns
+              like <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">county_fips</code>,{' '}
               <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">race</code>, and{' '}
               <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">premature_death_rate</code>{' '}
-              is a great fit.
+              — mapped as{' '}
+              <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">geo_column=county_fips</code>,{' '}
+              <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">metric_value_column=premature_death_rate</code>,{' '}
+              <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">metric_name=premature_death_rate</code>,{' '}
+              <code className="text-xs bg-[#292929] px-1 py-0.5 rounded">race_column=race</code>{' '}
+              — is a great fit.
             </p>
           </GuideSection>
 

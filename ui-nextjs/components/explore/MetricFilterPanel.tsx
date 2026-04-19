@@ -12,6 +12,7 @@ export interface ExploreFilters {
   race: string | null;
   year: number | null;
   selectedState: string | null;
+  uploadId: string | null;
 }
 
 interface Props {
