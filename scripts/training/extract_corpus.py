@@ -178,9 +178,9 @@ def main(tables: list[str] | None = None, max_per_table: int = MAX_PASSAGES_PER_
     for t in skipped:
         logger.warning("Unknown table %r — skipping.", t)
 
-    from scripts.ingestion.helpers import get_db_connection
-
     import psycopg2.errors  # lazy — same dependency path as extract_table
+
+    from scripts.ingestion.helpers import get_db_connection
 
     conn = get_db_connection()
     try:

@@ -41,8 +41,8 @@ async def add_research_data_column():
         async with engine.begin() as conn:
             # Check if column already exists
             check_query = text("""
-                SELECT column_name 
-                FROM information_schema.columns 
+                SELECT column_name
+                FROM information_schema.columns
                 WHERE table_name='research_jobs' AND column_name='research_data'
             """)
             result = await conn.execute(check_query)
@@ -54,7 +54,7 @@ async def add_research_data_column():
             
             # Add the column
             alter_query = text("""
-                ALTER TABLE research_jobs 
+                ALTER TABLE research_jobs
                 ADD COLUMN research_data JSON
             """)
             await conn.execute(alter_query)

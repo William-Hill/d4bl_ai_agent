@@ -12,7 +12,6 @@ import argparse
 import asyncio
 import hashlib
 import logging
-import re
 import sys
 import time
 from dataclasses import asdict, dataclass

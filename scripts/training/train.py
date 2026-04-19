@@ -20,7 +20,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import unsloth  # must be imported before transformers/trl/peft
 import torch
 from datasets import Dataset
 from huggingface_hub import login
@@ -673,7 +672,7 @@ def run_health_checks(phase_name: str, stats: dict) -> dict[str, dict]:
         else:
             checks["eval_trend"] = {
                 "status": "warn",
-                "message": f"eval_loss rising over last 3 checkpoints: {[f'{l:.3f}' for l in last3]}",
+                "message": f"eval_loss rising over last 3 checkpoints: {[f'{loss:.3f}' for loss in last3]}",
             }
 
     return checks
@@ -811,7 +810,7 @@ def generate_report(output_dir: Path, telemetry: dict) -> None:
 
         eval_ckpts = p.get("eval_checkpoints", [])
         if eval_ckpts:
-            ckpt_strs = [f"{l:.3f}" for l in eval_ckpts]
+            ckpt_strs = [f"{loss:.3f}" for loss in eval_ckpts]
             lines.append(f"- **Eval checkpoints:** [{', '.join(ckpt_strs)}]")
 
         duration = p.get("duration_seconds", 0)

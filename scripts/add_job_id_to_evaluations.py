@@ -28,8 +28,8 @@ async def add_job_id_column():
         async with db.engine.begin() as conn:
             # Check if column already exists
             check_query = text("""
-                SELECT column_name 
-                FROM information_schema.columns 
+                SELECT column_name
+                FROM information_schema.columns
                 WHERE table_name='evaluation_results' AND column_name='job_id';
             """)
             result = await conn.execute(check_query)
@@ -41,7 +41,7 @@ async def add_job_id_column():
 
             # Add the column
             alter_query = text("""
-                ALTER TABLE evaluation_results 
+                ALTER TABLE evaluation_results
                 ADD COLUMN job_id UUID REFERENCES research_jobs(job_id);
             """)
             await conn.execute(alter_query)
@@ -49,7 +49,7 @@ async def add_job_id_column():
 
             # Create index for better query performance
             index_query = text("""
-                CREATE INDEX IF NOT EXISTS idx_evaluation_results_job_id 
+                CREATE INDEX IF NOT EXISTS idx_evaluation_results_job_id
                 ON evaluation_results(job_id);
             """)
             await conn.execute(index_query)
