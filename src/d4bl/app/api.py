@@ -498,7 +498,6 @@ async def _fetch_related_documents(
     metric_clause = "TRUE"
     params: dict[str, object] = {
         "abbrev": abbrev,
-        "abbrev_lc": abbrev.lower(),
         "state_name": state_name.lower(),
         "limit": limit,
         "viewer_id": str(viewer_user_id),
@@ -540,7 +539,6 @@ async def _fetch_related_documents(
               AND (
                 (d.content_type = 'policy_bill' AND COALESCE(d.metadata->>'state', '') = :abbrev)
                 OR (strpos(lower(COALESCE(d.title, '')), :state_name) > 0)
-                OR (strpos(lower(COALESCE(d.source_url, '')), :abbrev_lc) > 0)
                 OR (strpos(lower(COALESCE(c.content, '')), :state_name) > 0)
               )
               AND ({metric_clause})

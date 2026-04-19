@@ -146,6 +146,8 @@ export default function RelatedDocuments({
     }
 
     if (collapsed) {
+      setRows([]);
+      setTotal(0);
       setLoading(false);
       return;
     }
