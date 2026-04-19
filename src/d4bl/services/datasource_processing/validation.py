@@ -5,6 +5,7 @@ Isolated from any IO so that each rule can be unit-tested directly.
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime
 
@@ -38,6 +39,9 @@ def derive_state_fips(geo_fips: object) -> str:
         raise ValueError("geo_fips is empty")
     if not s.isdigit():
         raise ValueError(f"geo_fips must be numeric, got {s!r}")
+    # Excel often drops a leading 0 on 5-digit county FIPS (e.g. 01001 → "1001").
+    if len(s) == 4:
+        s = "0" + s
     if len(s) == 1:
         s = "0" + s
     return s[:2]
@@ -50,13 +54,19 @@ def coerce_numeric(value: object) -> float:
     after the strip pipeline.
     """
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return float(value)
+        n = float(value)
+        if not math.isfinite(n):
+            raise ValueError("value must be finite")
+        return n
     if value is None:
         raise ValueError("value is empty")
     s = str(value).strip().rstrip("%").replace(",", "").strip()
     if not s or s.lower() == "nan":
         raise ValueError("value is empty or NaN")
-    return float(s)  # raises ValueError on malformed input
+    n = float(s)  # raises ValueError on malformed input
+    if not math.isfinite(n):
+        raise ValueError("value must be finite")
+    return n
 
 
 def coerce_year(value: object) -> int:

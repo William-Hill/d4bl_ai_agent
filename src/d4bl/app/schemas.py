@@ -636,7 +636,8 @@ class DataSourceUploadRequest(BaseModel):
     source_name: str
     description: str
     geographic_level: Literal["state", "county", "tract"]
-    data_year: int
+    # Constant year when the file has no per-row year column; optional if year_column is set.
+    data_year: int | None = None
     source_url: str | None = None
     category_tags: list[str] | None = None
     # Declared column mapping — contributor tells us what each CSV column means.
@@ -653,12 +654,36 @@ class DataSourceUploadRequest(BaseModel):
             raise ValueError("Source name cannot be empty")
         return v.strip()
 
+    @field_validator("geo_column", "metric_value_column")
+    @classmethod
+    def column_names_non_blank(cls, v: str) -> str:
+        s = v.strip() if isinstance(v, str) else ""
+        if not s:
+            raise ValueError("cannot be blank or whitespace-only")
+        return s
+
+    @field_validator("race_column", "year_column", mode="before")
+    @classmethod
+    def optional_column_names_strip(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
+
     @field_validator("metric_name")
     @classmethod
     def metric_name_valid(cls, v: str) -> str:
         from d4bl.services.datasource_processing.validation import validate_metric_name
 
         return validate_metric_name(v)
+
+    @model_validator(mode="after")
+    def data_year_or_year_column(self) -> "DataSourceUploadRequest":
+        if self.data_year is None and not (self.year_column and self.year_column.strip()):
+            raise ValueError("Either data_year or year_column is required")
+        return self
 
 
 class DocumentUploadRequest(BaseModel):

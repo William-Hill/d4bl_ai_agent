@@ -27,6 +27,9 @@ function formatUploadError(detail: unknown): string | null {
     if (obj.reason === 'too_few_rows') {
       return `Only ${obj.valid} valid rows after validation — need at least 10.`;
     }
+    if (obj.reason === 'no_data_rows') {
+      return 'The file has a header but no data rows.';
+    }
     if (typeof obj.message === 'string') return obj.message;
   }
   return JSON.stringify(detail);
@@ -73,7 +76,9 @@ export default function UploadDataSource() {
       formData.append('source_name', sourceName);
       formData.append('description', description);
       formData.append('geographic_level', geographicLevel);
-      formData.append('data_year', String(dataYear));
+      if (!hasYearColumn) {
+        formData.append('data_year', String(dataYear));
+      }
       formData.append('geo_column', geoColumn);
       formData.append('metric_value_column', metricValueColumn);
       formData.append('metric_name', metricName);
@@ -199,23 +204,29 @@ export default function UploadDataSource() {
             </select>
           </div>
 
-          {/* Data year */}
-          <div>
-            <label htmlFor="ds-data-year" className="block text-sm font-medium text-gray-300 mb-1">
-              Data Year <span className="text-red-400">*</span>
-            </label>
-            <input
-              id="ds-data-year"
-              type="number"
-              value={dataYear}
-              onChange={(e) => setDataYear(Number(e.target.value))}
-              required
-              min={1990}
-              max={new Date().getFullYear() + 1}
-              className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
-                         focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
-            />
-          </div>
+          {/* Data year (constant) — omitted when a per-row year column is mapped */}
+          {!hasYearColumn ? (
+            <div>
+              <label htmlFor="ds-data-year" className="block text-sm font-medium text-gray-300 mb-1">
+                Data Year <span className="text-red-400">*</span>
+              </label>
+              <input
+                id="ds-data-year"
+                type="number"
+                value={dataYear}
+                onChange={(e) => setDataYear(Number(e.target.value))}
+                required
+                min={1990}
+                max={new Date().getFullYear() + 1}
+                className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                           focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+              />
+            </div>
+          ) : (
+            <div className="flex items-end pb-2 text-xs text-gray-500">
+              Year values come from the year column below (no single constant year).
+            </div>
+          )}
         </div>
 
         {/* Source URL (optional) */}
@@ -326,15 +337,21 @@ export default function UploadDataSource() {
               This dataset has a racial/ethnic breakdown column
             </label>
             {hasRaceColumn && (
-              <input
-                type="text"
-                value={raceColumn}
-                onChange={(e) => setRaceColumn(e.target.value)}
-                required
-                placeholder="e.g. race"
-                className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
-                           focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
-              />
+              <div>
+                <label htmlFor="ds-race-column" className="block text-sm font-medium text-gray-300 mb-1">
+                  Race/ethnicity column <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="ds-race-column"
+                  type="text"
+                  value={raceColumn}
+                  onChange={(e) => setRaceColumn(e.target.value)}
+                  required
+                  placeholder="e.g. race"
+                  className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                             focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+                />
+              </div>
             )}
 
             <label className="flex items-center gap-2 text-sm text-gray-300">
@@ -346,15 +363,21 @@ export default function UploadDataSource() {
               This dataset has a year column
             </label>
             {hasYearColumn && (
-              <input
-                type="text"
-                value={yearColumn}
-                onChange={(e) => setYearColumn(e.target.value)}
-                required
-                placeholder="e.g. year"
-                className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
-                           focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
-              />
+              <div>
+                <label htmlFor="ds-year-column" className="block text-sm font-medium text-gray-300 mb-1">
+                  Year column <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="ds-year-column"
+                  type="text"
+                  value={yearColumn}
+                  onChange={(e) => setYearColumn(e.target.value)}
+                  required
+                  placeholder="e.g. year"
+                  className="w-full px-3 py-2 bg-[#292929] border border-[#404040] rounded text-white
+                             focus:outline-none focus:border-[#00ff32] transition-colors text-sm"
+                />
+              </div>
             )}
           </div>
         </div>

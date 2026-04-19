@@ -364,7 +364,7 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     primaryFilterKey: "metric",
     primaryFilterLabel: "Dataset",
     description: "Approved data sources contributed by staff. Each dataset reflects its contributor's methodology and column definitions.",
-    sourceUrl: "",
+    sourceUrl: "/guide",
     hasData: true,
   },
 ];

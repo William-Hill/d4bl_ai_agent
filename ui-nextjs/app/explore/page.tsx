@@ -83,7 +83,13 @@ function resolveInitialState(): { source: DataSourceConfig; filters: ExploreFilt
       source,
       filters: {
         metric: persisted.metric ?? '',
-        race: persisted.race ?? (source.hasRace ? 'total' : null),
+        race:
+          persisted.race ??
+          (source.key === 'staff-uploads'
+            ? null
+            : source.hasRace
+              ? 'total'
+              : null),
         year: persisted.year,
         selectedState: persisted.selectedState,
         uploadId: persisted.uploadId && source.key === 'staff-uploads' ? persisted.uploadId : null,
@@ -336,9 +342,10 @@ export default function ExplorePage() {
           <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-300">{activeSource.description}</p>
             <a
-              href={activeSource.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={activeSource.sourceUrl || '/guide'}
+              {...(activeSource.sourceUrl.startsWith('http')
+                ? { target: '_blank' as const, rel: 'noopener noreferrer' }
+                : {})}
               className="text-xs mt-1 inline-block hover:underline"
               style={{ color: activeSource.accent }}
             >
@@ -366,8 +373,10 @@ export default function ExplorePage() {
                 setFilters((prev) => ({
                   ...prev,
                   uploadId: id,
+                  metric: '',
                   race: null,
                   year: null,
+                  selectedState: null,
                 }));
               }}
             />

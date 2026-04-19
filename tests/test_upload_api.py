@@ -102,6 +102,48 @@ class TestUploadSchemas:
         assert req.race_column == "race"
         assert req.year_column == "year"
 
+    def test_datasource_upload_year_column_only(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        req = DataSourceUploadRequest(
+            source_name="X",
+            description="X",
+            geographic_level="county",
+            geo_column="county_fips",
+            metric_value_column="rate",
+            metric_name="eviction_rate",
+            year_column="year",
+        )
+        assert req.data_year is None
+        assert req.year_column == "year"
+
+    def test_datasource_upload_requires_year_source(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                geo_column="county_fips",
+                metric_value_column="rate",
+                metric_name="eviction_rate",
+            )
+
+    def test_datasource_upload_rejects_whitespace_geo_column(self):
+        from d4bl.app.schemas import DataSourceUploadRequest
+
+        with pytest.raises(ValidationError):
+            DataSourceUploadRequest(
+                source_name="X",
+                description="X",
+                geographic_level="county",
+                data_year=2024,
+                geo_column="   ",
+                metric_value_column="rate",
+                metric_name="eviction_rate",
+            )
+
     def test_document_upload_valid(self):
         from d4bl.app.schemas import DocumentUploadRequest
 
@@ -443,6 +485,35 @@ class TestUploadEndpoints:
         # Bulk insert for uploaded_datasets was executed.
         executed_sql = " ".join(str(call.args[0]) for call in override_db.execute.call_args_list)
         assert "uploaded_datasets" in executed_sql
+
+    @pytest.mark.asyncio
+    async def test_upload_datasource_year_column_without_data_year(
+        self, user_client, override_db
+    ):
+        """When year_column is set, data_year may be omitted on the multipart form."""
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = None
+        override_db.execute = AsyncMock(return_value=mock_result)
+
+        header = "county_fips,year,rate"
+        rows = "\n".join(f"{13000 + i},2023,{i * 0.5}" for i in range(15))
+        csv_bytes = (header + "\n" + rows + "\n").encode()
+
+        resp = await user_client.post(
+            "/api/admin/uploads/datasource",
+            files={"file": ("counties.csv", csv_bytes, "text/csv")},
+            data={
+                "source_name": "Eviction rates",
+                "description": "County eviction filing rates",
+                "geographic_level": "county",
+                "geo_column": "county_fips",
+                "metric_value_column": "rate",
+                "metric_name": "eviction_rate",
+                "year_column": "year",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert override_db.add.called
 
     @pytest.mark.asyncio
     async def test_upload_datasource_missing_column_returns_422(self, user_client, override_db):

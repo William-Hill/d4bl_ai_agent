@@ -58,7 +58,7 @@ def read_csv_bytes(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
     try:
         raw_header = next(reader)
     except StopIteration:
-        raise DatasourceParseError("file has no header row")
+        raise DatasourceParseError("file has no header row") from None
 
     header = [h.strip() for h in raw_header]
     rows = [dict(zip(header, r)) for r in reader if any(cell.strip() for cell in r)]
@@ -81,24 +81,29 @@ def read_xlsx_bytes(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
     except Exception as exc:
         raise DatasourceParseError(f"could not open xlsx: {exc}") from exc
 
-    ws = wb.active
-    rows_iter = ws.iter_rows(values_only=True)
     try:
-        raw_header = next(rows_iter)
-    except StopIteration:
-        raise DatasourceParseError("file has no header row")
+        ws = wb.active
+        rows_iter = ws.iter_rows(values_only=True)
+        try:
+            raw_header = next(rows_iter)
+        except StopIteration:
+            raise DatasourceParseError("file has no header row") from None
 
-    header = [("" if h is None else str(h)).strip() for h in raw_header]
-    if not any(header):
-        raise DatasourceParseError("header row is empty")
+        header = [("" if h is None else str(h)).strip() for h in raw_header]
+        if not any(header):
+            raise DatasourceParseError("header row is empty")
 
-    rows: list[dict[str, str]] = []
-    for raw_row in rows_iter:
-        if raw_row is None or all(cell is None or str(cell).strip() == "" for cell in raw_row):
-            continue
-        row = {h: ("" if v is None else str(v)) for h, v in zip(header, raw_row)}
-        rows.append(row)
-    return header, rows
+        rows: list[dict[str, str]] = []
+        for raw_row in rows_iter:
+            if raw_row is None or all(
+                cell is None or str(cell).strip() == "" for cell in raw_row
+            ):
+                continue
+            row = {h: ("" if v is None else str(v)) for h, v in zip(header, raw_row)}
+            rows.append(row)
+        return header, rows
+    finally:
+        wb.close()
 
 
 MIN_VALID_ROWS = 10
@@ -201,6 +206,12 @@ def parse_datasource_file(
         )
 
     _check_columns_exist(header, mapping)
+
+    if not rows:
+        raise DatasourceParseError(
+            "file contains no data rows",
+            detail={"reason": "no_data_rows"},
+        )
 
     normalized, dropped = _normalize_rows(rows, mapping)
     total_seen = len(rows)

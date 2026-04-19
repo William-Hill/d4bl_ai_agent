@@ -9,7 +9,7 @@ export interface StaffDatasetSummary {
   source_name: string;
   metric_name: string;
   geographic_level: string;
-  data_year: number;
+  data_year: number | null;
   has_race: boolean;
   row_count: number;
   uploader_name: string | null;
@@ -81,7 +81,7 @@ export default function StaffDatasetPicker({ value, onChange }: Props) {
         <option value="">-- Pick a dataset --</option>
         {datasets.map((d) => (
           <option key={d.upload_id} value={d.upload_id}>
-            {d.source_name} · {d.metric_name} · {d.data_year} ({d.row_count} rows)
+            {d.source_name} · {d.metric_name} · {d.data_year ?? 'multi-year'} ({d.row_count} rows)
           </option>
         ))}
       </select>

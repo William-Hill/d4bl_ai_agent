@@ -33,17 +33,17 @@ from d4bl.infra.database import (
     Upload,
     get_db,
 )
+from d4bl.services.datasource_processing.parser import (
+    DatasourceParseError,
+    MappingConfig,
+    parse_datasource_file,
+)
 from d4bl.services.document_processing.approve import process_document_upload
 from d4bl.services.document_processing.extractors import (
     ExtractionError,
     extract_docx,
     extract_pdf,
     extract_url,
-)
-from d4bl.services.datasource_processing.parser import (
-    DatasourceParseError,
-    MappingConfig,
-    parse_datasource_file,
 )
 
 router = APIRouter(tags=["uploads"])
@@ -91,7 +91,7 @@ async def upload_datasource(
     source_name: str = Form(...),
     description: str = Form(...),
     geographic_level: str = Form(...),
-    data_year: int = Form(...),
+    data_year: int | None = Form(None),
     geo_column: str = Form(...),
     metric_value_column: str = Form(...),
     metric_name: str = Form(...),
@@ -132,7 +132,7 @@ async def upload_datasource(
     except ValidationError as exc:
         raise HTTPException(422, detail=exc.errors()) from exc
 
-    content = await file.read()
+    content = await file.read(MAX_DATASOURCE_SIZE + 1)
     if len(content) > MAX_DATASOURCE_SIZE:
         raise HTTPException(400, f"File too large. Max {MAX_DATASOURCE_SIZE // (1024 * 1024)}MB")
     if len(content) == 0:

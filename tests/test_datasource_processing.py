@@ -1,6 +1,6 @@
 """Tests for datasource upload parser + validation."""
 
-import io
+import math
 
 import pytest
 
@@ -42,6 +42,10 @@ class TestDeriveStateFips:
         # Single-digit states (e.g. "6" for CA) get zero-padded.
         assert derive_state_fips("6") == "06"
 
+    def test_four_digit_county_fips_gets_leading_zero(self):
+        # Excel may drop a leading 0 on 5-digit county FIPS (e.g. 01001 → "1001").
+        assert derive_state_fips("1001") == "01"
+
     def test_rejects_non_numeric(self):
         with pytest.raises(ValueError):
             derive_state_fips("CA")
@@ -72,6 +76,18 @@ class TestCoerceNumeric:
         with pytest.raises(ValueError):
             coerce_numeric(bad)
 
+    def test_native_int_float_passthrough(self):
+        assert coerce_numeric(3) == 3.0
+        assert coerce_numeric(2.5) == 2.5
+
+    def test_rejects_non_finite(self):
+        with pytest.raises(ValueError):
+            coerce_numeric(float("inf"))
+        with pytest.raises(ValueError):
+            coerce_numeric(float("-inf"))
+        with pytest.raises(ValueError):
+            coerce_numeric(math.nan)
+
 
 class TestCoerceYear:
     def test_valid_year(self):
@@ -79,6 +95,12 @@ class TestCoerceYear:
 
     def test_int_year(self):
         assert coerce_year(2023) == 2023
+
+    def test_rejects_boolean(self):
+        with pytest.raises(ValueError):
+            coerce_year(True)
+        with pytest.raises(ValueError):
+            coerce_year(False)
 
     @pytest.mark.parametrize("bad", ["", "20", "abc", "1899", "3000"])
     def test_rejects(self, bad):
@@ -248,6 +270,17 @@ class TestParseDatasourceFile:
             parse_datasource_file(raw, ".csv", _make_mapping(race_column="ethnicity"))
         assert "missing_columns" in exc_info.value.detail
         assert "ethnicity" in exc_info.value.detail["missing_columns"]
+
+    def test_header_only_csv_raises(self):
+        from d4bl.services.datasource_processing.parser import (
+            DatasourceParseError,
+            parse_datasource_file,
+        )
+
+        raw = b"county_fips,rate\n"
+        with pytest.raises(DatasourceParseError) as exc_info:
+            parse_datasource_file(raw, ".csv", _make_mapping())
+        assert exc_info.value.detail.get("reason") == "no_data_rows"
 
     def test_many_bad_fips_raises(self):
         from d4bl.services.datasource_processing.parser import (
