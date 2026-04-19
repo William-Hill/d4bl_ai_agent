@@ -251,3 +251,20 @@ def render_document_passage(row: dict) -> str:
         header += f' — "{title}"'
 
     return f"{header}\n{content}"
+
+
+def render_example_query_passage(row: dict) -> str:
+    """Render an approved staff example query as a short pretraining passage.
+
+    Expected keys: query_text, description (optional).
+    """
+    query_text = (row.get("query_text") or "").strip()
+    if not query_text:
+        return ""
+    desc = (row.get("description") or "").strip()
+    if desc:
+        return (
+            f"Example equity research question: {query_text}\n\n"
+            f"Contributor framing: {desc}"
+        )
+    return f"Example equity research question: {query_text}"

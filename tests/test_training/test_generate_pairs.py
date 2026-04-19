@@ -14,6 +14,7 @@ from scripts.training.generate_training_pairs import (
     _validate_json,
     format_as_chatml,
     generate_query_parser_questions,
+    merge_staff_example_queries_for_parser,
     write_pairs_jsonl,
 )
 
@@ -218,6 +219,44 @@ class TestGenerateQueryParserQuestions:
         rows = self._sample_seed_rows()
         result = generate_query_parser_questions(rows, count=0)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# merge_staff_example_queries_for_parser
+# ---------------------------------------------------------------------------
+
+
+class TestMergeStaffExampleQueriesForParser:
+    def test_staff_prefixed_with_community_style(self):
+        seeds = [
+            {"state_name": "Mississippi", "metric": "poverty_rate", "race": "black", "year": 2020},
+        ]
+        staff = [{"query_text": "  Custom organizer question?  ", "description": "Housing"}]
+        out = merge_staff_example_queries_for_parser(seeds, 4, staff)
+        assert len(out) == 4
+        assert out[0]["question"] == "Custom organizer question?"
+        assert out[0]["style"] == "community"
+        assert out[0]["seed_data"]["source"] == "staff_example_query"
+
+    def test_truncates_staff_when_total_smaller(self):
+        seeds = [{"state_name": "MS", "metric": "poverty_rate", "race": "black", "year": 2020}]
+        staff = [
+            {"query_text": "One", "description": ""},
+            {"query_text": "Two", "description": ""},
+        ]
+        out = merge_staff_example_queries_for_parser(seeds, 1, staff)
+        assert len(out) == 1
+        assert out[0]["question"] == "One"
+
+    def test_skips_blank_staff_queries(self):
+        seeds = [{"state_name": "MS", "metric": "poverty_rate", "race": "black", "year": 2020}]
+        staff = [
+            {"query_text": "   ", "description": ""},
+            {"query_text": "Valid", "description": ""},
+        ]
+        out = merge_staff_example_queries_for_parser(seeds, 2, staff)
+        assert len(out) == 2
+        assert out[0]["question"] == "Valid"
 
 
 # ---------------------------------------------------------------------------

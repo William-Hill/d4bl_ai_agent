@@ -836,3 +836,32 @@ class TestStaffUploadsExplore:
             "/api/explore/staff-uploads?upload_id=00000000-0000-0000-0000-00000000dead"
         )
         assert resp.status_code == 404
+
+
+class TestExampleQueryTemplates:
+    @pytest.mark.asyncio
+    async def test_lists_approved_example_queries(self, user_client, override_db):
+        mock_db = override_db
+        fetch_result = MagicMock()
+        fetch_result.mappings.return_value.all.return_value = [
+            {
+                "id": "00000000-0000-0000-0000-00000000b001",
+                "query_text": "What does the data show about eviction risk?",
+                "description": "Housing justice framing",
+                "summary_format": "detailed",
+            },
+        ]
+        mock_db.execute = AsyncMock(return_value=fetch_result)
+
+        resp = await user_client.get("/api/explore/example-query-templates")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["query_text"].startswith("What does")
+        assert data[0]["description"] == "Housing justice framing"
+        assert data[0]["summary_format"] == "detailed"
+
+    @pytest.mark.asyncio
+    async def test_example_query_templates_require_auth(self, unauth_client):
+        resp = await unauth_client.get("/api/explore/example-query-templates")
+        assert resp.status_code == 401

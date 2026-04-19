@@ -5,11 +5,13 @@ distilling responses from a large Claude model (teacher) into a format
 suitable for training a smaller model (student).
 
 Supported tasks:
-  - query_parser: NL question → structured JSON parse
+  - query_parser: NL question → structured JSON parse (includes approved staff
+    example queries from ``example_queries`` when present)
   - explainer: Census/health data → structured narrative explanation
   - evaluator: (context, output) → evaluation judgment
   - evaluator_v2: Perturbation-based hallucination + tiered quality
-  - query_parser_v2: Entity-type-diverse question parsing
+  - query_parser_v2: Entity-type-diverse question parsing (approved staff queries
+    are injected into the intersectional batch when available)
   - evaluator_v3: Document-chunk hallucination detection
   - query_parser_v3: Community framing question parsing
 
@@ -24,11 +26,15 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import logging
 import os
 import random
 import time
+from collections import deque
 from pathlib import Path
 from typing import IO, Any, Union
+
+logger = logging.getLogger(__name__)
 
 from scripts.training.config import (
     COMMUNITY_FRAMING_PAIRS,
@@ -849,6 +855,22 @@ def generate_query_parser_pairs_v2(
 
     task_name = TASK_QUERY_PARSER_V2
 
+    staff_for_v2 = deque(
+        {
+            "question": (r.get("query_text") or "").strip(),
+            "entity_type": "intersectional",
+            "seed_data": r,
+        }
+        for r in fetch_approved_example_queries(conn, limit=400)
+        if (r.get("query_text") or "").strip()
+    )
+    if staff_for_v2:
+        print(
+            f"[{task_name}] {len(staff_for_v2)} approved staff queries available "
+            "for intersectional batch injection",
+            flush=True,
+        )
+
     if not resume:
         _clear_checkpoint(task_name, checkpoint_dir=checkpoint_dir)
 
@@ -873,6 +895,11 @@ def generate_query_parser_pairs_v2(
             questions = generate_query_parser_questions_v2(
                 seed_rows, count=type_count, entity_type=entity_type,
             )
+            if entity_type == "intersectional" and staff_for_v2:
+                n_take = min(len(staff_for_v2), max(1, type_count // 5))
+                injected = [staff_for_v2.popleft() for _ in range(n_take)]
+                tail = max(0, type_count - len(injected))
+                questions = injected + questions[:tail]
             for idx, q in enumerate(questions):
                 if resume and idx <= cp["last_attempted_idx"]:
                     continue
@@ -1233,6 +1260,78 @@ def _validate_json(text: str) -> dict | None:
     return obj
 
 
+def fetch_approved_example_queries(conn: Any, *, limit: int = 500) -> list[dict]:
+    """Load contributor example queries that passed admin review.
+
+    Returns rows with query_text, description, summary_format, and optional
+    curated_answer / relevant_sources. Empty list if tables are missing or on error.
+    """
+    import psycopg2.errors
+    import psycopg2.extras
+
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT eq.query_text, eq.description, eq.summary_format,
+                       eq.curated_answer, eq.relevant_sources
+                FROM example_queries eq
+                INNER JOIN uploads u ON u.id = eq.upload_id
+                WHERE u.upload_type = 'query' AND u.status = 'approved'
+                ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    except psycopg2.errors.UndefinedTable:
+        logger.warning(
+            "example_queries / uploads tables missing — skip approved query seeds",
+        )
+        return []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not load approved example queries: %s", exc)
+        return []
+
+
+def merge_staff_example_queries_for_parser(
+    seed_rows: list[dict],
+    total_count: int,
+    staff_rows: list[dict],
+) -> list[dict]:
+    """Build query-parser distillation questions: approved staff first, then synthetic.
+
+    Staff-submitted questions use the *community* style in the teacher prompt to
+    match organizer-voiced language.
+    """
+    if total_count <= 0:
+        return []
+
+    staff_questions: list[dict] = []
+    for row in staff_rows:
+        text = (row.get("query_text") or "").strip()
+        if not text:
+            continue
+        staff_questions.append(
+            {
+                "question": text,
+                "style": "community",
+                "seed_data": {
+                    "source": "staff_example_query",
+                    "description": row.get("description"),
+                    "summary_format": row.get("summary_format"),
+                },
+            },
+        )
+
+    staff_questions = staff_questions[:total_count]
+    remainder = max(0, total_count - len(staff_questions))
+    synthetic = (
+        generate_query_parser_questions(seed_rows, count=remainder) if remainder else []
+    )
+    return staff_questions + synthetic
+
+
 def generate_query_parser_questions(
     seed_rows: list[dict],
     count: int,
@@ -1456,7 +1555,16 @@ def generate_query_parser_pairs(
         return []
 
     seed_rows = _load_seed_rows(conn)
-    questions = generate_query_parser_questions(seed_rows, count=count)
+    staff_rows = fetch_approved_example_queries(conn, limit=max(count, 200))
+    questions = merge_staff_example_queries_for_parser(seed_rows, count, staff_rows)
+    n_staff_merged = sum(
+        1 for q in questions if q.get("seed_data", {}).get("source") == "staff_example_query"
+    )
+    if n_staff_merged:
+        print(
+            f"[query_parser] {n_staff_merged} approved staff example queries in distill batch",
+            flush=True,
+        )
 
     data_sources = list(_ALLOWED_SEED_TABLES)
     pairs: list[dict] = []

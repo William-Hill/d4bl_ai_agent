@@ -19,6 +19,7 @@ from scripts.training.templates import (
     render_census_passage,
     render_document_passage,
     render_epa_passage,
+    render_example_query_passage,
     render_fbi_passage,
     render_police_violence_passage,
 )
@@ -96,6 +97,17 @@ EXTRACTORS: dict[str, dict[str, Any]] = {
         ),
         "template": render_document_passage,
     },
+    "approved_example_queries": {
+        "query": (
+            "SELECT eq.query_text, eq.description "
+            "FROM example_queries eq "
+            "INNER JOIN uploads u ON u.id = eq.upload_id "
+            "WHERE u.upload_type = 'query' AND u.status = 'approved' "
+            "ORDER BY u.reviewed_at DESC NULLS LAST, eq.created_at DESC "
+            "LIMIT %(limit)s"
+        ),
+        "template": render_example_query_passage,
+    },
 }
 
 
@@ -172,7 +184,17 @@ def main(tables: list[str] | None = None, max_per_table: int = MAX_PASSAGES_PER_
     try:
         for table in target_tables:
             logger.info("Extracting %s (max %d rows)…", table, max_per_table)
-            passages = extract_table(conn, table, max_per_table)
+            try:
+                passages = extract_table(conn, table, max_per_table)
+            except Exception as exc:  # noqa: BLE001
+                if table == "approved_example_queries":
+                    logger.warning(
+                        "Skipping approved example queries (tables may be absent): %s",
+                        exc,
+                    )
+                    passages = []
+                else:
+                    raise
             outfile = CORPUS_DIR / f"{table}.jsonl"
             count = write_passages_jsonl(passages, outfile)
             logger.info("  Wrote %d passages → %s", count, outfile)

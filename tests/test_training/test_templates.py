@@ -7,9 +7,28 @@ from scripts.training.templates import (
     render_cdc_passage,
     render_census_passage,
     render_epa_passage,
+    render_example_query_passage,
     render_fbi_passage,
     render_police_violence_passage,
 )
+
+
+class TestRenderExampleQueryPassage:
+    def test_empty_without_query_text(self):
+        assert render_example_query_passage({}) == ""
+        assert render_example_query_passage({"query_text": "  "}) == ""
+
+    def test_query_only(self):
+        p = render_example_query_passage({"query_text": "How does redlining affect asthma?"})
+        assert "How does redlining affect asthma?" in p
+        assert "Contributor framing" not in p
+
+    def test_includes_description(self):
+        p = render_example_query_passage(
+            {"query_text": "Q?", "description": "Organizer-submitted housing prompt."},
+        )
+        assert "Q?" in p
+        assert "Organizer-submitted housing prompt." in p
 
 # ---------------------------------------------------------------------------
 # Census
