@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RelatedDocument, RelatedDocumentsResponse } from '@/lib/types';
 import { API_BASE } from '@/lib/api';
 import { humanizeMetric } from '@/lib/explore-config';
@@ -124,6 +124,12 @@ export default function RelatedDocuments({
 
   const typesParam = useMemo(() => categoryToTypesParam(category), [category]);
 
+  // Stable ref for getHeaders to prevent unnecessary refetches
+  const getHeadersRef = useRef(getHeaders);
+  useEffect(() => {
+    getHeadersRef.current = getHeaders;
+  }, [getHeaders]);
+
   const toggleCollapse = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;
@@ -168,7 +174,7 @@ export default function RelatedDocuments({
 
         const res = await fetch(`${API_BASE}/api/documents?${params}`, {
           signal: controller.signal,
-          headers: getHeaders(),
+          headers: getHeadersRef.current(),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as RelatedDocumentsResponse;
@@ -185,7 +191,7 @@ export default function RelatedDocuments({
     })();
 
     return () => controller.abort();
-  }, [sessionReady, stateFips, metric, sortKey, sortDir, typesParam, getHeaders, collapsed]);
+  }, [sessionReady, stateFips, metric, sortKey, sortDir, typesParam, collapsed]);
 
   function handleHeaderSort(col: ColKey) {
     const map: Record<ColKey, SortKey> = {
