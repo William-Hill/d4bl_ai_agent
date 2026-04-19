@@ -1,11 +1,18 @@
 """Unit tests for related-documents API query parsing helpers."""
 
-from d4bl.app.api import _normalize_metric_for_document_search, _parse_related_doc_types_param
+from d4bl.app.api import (
+    _RELATED_DOC_CONTENT_TYPES,
+    _normalize_metric_for_document_search,
+    _parse_related_doc_types_param,
+)
+
+_EXPECTED_ALL_TYPES = sorted(_RELATED_DOC_CONTENT_TYPES)
 
 
 def test_parse_types_default_all():
-    assert "policy_bill" in _parse_related_doc_types_param(None)
-    assert "research_report" in _parse_related_doc_types_param("")
+    assert _parse_related_doc_types_param(None) == _EXPECTED_ALL_TYPES
+    assert _parse_related_doc_types_param("") == _EXPECTED_ALL_TYPES
+    assert _parse_related_doc_types_param("   ") == _EXPECTED_ALL_TYPES
 
 
 def test_parse_types_filters_unknown():

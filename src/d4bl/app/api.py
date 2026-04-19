@@ -486,6 +486,7 @@ async def _fetch_related_documents(
         raise HTTPException(status_code=422, detail="Invalid state_fips")
     state_name = FIPS_TO_NAME.get(state_fips, "")
     has_metric, metric_slug, metric_human = _normalize_metric_for_document_search(metric)
+    # Metric filtering uses strpos / metadata::text (no GIN yet). Revisit if this becomes hot.
 
     sort_col = {"created_at": "created_at", "title": "title", "content_type": "content_type"}.get(
         sort,

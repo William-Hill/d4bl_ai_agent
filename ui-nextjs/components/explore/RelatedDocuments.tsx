@@ -138,12 +138,15 @@ export default function RelatedDocuments({
 
   useEffect(() => {
     if (!sessionReady || !stateFips) {
+      setLoading(false);
+      setError(null);
       setRows([]);
       setTotal(0);
       return;
     }
 
     if (collapsed) {
+      setLoading(false);
       return;
     }
 
@@ -175,7 +178,7 @@ export default function RelatedDocuments({
         setRows([]);
         setTotal(0);
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        setLoading(false);
       }
     })();
 
